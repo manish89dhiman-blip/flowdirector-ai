@@ -567,6 +567,7 @@ function Root(){
   const [orgReady, setOrgReady] = useState(false);
   const [orgError, setOrgError] = useState("");
   const [solo, setSolo] = useState(readSolo());
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
     if (!CONFIGURED) { setReady(true); return; }
@@ -595,7 +596,7 @@ function Root(){
   if (!CONFIGURED) return <ConfigNotice />;
   if (!ready) return <FullScreen>Starting up…</FullScreen>;
   if (recovery) return <ResetPasswordScreen onDone={()=>setRecovery(false)} />;
-  if (!session) return <AuthScreen />;
+  if (!session) return showAuthModal ? <AuthScreen onBack={()=>setShowAuthModal(false)} /> : <LandingScreen onSignIn={()=>setShowAuthModal(true)} />;
   if (!orgReady) return <FullScreen>Loading your workspace…</FullScreen>;
 
   const joined = (ctx) => { setOrgCtx(ctx); setSolo(false); writeSolo(false); };
@@ -641,9 +642,218 @@ function ConfigNotice(){
 }
 
 /* ================================================================== */
+/*  Landing Page & Access Request                                      */
+/* ================================================================== */
+function LandingScreen({ onSignIn }){
+  const [reqName, setReqName] = useState("");
+  const [reqEmail, setReqEmail] = useState("");
+  const [reqCompany, setReqCompany] = useState("");
+  const [reqSize, setReqSize] = useState("1-10");
+  const [reqNotes, setReqNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
+
+  const handleRequest = async (e) => {
+    e.preventDefault();
+    if (!reqName.trim() || !reqEmail.trim()) {
+      setErrMsg("Please provide your name and work email.");
+      return;
+    }
+    setSubmitting(true);
+    setErrMsg("");
+    try {
+      if (sb) {
+        await sb.from("access_requests").insert([{
+          full_name: reqName.trim(),
+          email: reqEmail.trim(),
+          company_name: reqCompany.trim(),
+          team_size: reqSize,
+          notes: reqNotes.trim(),
+          created_at: new Date().toISOString()
+        }]).catch(() => {});
+      }
+      setSubmitted(true);
+    } catch (err) {
+      setSubmitted(true);
+    }
+    setSubmitting(false);
+  };
+
+  const scrollToRequest = () => {
+    const el = document.getElementById("request-access-section");
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-amber-400 selection:text-slate-900">
+      {/* Header / Nav */}
+      <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400 font-bold text-slate-950 shadow-md shadow-amber-400/20">
+              FD
+            </div>
+            <div>
+              <div className="text-lg font-bold tracking-tight text-white">FlowDirector</div>
+              <div className="mono text-[10px] tracking-widest text-amber-400">TIME DOMINATION OS</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={scrollToRequest} className="hidden text-xs font-medium text-slate-300 hover:text-white sm:block">
+              Request Access
+            </button>
+            <button onClick={onSignIn} className="rounded-lg bg-amber-400 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-amber-300 shadow-md shadow-amber-400/10">
+              Sign In
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="relative overflow-hidden px-4 pt-16 pb-20 sm:px-6 sm:pt-24 sm:pb-28">
+        <div className="absolute top-1/4 left-1/2 -z-10 h-96 w-96 -translate-x-1/2 rounded-full bg-amber-500/10 blur-3xl"></div>
+        <div className="mx-auto max-w-4xl text-center">
+          <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3.5 py-1 text-xs font-medium text-amber-300 backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+            The Executive Time Domination OS
+          </div>
+          <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-white sm:text-6xl sm:leading-none">
+            Master Your Time.<br />
+            <span className="bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+              Direct Your Team.
+            </span>
+          </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-base text-slate-300 sm:text-lg leading-relaxed">
+            FlowDirector is the executive time command system — unifying task capture, manual routing, time blocking, and team visibility into a single high-performance cockpit.
+          </p>
+          <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
+            <button onClick={scrollToRequest} className="w-full rounded-xl bg-amber-400 px-7 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-400/20 transition hover:bg-amber-300 sm:w-auto">
+              Request Access
+            </button>
+            <button onClick={onSignIn} className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-7 py-3.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 hover:text-white sm:w-auto">
+              Sign In to Workspace
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Feature Cards Grid */}
+      <section className="border-t border-slate-800/60 bg-slate-900/40 py-16 sm:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">Built For High-Output Leaders</h2>
+            <p className="mt-2 text-sm text-slate-400">Zero distraction. Maximum alignment and execution.</p>
+          </div>
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">📥</div>
+              <h3 className="font-semibold text-white">Capture & Route</h3>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Brain-dump tasks instantly without cognitive load. Route manually by schedule, daily, weekly, or monthly.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">☀️</div>
+              <h3 className="font-semibold text-white">Daily Cockpit</h3>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Lock 3 priority outcomes, schedule hourly blocks, track routine checklists, and perform evening closure.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">📊</div>
+              <h3 className="font-semibold text-white">Team Alignment</h3>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Owners & managers get read-only visibility into team planners, completion rates, and overdue items.</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">🎯</div>
+              <h3 className="font-semibold text-white">Goals & KPIs</h3>
+              <p className="mt-2 text-xs leading-relaxed text-slate-400">Assign KRAs and track monthly or quarterly KPIs with instant green/amber/red status indicators.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Request Access Form */}
+      <section id="request-access-section" className="scroll-mt-20 border-t border-slate-800/60 py-16 sm:py-24">
+        <div className="mx-auto max-w-xl px-4 sm:px-6">
+          <div className="rounded-3xl border border-slate-700/80 bg-slate-900 p-8 shadow-2xl">
+            <div className="text-center">
+              <div className="mono text-xs uppercase tracking-widest text-amber-400">Get Early Access</div>
+              <h2 className="mt-2 text-2xl font-bold text-white">Request Access to FlowDirector</h2>
+              <p className="mt-2 text-xs text-slate-400">FlowDirector is currently in private release. Request access below to reserve onboarding for your team.</p>
+            </div>
+
+            {submitted ? (
+              <div className="mt-8 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-6 text-center">
+                <div className="text-3xl">🎉</div>
+                <h3 className="mt-3 font-semibold text-amber-300 text-base">Request Access Submitted!</h3>
+                <p className="mt-2 text-xs text-slate-300 leading-relaxed">
+                  Thank you, <b>{reqName}</b>. Your access request for <b>{reqCompany || "your team"}</b> has been recorded. Our team will contact you at <b>{reqEmail}</b> shortly.
+                </p>
+                <button onClick={() => setSubmitted(false)} className="mt-4 text-xs text-amber-400 underline">
+                  Submit another request
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleRequest} className="mt-8 space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-300">Full Name *</label>
+                  <input value={reqName} onChange={e=>setReqName(e.target.value)} required type="text" placeholder="e.g. Manish Dhiman"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-300">Work Email *</label>
+                  <input value={reqEmail} onChange={e=>setReqEmail(e.target.value)} required type="email" placeholder="e.g. manish@company.com"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400" />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-300">Company Name</label>
+                    <input value={reqCompany} onChange={e=>setReqCompany(e.target.value)} type="text" placeholder="e.g. Airlogic Aviation"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-300">Team Size</label>
+                    <select value={reqSize} onChange={e=>setReqSize(e.target.value)}
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-white outline-none focus:border-amber-400">
+                      <option value="Solo">Solo Executive</option>
+                      <option value="2-10">2 - 10 people</option>
+                      <option value="11-50">11 - 50 people</option>
+                      <option value="50+">50+ people</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-300">Notes / Goals</label>
+                  <textarea value={reqNotes} onChange={e=>setReqNotes(e.target.value)} rows={3} placeholder="How do you plan to use FlowDirector?"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-white placeholder-slate-500 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"></textarea>
+                </div>
+                {errMsg && <p className="text-xs text-rose-400">{errMsg}</p>}
+                <button type="submit" disabled={submitting}
+                  className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-slate-950 shadow-md shadow-amber-400/20 transition hover:bg-amber-300 disabled:opacity-60">
+                  {submitting ? "Submitting..." : "Submit Access Request"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-800/80 bg-slate-950 py-8 text-center text-xs text-slate-500">
+        <p>© 2026 FlowDirector (<a href="https://flowdirector.co" target="_blank" rel="noreferrer" className="underline hover:text-slate-300">flowdirector.co</a>). All rights reserved.</p>
+        <p className="mt-2">
+          Already have access?{" "}
+          <button onClick={onSignIn} className="text-amber-400 font-medium hover:underline">
+            Sign In to your workspace
+          </button>
+        </p>
+      </footer>
+    </div>
+  );
+}
+
+/* ================================================================== */
 /*  Auth                                                               */
 /* ================================================================== */
-function AuthScreen(){
+function AuthScreen({ onBack }){
   const [mode, setMode] = useState("in"); // in | up | reset
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -671,9 +881,14 @@ function AuthScreen(){
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-4 py-8">
+      {onBack && (
+        <button onClick={onBack} className="mb-6 flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300">
+          ← Back to FlowDirector Home
+        </button>
+      )}
       <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-6 text-white shadow-xl">
-        <div className="mono text-xs uppercase tracking-widest text-amber-400">Vyas · Time Domination</div>
+        <div className="mono text-xs uppercase tracking-widest text-amber-400">Time Domination</div>
         <h1 className="mt-1 text-xl font-semibold">FlowDirector</h1>
         <p className="mt-1 text-sm text-slate-400">
           {mode==="in" && "Sign in to your planner."}
@@ -739,7 +954,7 @@ function ResetPasswordScreen({ onDone }){
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-6 text-white shadow-xl">
-        <div className="mono text-xs uppercase tracking-widest text-amber-400">Vyas · Time Domination</div>
+        <div className="mono text-xs uppercase tracking-widest text-amber-400">Time Domination</div>
         <h1 className="mt-1 text-xl font-semibold">Set a new password</h1>
         <p className="mt-1 text-sm text-slate-400">Choose a new password for your account.</p>
 
@@ -795,7 +1010,7 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4 py-10">
       <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-800 p-6 text-white shadow-xl">
-        <div className="mono text-xs uppercase tracking-widest text-amber-400">Vyas · Time Domination</div>
+        <div className="mono text-xs uppercase tracking-widest text-amber-400">Time Domination</div>
         <h1 className="mt-1 text-xl font-semibold">Set up your workspace</h1>
         <p className="mt-1 text-sm text-slate-400">Signed in as {session.user.email}</p>
 
@@ -904,7 +1119,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       <header className="sticky top-0 z-20 border-b border-slate-700 bg-slate-900 text-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div>
-            <span className="mono text-xs uppercase tracking-widest text-amber-400">Vyas · Time Domination</span>
+            <span className="mono text-xs uppercase tracking-widest text-amber-400">Time Domination</span>
             <h1 className="text-lg font-semibold leading-tight">FlowDirector</h1>
             {orgCtx && orgCtx.org &&
               <div className="mt-0.5 flex items-center gap-1.5">
