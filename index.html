@@ -608,12 +608,12 @@ function usePath() {
 /* ================================================================== */
 function LegalHeader({ title, session }){
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#121a25] backdrop-blur-md">
+    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5 sm:px-6">
-        <Logo height={36} onClick={() => navigate("/")} />
+        <Logo height={44} lightMode={true} onClick={() => navigate("/")} />
         <div className="flex items-center gap-3 text-xs">
-          <button onClick={() => navigate("/")} className="text-slate-300 hover:text-white">Home</button>
-          <button onClick={() => navigate(session ? "/" : "/login")} className="rounded-lg bg-amber-400 px-3 py-1.5 font-semibold text-slate-950 hover:bg-amber-300">
+          <button onClick={() => navigate("/")} className="text-slate-600 hover:text-slate-900 font-medium">Home</button>
+          <button onClick={() => navigate(session ? "/" : "/login")} className="rounded-xl bg-slate-950 px-4 py-2 font-bold text-white hover:bg-slate-800 shadow-sm">
             {session ? "Workspace" : "Sign In"}
           </button>
         </div>
@@ -624,50 +624,52 @@ function LegalHeader({ title, session }){
 
 function LegalFooter(){
   return (
-    <footer className="border-t border-slate-800 bg-slate-950 py-8 text-center text-xs text-slate-500">
-      <div className="mx-auto flex max-w-4xl flex-wrap justify-center gap-4 text-slate-400">
-        <button onClick={() => navigate("/privacy")} className="hover:underline">Privacy Policy</button>
+    <footer className="border-t border-slate-200 bg-white py-8 text-center text-xs text-slate-600">
+      <div className="mx-auto flex max-w-4xl flex-wrap justify-center gap-4 text-slate-600 font-medium">
+        <button onClick={() => navigate("/privacy")} className="hover:text-blue-600 transition">Privacy Policy</button>
         <span>•</span>
-        <button onClick={() => navigate("/terms")} className="hover:underline">Terms of Service</button>
+        <button onClick={() => navigate("/terms")} className="hover:text-blue-600 transition">Terms of Service</button>
         <span>•</span>
-        <button onClick={() => navigate("/refund")} className="hover:underline">Refund Policy</button>
+        <button onClick={() => navigate("/refund")} className="hover:text-blue-600 transition">Refund Policy</button>
         <span>•</span>
-        <button onClick={() => navigate("/contact")} className="hover:underline">Contact Us</button>
+        <button onClick={() => navigate("/contact")} className="hover:text-blue-600 transition">Contact Us</button>
       </div>
-      <p className="mt-4">© 2026 FlowDirector (flowdirector.co). Operated by Manish Dhiman.</p>
+      <p className="mt-4 text-slate-400">© 2026 FlowDirector (flowdirector.co). Operated by Manish Dhiman.</p>
     </footer>
   );
 }
 
 function PrivacyPage({ session }){
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans antialiased">
       <LegalHeader title="Privacy Policy" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-        <h1 className="text-3xl font-extrabold text-white">Privacy Policy</h1>
-        <p className="mt-1 text-xs text-amber-400">Last updated: August 2026</p>
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl">
+          <h1 className="text-3xl font-extrabold text-slate-950">Privacy Policy</h1>
+          <p className="mt-1 text-xs font-mono font-bold text-blue-600">Last updated: August 2026</p>
 
-        <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-300">
-          <section>
-            <h2 className="text-lg font-semibold text-white">1. Introduction</h2>
-            <p className="mt-2">FlowDirector ("we", "our", "us"), operated by Manish Dhiman (Sole Proprietorship), respects your privacy. This Privacy Policy outlines how we collect, use, and safeguard your information when you visit flowdirector.co or use the FlowDirector application.</p>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">2. Information We Collect</h2>
-            <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li><b>Account & Profile Data:</b> Name, email address, company name, and role created during sign-up or access request.</li>
-              <li><b>Planner & Operational Data:</b> Tasks, schedule blocks, priorities, KRAs, and KPIs entered into the application.</li>
-              <li><b>Payment Information:</b> Billing data is processed securely via Razorpay or Stripe. We do not store raw credit card numbers or banking passwords on our servers.</li>
-            </ul>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">3. Data Security & Storage</h2>
-            <p className="mt-2">All data is securely stored in Supabase PostgreSQL infrastructure. Strict Row-Level Security (RLS) policies guarantee that your personal planner entries are private and inaccessible to unauthorized third parties or platform administrators.</p>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">4. Contact Us</h2>
-            <p className="mt-2">For any privacy questions or data deletion requests, contact us at <a href="mailto:support@flowdirector.co" className="text-amber-400 underline">support@flowdirector.co</a>.</p>
-          </section>
+          <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-700">
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">1. Introduction</h2>
+              <p className="mt-2">FlowDirector ("we", "our", "us"), operated by Manish Dhiman (Sole Proprietorship), respects your privacy. This Privacy Policy outlines how we collect, use, and safeguard your information when you visit flowdirector.co or use the FlowDirector application.</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">2. Information We Collect</h2>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li><b>Account & Profile Data:</b> Name, email address, company name, and role created during sign-up or access request.</li>
+                <li><b>Planner & Operational Data:</b> Tasks, schedule blocks, priorities, KRAs, and KPIs entered into the application.</li>
+                <li><b>Payment Information:</b> Billing data is processed securely via Razorpay or Stripe. We do not store raw credit card numbers or banking passwords on our servers.</li>
+              </ul>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">3. Data Security & Storage</h2>
+              <p className="mt-2">All data is securely stored in Supabase PostgreSQL infrastructure. Strict Row-Level Security (RLS) policies guarantee that your personal planner entries are private and inaccessible to unauthorized third parties or platform administrators.</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">4. Contact Us</h2>
+              <p className="mt-2">For any privacy questions or data deletion requests, contact us at <a href="mailto:support@flowdirector.co" className="text-blue-600 font-bold underline">support@flowdirector.co</a>.</p>
+            </section>
+          </div>
         </div>
       </main>
       <LegalFooter />
@@ -677,29 +679,31 @@ function PrivacyPage({ session }){
 
 function TermsPage({ session }){
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans antialiased">
       <LegalHeader title="Terms of Service" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-        <h1 className="text-3xl font-extrabold text-white">Terms of Service</h1>
-        <p className="mt-1 text-xs text-amber-400">Last updated: August 2026</p>
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl">
+          <h1 className="text-3xl font-extrabold text-slate-950">Terms of Service</h1>
+          <p className="mt-1 text-xs font-mono font-bold text-blue-600">Last updated: August 2026</p>
 
-        <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-300">
-          <section>
-            <h2 className="text-lg font-semibold text-white">1. Service Provider</h2>
-            <p className="mt-2">FlowDirector is owned and operated by <b>Manish Dhiman</b> (Sole Proprietorship), based in India. By accessing or using flowdirector.co, you agree to be bound by these Terms of Service.</p>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">2. Use of Service</h2>
-            <p className="mt-2">FlowDirector provides a time-management and team execution platform. You agree to use the service in compliance with all applicable laws and regulations.</p>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">3. Accounts & Subscriptions</h2>
-            <p className="mt-2">Users are responsible for maintaining account credentials. Paid plan subscriptions and seat licenses are billed on a recurring basis as outlined at checkout.</p>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">4. Governing Law</h2>
-            <p className="mt-2">These terms are governed by the laws of India. Any disputes shall be subject to the exclusive jurisdiction of the competent courts in India.</p>
-          </section>
+          <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-700">
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">1. Service Provider</h2>
+              <p className="mt-2">FlowDirector is owned and operated by <b>Manish Dhiman</b> (Sole Proprietorship), based in India. By accessing or using flowdirector.co, you agree to be bound by these Terms of Service.</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">2. Use of Service</h2>
+              <p className="mt-2">FlowDirector provides a time-management and team execution platform. You agree to use the service in compliance with all applicable laws and regulations.</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">3. Accounts & Subscriptions</h2>
+              <p className="mt-2">Users are responsible for maintaining account credentials. Paid plan subscriptions and seat licenses are billed on a recurring basis as outlined at checkout.</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">4. Governing Law</h2>
+              <p className="mt-2">These terms are governed by the laws of India. Any disputes shall be subject to the exclusive jurisdiction of the competent courts in India.</p>
+            </section>
+          </div>
         </div>
       </main>
       <LegalFooter />
@@ -709,28 +713,30 @@ function TermsPage({ session }){
 
 function ContactPage({ session }){
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans antialiased">
       <LegalHeader title="Contact Us" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-        <h1 className="text-3xl font-extrabold text-white">Contact Us</h1>
-        <p className="mt-1 text-xs text-amber-400">We're here to help</p>
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl">
+          <h1 className="text-3xl font-extrabold text-slate-950">Contact Us</h1>
+          <p className="mt-1 text-xs font-mono font-bold text-blue-600">We're here to help</p>
 
-        <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 space-y-4 text-sm text-slate-300">
-          <div>
-            <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Operating Entity</div>
-            <div className="text-base font-bold text-white mt-1">FlowDirector</div>
-            <div className="text-xs text-slate-400">Proprietor: Manish Dhiman</div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Support Email</div>
-            <div className="mt-1">
-              <a href="mailto:support@flowdirector.co" className="text-white hover:text-amber-400 font-medium">support@flowdirector.co</a>
+          <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6 space-y-4 text-sm text-slate-700">
+            <div>
+              <div className="text-xs uppercase tracking-wider text-blue-600 font-mono font-bold">Operating Entity</div>
+              <div className="text-base font-bold text-slate-950 mt-1">FlowDirector</div>
+              <div className="text-xs text-slate-500">Proprietor: Manish Dhiman</div>
             </div>
-          </div>
-          <div>
-            <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Support Hours</div>
-            <div className="mt-1 text-slate-300">Monday – Saturday: 9:00 AM – 6:00 PM IST</div>
-            <div className="text-xs text-slate-400">Response SLA: Within 24-48 business hours</div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-blue-600 font-mono font-bold">Support Email</div>
+              <div className="mt-1">
+                <a href="mailto:support@flowdirector.co" className="text-slate-950 hover:text-blue-600 font-bold">support@flowdirector.co</a>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs uppercase tracking-wider text-blue-600 font-mono font-bold">Support Hours</div>
+              <div className="mt-1 text-slate-700">Monday – Saturday: 9:00 AM – 6:00 PM IST</div>
+              <div className="text-xs text-slate-500">Response SLA: Within 24-48 business hours</div>
+            </div>
           </div>
         </div>
       </main>
@@ -741,336 +747,30 @@ function ContactPage({ session }){
 
 function RefundPage({ session }){
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans antialiased">
       <LegalHeader title="Refund & Cancellation Policy" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
-        <h1 className="text-3xl font-extrabold text-white">Refund & Cancellation Policy</h1>
-        <p className="mt-1 text-xs text-amber-400">Razorpay & Customer Protection Compliant</p>
+        <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl">
+          <h1 className="text-3xl font-extrabold text-slate-950">Refund & Cancellation Policy</h1>
+          <p className="mt-1 text-xs font-mono font-bold text-blue-600">Razorpay & Customer Protection Compliant</p>
 
-        <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-300">
-          <section>
-            <h2 className="text-lg font-semibold text-white">1. Subscription Cancellations</h2>
-            <p className="mt-2">You may cancel your FlowDirector subscription at any time from <b>Settings → Billing</b> or by emailing support@flowdirector.co. Upon cancellation, your company remains active until the end of the current billing cycle.</p>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">2. Refund Eligibility</h2>
-            <p className="mt-2">We offer a <b>7-day money-back guarantee</b> for initial subscription plan purchases. If you are dissatisfied with FlowDirector within 7 days of payment, contact support for a full refund.</p>
-          </section>
-          <section>
-            <h2 className="text-lg font-semibold text-white">3. Processing Time</h2>
-            <p className="mt-2">Approved refunds are processed through Razorpay / payment gateway within <b>5 to 7 business days</b> back to the original payment method (bank account, credit card, or UPI).</p>
-          </section>
+          <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-700">
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">1. Subscription Cancellations</h2>
+              <p className="mt-2">You may cancel your FlowDirector subscription at any time from <b>Settings → Billing</b> or by emailing support@flowdirector.co. Upon cancellation, your company remains active until the end of the current billing cycle.</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">2. Refund Eligibility</h2>
+              <p className="mt-2">We offer a <b>7-day money-back guarantee</b> for initial subscription plan purchases. If you are dissatisfied with FlowDirector within 7 days of payment, contact support for a full refund.</p>
+            </section>
+            <section>
+              <h2 className="text-lg font-bold text-slate-950">3. Processing Time</h2>
+              <p className="mt-2">Approved refunds are processed through Razorpay / payment gateway within <b>5 to 7 business days</b> back to the original payment method (bank account, credit card, or UPI).</p>
+            </section>
+          </div>
         </div>
       </main>
       <LegalFooter />
-    </div>
-  );
-}
-
-function UserGuidePage({ session }){
-  const [activeTab, setActiveTab] = React.useState("service"); // "service" | "manufacturing"
-
-  return (
-    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 selection:bg-amber-400 selection:text-slate-950 font-sans antialiased">
-      {/* Navigation Header */}
-      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <Logo height={48} lightMode={true} onClick={() => navigate("/")} />
-          <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
-            <button onClick={() => navigate("/")} className="hover:text-slate-900 transition">Home</button>
-            <button onClick={() => navigate("/guide")} className="text-blue-600 font-bold">User Guide</button>
-            <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="hover:text-slate-900 transition">Support</a>
-          </div>
-          <div className="flex items-center gap-3">
-            {session ? (
-              <button onClick={() => navigate("/")} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md">
-                Go to Workspace →
-              </button>
-            ) : (
-              <>
-                <button onClick={() => navigate("/login")} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs">
-                  Sign In
-                </button>
-                <button onClick={() => navigate("/signup")} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md">
-                  Start Free Trial
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Main Guide Content */}
-      <main className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
-        {/* Title Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16">
-          <div className="inline-flex items-center gap-2 rounded-full border border-blue-300 bg-blue-50 px-4 py-1 text-xs font-bold text-blue-800 mb-4 shadow-xs">
-            📖 EXECUTIVE OPERATING MANUAL
-          </div>
-          <h1 className="text-4xl font-extrabold text-slate-950 sm:text-5xl tracking-tight">FlowDirector User Guide</h1>
-          <p className="mt-4 text-base text-slate-600 leading-relaxed">
-            The complete operating system for business owners who need to delegate ruthlessly, time block high-value growth, and track team KRA/KPI attainment.
-          </p>
-        </div>
-
-        {/* 4-Step System Diagram */}
-        <section className="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl shadow-slate-200/50 mb-16">
-          <h2 className="text-xl font-bold text-slate-950 mb-6 text-center">The 4-Step FlowDirector Executive System</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-center">
-              <span className="w-8 h-8 bg-slate-900 text-white font-bold text-xs rounded-full inline-flex items-center justify-center mb-3">1</span>
-              <h3 className="text-sm font-bold text-slate-900">Capture (Zero Friction)</h3>
-              <p className="text-xs text-slate-600 mt-2">Dump thoughts and tasks instantly into the Inbox to clear your mental RAM.</p>
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 text-center">
-              <span className="w-8 h-8 bg-blue-600 text-white font-bold text-xs rounded-full inline-flex items-center justify-center mb-3">2</span>
-              <h3 className="text-sm font-bold text-blue-950">Daily Triage & Assign</h3>
-              <p className="text-xs text-blue-900 mt-2">Perform 10-min daily review. Route tasks to planners or delegate to team members.</p>
-            </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center">
-              <span className="w-8 h-8 bg-amber-500 text-slate-950 font-bold text-xs rounded-full inline-flex items-center justify-center mb-3">3</span>
-              <h3 className="text-sm font-bold text-amber-950">Time Block & Execute</h3>
-              <p className="text-xs text-amber-900 mt-2">Lock One Main Outcome & Top 3 Priorities. Execute Gold Owner Hour tasks.</p>
-            </div>
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center">
-              <span className="w-8 h-8 bg-emerald-600 text-white font-bold text-xs rounded-full inline-flex items-center justify-center mb-3">4</span>
-              <h3 className="text-sm font-bold text-emerald-950">Align KRAs & Track KPIs</h3>
-              <p className="text-xs text-emerald-900 mt-2">Connect daily execution to KRAs and track real-time KPI attainment metrics.</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Case Study Industry Selector Tabs */}
-        <div className="flex justify-center mb-10">
-          <div className="inline-flex rounded-2xl border border-slate-200 bg-slate-100 p-1.5 shadow-inner">
-            <button
-              onClick={() => setActiveTab("service")}
-              className={`rounded-xl px-6 py-3 text-xs sm:text-sm font-bold transition-all ${
-                activeTab === "service"
-                  ? "bg-white text-slate-950 shadow-md"
-                  : "text-slate-600 hover:text-slate-950"
-              }`}
-            >
-              🏢 Service Business Example (Digital Agency)
-            </button>
-            <button
-              onClick={() => setActiveTab("manufacturing")}
-              className={`rounded-xl px-6 py-3 text-xs sm:text-sm font-bold transition-all ${
-                activeTab === "manufacturing"
-                  ? "bg-white text-slate-950 shadow-md"
-                  : "text-slate-600 hover:text-slate-950"
-              }`}
-            >
-              🏭 Manufacturing Example (Auto Components Factory)
-            </button>
-          </div>
-        </div>
-
-        {/* Service Business Case Study */}
-        {activeTab === "service" && (
-          <div className="space-y-8">
-            <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl shadow-slate-200/50">
-              <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-6">
-                <span className="text-2xl">🏢</span>
-                <div>
-                  <h3 className="text-xl font-bold text-slate-950">Case Study 1: Apex Marketing & Tech Solutions (Digital Agency)</h3>
-                  <p className="text-xs text-slate-500 font-mono">Owner: Anish Sharma (Founder) • Owner Hour Value Threshold: ₹5,000 / hr • Team Size: 12</p>
-                </div>
-              </div>
-
-              <div className="space-y-6 text-sm text-slate-700 leading-relaxed">
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">1. Morning Thought Dump (Capture Inbox)</h4>
-                  <p className="text-xs text-slate-600 mb-3">Anish wakes up with 6 uncaptured items racing in his mind and dumps them into the FlowDirector Capture tab in 90 seconds:</p>
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs font-mono text-slate-800">
-                    <div>• Client X homepage redesign proposal due Thursday</div>
-                    <div>• Follow up on ₹3.5 Lakh overdue invoice from Client Y</div>
-                    <div>• Fix broken SSL certificate on staging server</div>
-                    <div>• Draft ₹12 Lakh/yr retainer proposal for Apex International</div>
-                    <div>• Review monthly Facebook ad spend reports</div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">2. Daily Triage & Delegation Matrix</h4>
-                  <p className="text-xs text-slate-600 mb-3">During his 10-minute morning coffee triage, Anish routes tasks based on hourly leverage:</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-700 font-mono">
-                          <th className="p-3 border border-slate-200">Captured Item</th>
-                          <th className="p-3 border border-slate-200">Hourly Value</th>
-                          <th className="p-3 border border-slate-200">FlowDirector Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border border-slate-200">
-                          <td className="p-3 font-semibold text-slate-900">Apex Int'l Retainer Proposal</td>
-                          <td className="p-3 font-bold text-amber-700">₹15,000/hr</td>
-                          <td className="p-3 text-emerald-700 font-bold">☀️ Daily Cockpit (One Main Outcome - Gold ⭐)</td>
-                        </tr>
-                        <tr className="border border-slate-200 bg-slate-50">
-                          <td className="p-3 font-semibold text-slate-900">Client X Redesign Proposal</td>
-                          <td className="p-3 font-bold text-amber-700">₹6,000/hr</td>
-                          <td className="p-3 text-emerald-700 font-bold">☀️ Daily Cockpit (Priority #2)</td>
-                        </tr>
-                        <tr className="border border-slate-200">
-                          <td className="p-3">Follow up on ₹3.5L Invoice</td>
-                          <td className="p-3 text-slate-500">₹1,000/hr</td>
-                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Accountant (Rohan)</td>
-                        </tr>
-                        <tr className="border border-slate-200 bg-slate-50">
-                          <td className="p-3">Fix Broken SSL Certificate</td>
-                          <td className="p-3 text-slate-500">₹800/hr</td>
-                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Lead Dev (Priya)</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">3. Daily Time Blocking & Evening Closure</h4>
-                  <p className="text-xs text-slate-600">
-                    Anish blocks 9:30 AM – 12:30 PM for deep work on the ₹12 Lakh proposal. By delegating the SSL fix and invoice follow-up, he saves 3 hours of distraction and completes evening shutdown with a 100% daily closure score.
-                  </p>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">4. Goals & KPI Attainment Metrics</h4>
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-900">MRR Revenue Target: ₹25,00,000</span>
-                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 110% Attainment (₹27.5L Actual)</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-900">On-Time Client Delivery Rate: 90%</span>
-                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 105% Attainment (95% Actual)</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Manufacturing Case Study */}
-        {activeTab === "manufacturing" && (
-          <div className="space-y-8">
-            <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-xl shadow-slate-200/50">
-              <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-6">
-                <span className="text-2xl">🏭</span>
-                <div>
-                  <h3 className="text-xl font-bold text-slate-950">Case Study 2: Precision Tech Components (Auto Parts Factory)</h3>
-                  <p className="text-xs text-slate-500 font-mono">Owner: Rajesh Verma (MD) • Owner Hour Value Threshold: ₹8,000 / hr • Staff: 45</p>
-                </div>
-              </div>
-
-              <div className="space-y-6 text-sm text-slate-700 leading-relaxed">
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">1. Shop-Floor Thought Dump (Capture Inbox)</h4>
-                  <p className="text-xs text-slate-600 mb-3">During his morning plant walkthrough, Rajesh captures 5 critical observations on his tablet:</p>
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs font-mono text-slate-800">
-                    <div>• CNC Machine #4 spindle bearing vibrating — needs maintenance</div>
-                    <div>• Raw steel sheet shipment delayed by supplier</div>
-                    <div>• Negotiate JSW Steel annual bulk pricing contract (Save ₹18 Lakhs)</div>
-                    <div>• Worker safety audit required before ISO inspection</div>
-                    <div>• Explore European export distributor partnership</div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">2. Daily Triage & Delegation Matrix</h4>
-                  <p className="text-xs text-slate-600 mb-3">At 8:45 AM, Rajesh routes operational fires to his department heads:</p>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-700 font-mono">
-                          <th className="p-3 border border-slate-200">Captured Item</th>
-                          <th className="p-3 border border-slate-200">Hourly Value</th>
-                          <th className="p-3 border border-slate-200">FlowDirector Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr className="border border-slate-200">
-                          <td className="p-3 font-semibold text-slate-900">JSW Steel Contract Negotiation</td>
-                          <td className="p-3 font-bold text-amber-700">₹25,000/hr</td>
-                          <td className="p-3 text-emerald-700 font-bold">☀️ Daily Cockpit (One Main Outcome - Gold ⭐)</td>
-                        </tr>
-                        <tr className="border border-slate-200 bg-slate-50">
-                          <td className="p-3 font-semibold text-slate-900">European Export Strategy</td>
-                          <td className="p-3 font-bold text-amber-700">₹15,000/hr</td>
-                          <td className="p-3 text-blue-700 font-bold">🗓 Weekly Grid (Friday Expansion)</td>
-                        </tr>
-                        <tr className="border border-slate-200">
-                          <td className="p-3">CNC Machine #4 Spindle Maintenance</td>
-                          <td className="p-3 text-slate-500">₹1,500/hr</td>
-                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Plant Head (Suresh)</td>
-                        </tr>
-                        <tr className="border border-slate-200 bg-slate-50">
-                          <td className="p-3">Steel Shipment Delay Follow-up</td>
-                          <td className="p-3 text-slate-500">₹1,000/hr</td>
-                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Purchase Mgr (Vikram)</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">3. Daily Execution & Time Blocking</h4>
-                  <p className="text-xs text-slate-600">
-                    Rajesh blocks 10:00 AM – 1:00 PM for JSW negotiation prep. By delegating machine repairs and supplier calls, he secures an 8% bulk discount saving ₹18 Lakhs.
-                  </p>
-                </div>
-
-                <div>
-                  <h4 className="font-bold text-slate-900 text-base mb-2">4. Plant KRA & KPI Attainment Metrics</h4>
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-900">Monthly Units Produced: 50,000 Units</span>
-                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 104.8% Attainment (52,400 Actual)</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="font-bold text-slate-900">Quality Defect Rejection Rate: &lt; 500 PPM</span>
-                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 124% Quality Attainment (380 PPM Actual)</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* CTA Banner */}
-        <div className="mt-16 text-center bg-white border border-slate-200 rounded-3xl p-10 shadow-xl">
-          <h3 className="text-2xl font-extrabold text-slate-950">Ready to Dominate Your Executive Time?</h3>
-          <p className="mt-2 text-sm text-slate-600 max-w-lg mx-auto">Start your 15-day free trial now. No credit card required.</p>
-          <button onClick={() => navigate(session ? "/" : "/signup")} className="mt-6 rounded-xl bg-slate-950 px-8 py-3.5 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md">
-            {session ? "Go to Workspace Cockpit →" : "Start 15-Day Free Trial →"}
-          </button>
-        </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="w-full bg-white border-t border-slate-200 py-12 text-slate-600 text-xs">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
-          <div className="space-y-2">
-            <Logo height={44} lightMode={true} onClick={() => navigate("/")} />
-            <p className="text-slate-500 max-w-sm">The executive time domination system designed for high-output business owners.</p>
-          </div>
-          <div className="flex flex-wrap gap-6 text-sm font-medium text-slate-700">
-            <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hover:text-blue-600 transition">Privacy Policy</a>
-            <a href="/terms" onClick={(e)=>{e.preventDefault();navigate("/terms");}} className="hover:text-blue-600 transition">Terms of Service</a>
-            <a href="/refund" onClick={(e)=>{e.preventDefault();navigate("/refund");}} className="hover:text-blue-600 transition">Refund Policy</a>
-            <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="hover:text-blue-600 transition">Contact Us</a>
-          </div>
-        </div>
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center text-slate-400 gap-2">
-          <span>© 2026 FlowDirector (flowdirector.co). All rights reserved. Operated by Manish Dhiman.</span>
-          <button onClick={() => navigate("/")} className="text-slate-700 font-semibold hover:underline">Return to Home →</button>
-        </div>
-      </footer>
     </div>
   );
 }
@@ -1118,7 +818,6 @@ function Root(){
   if (path === "/terms") return <TermsPage session={session} />;
   if (path === "/contact") return <ContactPage session={session} />;
   if (path === "/refund" || path === "/refund-policy") return <RefundPage session={session} />;
-  if (path === "/guide" || path === "/user-guide") return <UserGuidePage session={session} />;
 
   if (!CONFIGURED) return <ConfigNotice />;
   if (!ready) return <FullScreen>Starting up…</FullScreen>;
@@ -1165,7 +864,7 @@ function Root(){
 }
 
 const FullScreen = ({children}) => (
-  <div className="flex h-screen items-center justify-center bg-slate-900 text-amber-300"><span className="mono animate-pulse text-sm">{children}</span></div>
+  <div className="flex h-screen items-center justify-center bg-[#fbf9fa] text-slate-900"><span className="mono font-mono animate-pulse text-sm font-semibold text-slate-700">{children}</span></div>
 );
 
 function ConfigNotice(){
@@ -1746,12 +1445,6 @@ function LandingScreen({ onSignIn, onSignUp }){
               </div>
             </div>
           )}
-
-          <div className="mt-8 text-center">
-            <button onClick={() => navigate("/guide")} className="inline-flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-800 transition bg-white border border-blue-200 px-4 py-2.5 rounded-xl shadow-xs">
-              📖 Read Complete Executive Manual & Operating Guide →
-            </button>
-          </div>
         </section>
 
         {/* Pricing Section */}
@@ -1985,47 +1678,47 @@ function AuthScreen({ initialMode = "in", onBack }){
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-4 py-8">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 py-8">
       {onBack && (
-        <button onClick={onBack} className="mb-6 flex items-center gap-1.5 text-xs font-semibold text-amber-400 hover:text-amber-300">
+        <button onClick={onBack} className="mb-6 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition">
           ← Back to FlowDirector Home
         </button>
       )}
-      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-[#121a25] p-6 text-white shadow-xl">
-        <Logo height={44} className="mb-4 justify-center flex" />
-        <p className="mt-1 text-sm text-slate-400">
+      <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-8 text-slate-900 shadow-xl">
+        <Logo height={44} lightMode={true} className="mb-4 justify-center flex" />
+        <p className="mt-1 text-xs text-slate-600 text-center font-medium">
           {mode==="in" && "Sign in to your planner."}
           {mode==="up" && "Start your 15-Day Free Trial (Mandate Required)."}
           {mode==="reset" && "Enter your email and we'll send you a reset link."}
         </p>
 
-        <div className="mt-5 space-y-3">
-          <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Email"
+        <div className="mt-6 space-y-3">
+          <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Email Address"
             onKeyDown={e=>e.key==="Enter"&&mode==="reset"&&submit()}
-            className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
           {mode!=="reset" &&
             <input value={pw} onChange={e=>setPw(e.target.value)} type="password" placeholder="Password"
               onKeyDown={e=>e.key==="Enter"&&submit()}
-              className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-400" />}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />}
           <button onClick={submit} disabled={busy}
-            className="w-full rounded-md bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300 disabled:opacity-60">
+            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60">
             {busy ? "…" : mode==="in" ? "Sign in" : mode==="up" ? "Start Trial & Setup Mandate" : "Send reset link"}
           </button>
         </div>
 
-        {msg && <p className="mt-3 text-xs text-amber-300">{msg}</p>}
+        {msg && <p className="mt-3 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl">{msg}</p>}
 
-        <div className="mt-4 flex flex-col items-start gap-1.5">
+        <div className="mt-5 flex flex-col items-center gap-2 pt-2 border-t border-slate-100">
           {mode==="in" &&
-            <button onClick={()=>{setMode("reset"); setMsg("");}} className="text-xs text-slate-400 hover:text-white">
+            <button onClick={()=>{setMode("reset"); setMsg("");}} className="text-xs text-slate-500 hover:text-slate-900 font-medium">
               Forgot password?
             </button>}
           {mode!=="reset" &&
-            <button onClick={()=>{setMode(mode==="in"?"up":"in"); setMsg("");}} className="text-xs text-slate-400 hover:text-white">
+            <button onClick={()=>{setMode(mode==="in"?"up":"in"); setMsg("");}} className="text-xs text-slate-600 hover:text-slate-950 font-semibold">
               {mode==="in" ? "Need an account? Start Trial & Mandate" : "Already have an account? Sign in"}
             </button>}
           {mode==="reset" &&
-            <button onClick={()=>{setMode("in"); setMsg("");}} className="text-xs text-slate-400 hover:text-white">
+            <button onClick={()=>{setMode("in"); setMsg("");}} className="text-xs text-slate-500 hover:text-slate-900 font-medium">
               Back to sign in
             </button>}
         </div>
@@ -2055,25 +1748,25 @@ function ResetPasswordScreen({ onDone }){
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-6 text-white shadow-xl">
-        <div className="mono text-xs uppercase tracking-widest text-amber-400">Time Domination</div>
-        <h1 className="mt-1 text-xl font-semibold">Set a new password</h1>
-        <p className="mt-1 text-sm text-slate-400">Choose a new password for your account.</p>
+    <div className="flex min-h-screen items-center justify-center bg-[#fbf9fa] px-4">
+      <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-8 text-slate-900 shadow-xl">
+        <Logo height={44} lightMode={true} className="mb-4 justify-center flex" />
+        <h1 className="text-xl font-bold text-slate-950 text-center">Set a new password</h1>
+        <p className="mt-1 text-xs text-slate-600 text-center">Choose a new password for your account.</p>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-6 space-y-3">
           <input value={pw} onChange={e=>setPw(e.target.value)} type="password" placeholder="New password"
-            className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
           <input value={pw2} onChange={e=>setPw2(e.target.value)} type="password" placeholder="Confirm new password"
             onKeyDown={e=>e.key==="Enter"&&submit()}
-            className="w-full rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
           <button onClick={submit} disabled={busy}
-            className="w-full rounded-md bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300 disabled:opacity-60">
+            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60">
             {busy ? "…" : "Update password"}
           </button>
         </div>
 
-        {msg && <p className="mt-3 text-xs text-amber-300">{msg}</p>}
+        {msg && <p className="mt-3 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl">{msg}</p>}
       </div>
     </div>
   );
@@ -2111,22 +1804,22 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4 py-10">
-      <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-800 p-6 text-white shadow-xl">
-        <div className="mono text-xs uppercase tracking-widest text-amber-400">Time Domination</div>
-        <h1 className="mt-1 text-xl font-semibold">Set up your workspace</h1>
-        <p className="mt-1 text-sm text-slate-400">Signed in as {session.user.email}</p>
+    <div className="flex min-h-screen items-center justify-center bg-[#fbf9fa] px-4 py-10">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-slate-900 shadow-xl">
+        <Logo height={44} lightMode={true} className="mb-4" />
+        <h1 className="text-2xl font-extrabold text-slate-950">Set up your workspace</h1>
+        <p className="mt-1 text-xs text-slate-500 font-medium">Signed in as {session.user.email}</p>
 
         {pendingInvites.length > 0 && (
-          <div className="mt-5 rounded-lg border border-amber-400/40 bg-amber-400/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-amber-400">You've been invited</div>
+          <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+            <div className="text-xs font-bold uppercase tracking-wider text-amber-900">You've been invited</div>
             {pendingInvites.map(inv => (
               <div key={inv.id} className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm">
-                  <b>{inv.orgName}</b> <span className="text-slate-400">· as {ROLE_LABEL[inv.role]}</span>
+                <span className="text-xs text-slate-800">
+                  <b>{inv.orgName}</b> <span className="text-slate-500">· as {ROLE_LABEL[inv.role]}</span>
                 </span>
                 <button onClick={()=>accept(inv)} disabled={busy}
-                  className="rounded-md bg-amber-400 px-3 py-1.5 text-xs font-semibold text-slate-900 hover:bg-amber-300 disabled:opacity-60">
+                  className="rounded-xl bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-60 shadow-xs">
                   Join
                 </button>
               </div>
@@ -2134,21 +1827,21 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
           </div>
         )}
 
-        <div className="mt-5">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Create a company</label>
-          <p className="mb-2 text-xs text-slate-400">You'll be the Owner — you can invite managers and employees, and see everyone's plan in one place.</p>
+        <div className="mt-6">
+          <label className="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-500">Create a company</label>
+          <p className="mb-3 text-xs text-slate-600">You'll be the Owner — you can invite managers and employees, and see everyone's plan in one place.</p>
           <div className="flex gap-2">
             <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&create()}
               placeholder="e.g. Airlogic Aviation"
-              className="flex-1 rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+              className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
             <button onClick={create} disabled={busy}
-              className="rounded-md bg-amber-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-300 disabled:opacity-60">
+              className="rounded-xl bg-slate-950 px-5 py-2.5 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60">
               {busy ? "…" : "Create"}
             </button>
           </div>
         </div>
 
-        {msg && <p className="mt-3 text-xs text-amber-300">{msg}</p>}
+        {msg && <p className="mt-3 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl">{msg}</p>}
       </div>
     </div>
   );
@@ -2216,28 +1909,31 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
   if (isCompanyUser && !isAuthorized) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-4 text-center text-white">
-        <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-2xl">
-          <div className="mono text-xs uppercase tracking-widest text-amber-400">Authorization Required</div>
-          <h2 className="mt-2 text-2xl font-bold">Activate Your Workspace</h2>
-          <p className="mt-3 text-xs leading-relaxed text-slate-300">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 text-center text-slate-900">
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl">
+          <Logo height={44} lightMode={true} className="mb-4 justify-center flex" />
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900">
+            Authorization Required
+          </div>
+          <h2 className="mt-3 text-2xl font-bold text-slate-950">Activate Your Workspace</h2>
+          <p className="mt-2 text-xs leading-relaxed text-slate-600 font-medium">
             To start using <b>{orgCtx.org?.name || "your workspace"}</b>, authorize your subscription payment mandate via Razorpay.
           </p>
 
-          <div className="mt-6 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-left">
-            <div className="text-xs font-semibold text-amber-300">15-Day Free Trial Mandate</div>
-            <p className="mt-1 text-[11px] text-slate-300">
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
+            <div className="text-xs font-bold text-amber-900">15-Day Free Trial Mandate</div>
+            <p className="mt-1 text-[11px] text-amber-800 leading-relaxed font-medium">
               Authorize your recurring mandate today. No charges will be incurred during your 15-day trial.
             </p>
           </div>
 
           <div className="mt-6 space-y-3">
             <button onClick={() => startCheckout("team", "razorpay").catch(e => alert(e.message || "Couldn't start checkout."))}
-              className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-slate-950 shadow-md shadow-amber-400/20 transition hover:bg-amber-300">
+              className="w-full rounded-xl bg-amber-400 py-3 text-xs font-bold text-slate-950 shadow-md shadow-amber-400/20 transition hover:bg-amber-300">
               Authorize via Razorpay →
             </button>
             <button onClick={() => sb.auth.signOut()}
-              className="w-full rounded-xl border border-slate-700 bg-slate-900 py-2.5 text-xs font-medium text-slate-300 hover:bg-slate-800">
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">
               Sign Out
             </button>
           </div>
@@ -2264,15 +1960,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 text-slate-900 shadow-sm backdrop-blur-md">
         {/* Tier 1: Brand & Executive Status Bar */}
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
-          <div className="flex items-center gap-4">
-            <Logo height={44} lightMode={true} onClick={() => setTab("capture")} />
-            <button 
-              onClick={() => navigate("/guide")}
-              className="hidden sm:inline-flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-slate-50 px-2.5 py-1 rounded-lg transition"
-            >
-              📖 User Guide
-            </button>
-          </div>
+          <Logo height={44} lightMode={true} onClick={() => setTab("capture")} />
 
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-1.5 shadow-xs">
