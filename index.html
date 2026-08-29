@@ -870,10 +870,15 @@ function ConfigNotice(){
   );
 }
 
-function Logo({ height = 36, onClick, className = "" }){
+function Logo({ height = 44, onClick, className = "", lightMode = false }){
   return (
-    <div onClick={onClick} className={`inline-flex items-center cursor-pointer transition hover:opacity-90 ${className}`}>
-      <img src="/logo.png" alt="FlowDirector" style={{ height: `${height}px` }} className="w-auto object-contain" />
+    <div onClick={onClick} className={`inline-flex items-center cursor-pointer transition hover:opacity-90 shrink-0 ${className}`}>
+      <img 
+        src="/logo.png" 
+        alt="FlowDirector" 
+        style={{ height: `${height}px` }} 
+        className={`w-auto object-contain shrink-0 ${lightMode ? "" : "brightness-0 invert"}`} 
+      />
     </div>
   );
 }
@@ -910,7 +915,7 @@ function LandingScreen({ onSignIn, onSignUp }){
       {/* Top Navigation Bar */}
       <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
-          <Logo height={52} onClick={() => navigate("/")} />
+          <Logo height={48} lightMode={true} onClick={() => navigate("/")} />
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
             <button onClick={() => scrollToSection("features")} className="hover:text-slate-900 transition">Features</button>
             <button onClick={() => scrollToSection("benefits")} className="hover:text-slate-900 transition">Benefits</button>
@@ -1307,7 +1312,7 @@ function LandingScreen({ onSignIn, onSignUp }){
       <footer className="w-full bg-white border-t border-slate-200 py-12 text-slate-600 text-xs">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
           <div className="space-y-2">
-            <Logo height={44} onClick={() => navigate("/")} />
+            <Logo height={44} lightMode={true} onClick={() => navigate("/")} />
             <p className="text-slate-500 max-w-sm">The executive time domination system designed for high-output business owners.</p>
           </div>
           <div className="flex flex-wrap gap-6 text-sm font-medium text-slate-700">
