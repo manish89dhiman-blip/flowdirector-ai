@@ -553,13 +553,196 @@ async function loadAllVisibleKpis(periods){
 }
 
 /* ================================================================== */
-/*  Root                                                               */
+/*  Router & Path Navigation                                           */
 /* ================================================================== */
+const navigate = (path) => {
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new Event("popstate"));
+};
+
+function usePath() {
+  const [path, setPath] = useState(window.location.pathname);
+  useEffect(() => {
+    const onPop = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  return path;
+}
+
+/* ================================================================== */
+/*  Legal & Compliance Pages (Razorpay Compliant)                      */
+/* ================================================================== */
+function LegalHeader({ title }){
+  return (
+    <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur-md">
+      <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+        <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400 font-bold text-slate-950">FD</div>
+          <span className="text-base font-bold text-white">FlowDirector</span>
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <button onClick={() => navigate("/")} className="text-slate-300 hover:text-white">Home</button>
+          <button onClick={() => navigate("/login")} className="rounded-lg bg-amber-400 px-3 py-1.5 font-semibold text-slate-950 hover:bg-amber-300">Sign In</button>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function LegalFooter(){
+  return (
+    <footer className="border-t border-slate-800 bg-slate-950 py-8 text-center text-xs text-slate-500">
+      <div className="mx-auto flex max-w-4xl flex-wrap justify-center gap-4 text-slate-400">
+        <button onClick={() => navigate("/privacy")} className="hover:underline">Privacy Policy</button>
+        <span>•</span>
+        <button onClick={() => navigate("/terms")} className="hover:underline">Terms of Service</button>
+        <span>•</span>
+        <button onClick={() => navigate("/refund")} className="hover:underline">Refund Policy</button>
+        <span>•</span>
+        <button onClick={() => navigate("/contact")} className="hover:underline">Contact Us</button>
+      </div>
+      <p className="mt-4">© 2026 FlowDirector (flowdirector.co). Operated by Capt. Manish Dhiman.</p>
+    </footer>
+  );
+}
+
+function PrivacyPage(){
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200">
+      <LegalHeader title="Privacy Policy" />
+      <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+        <h1 className="text-3xl font-extrabold text-white">Privacy Policy</h1>
+        <p className="mt-1 text-xs text-amber-400">Last updated: August 2026</p>
+
+        <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-300">
+          <section>
+            <h2 className="text-lg font-semibold text-white">1. Introduction</h2>
+            <p className="mt-2">FlowDirector ("we", "our", "us"), operated by Capt. Manish Dhiman (Sole Proprietorship), respects your privacy. This Privacy Policy outlines how we collect, use, and safeguard your information when you visit flowdirector.co or use the FlowDirector application.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">2. Information We Collect</h2>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              <li><b>Account & Profile Data:</b> Name, email address, company name, and role created during sign-up or access request.</li>
+              <li><b>Planner & Operational Data:</b> Tasks, schedule blocks, priorities, KRAs, and KPIs entered into the application.</li>
+              <li><b>Payment Information:</b> Billing data is processed securely via Razorpay or Stripe. We do not store raw credit card numbers or banking passwords on our servers.</li>
+            </ul>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">3. Data Security & Storage</h2>
+            <p className="mt-2">All data is securely stored in Supabase PostgreSQL infrastructure. Strict Row-Level Security (RLS) policies guarantee that your personal planner entries are private and inaccessible to unauthorized third parties or platform administrators.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">4. Contact Us</h2>
+            <p className="mt-2">For any privacy questions or data deletion requests, contact us at <a href="mailto:support@flowdirector.co" className="text-amber-400 underline">support@flowdirector.co</a> or <a href="mailto:manish89dhiman@gmail.com" className="text-amber-400 underline">manish89dhiman@gmail.com</a>.</p>
+          </section>
+        </div>
+      </main>
+      <LegalFooter />
+    </div>
+  );
+}
+
+function TermsPage(){
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200">
+      <LegalHeader title="Terms of Service" />
+      <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+        <h1 className="text-3xl font-extrabold text-white">Terms of Service</h1>
+        <p className="mt-1 text-xs text-amber-400">Last updated: August 2026</p>
+
+        <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-300">
+          <section>
+            <h2 className="text-lg font-semibold text-white">1. Service Provider</h2>
+            <p className="mt-2">FlowDirector is owned and operated by <b>Capt. Manish Dhiman</b> (Sole Proprietorship), based in India. By accessing or using flowdirector.co, you agree to be bound by these Terms of Service.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">2. Use of Service</h2>
+            <p className="mt-2">FlowDirector provides a time-management and team execution platform. You agree to use the service in compliance with all applicable laws and regulations.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">3. Accounts & Subscriptions</h2>
+            <p className="mt-2">Users are responsible for maintaining account credentials. Paid plan subscriptions and seat licenses are billed on a recurring basis as outlined at checkout.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">4. Governing Law</h2>
+            <p className="mt-2">These terms are governed by the laws of India. Any disputes shall be subject to the exclusive jurisdiction of the competent courts in India.</p>
+          </section>
+        </div>
+      </main>
+      <LegalFooter />
+    </div>
+  );
+}
+
+function ContactPage(){
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200">
+      <LegalHeader title="Contact Us" />
+      <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+        <h1 className="text-3xl font-extrabold text-white">Contact Us</h1>
+        <p className="mt-1 text-xs text-amber-400">We're here to help</p>
+
+        <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-900/80 p-6 space-y-4 text-sm text-slate-300">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Operating Entity</div>
+            <div className="text-base font-bold text-white mt-1">FlowDirector</div>
+            <div className="text-xs text-slate-400">Proprietor: Capt. Manish Dhiman</div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Support Email</div>
+            <div className="mt-1">
+              <a href="mailto:support@flowdirector.co" className="text-white hover:text-amber-400 font-medium">support@flowdirector.co</a>
+              <span className="text-slate-400 mx-2">/</span>
+              <a href="mailto:manish89dhiman@gmail.com" className="text-white hover:text-amber-400 font-medium">manish89dhiman@gmail.com</a>
+            </div>
+          </div>
+          <div>
+            <div className="text-xs uppercase tracking-wider text-amber-400 font-semibold">Support Hours</div>
+            <div className="mt-1 text-slate-300">Monday – Saturday: 9:00 AM – 6:00 PM IST</div>
+            <div className="text-xs text-slate-400">Response SLA: Within 24-48 business hours</div>
+          </div>
+        </div>
+      </main>
+      <LegalFooter />
+    </div>
+  );
+}
+
+function RefundPage(){
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200">
+      <LegalHeader title="Refund & Cancellation Policy" />
+      <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
+        <h1 className="text-3xl font-extrabold text-white">Refund & Cancellation Policy</h1>
+        <p className="mt-1 text-xs text-amber-400">Razorpay & Customer Protection Compliant</p>
+
+        <div className="mt-8 space-y-6 text-sm leading-relaxed text-slate-300">
+          <section>
+            <h2 className="text-lg font-semibold text-white">1. Subscription Cancellations</h2>
+            <p className="mt-2">You may cancel your FlowDirector subscription at any time from <b>Settings → Billing</b> or by emailing support@flowdirector.co. Upon cancellation, your company remains active until the end of the current billing cycle.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">2. Refund Eligibility</h2>
+            <p className="mt-2">We offer a <b>7-day money-back guarantee</b> for initial subscription plan purchases. If you are dissatisfied with FlowDirector within 7 days of payment, contact support for a full refund.</p>
+          </section>
+          <section>
+            <h2 className="text-lg font-semibold text-white">3. Processing Time</h2>
+            <p className="mt-2">Approved refunds are processed through Razorpay / payment gateway within <b>5 to 7 business days</b> back to the original payment method (bank account, credit card, or UPI).</p>
+          </section>
+        </div>
+      </main>
+      <LegalFooter />
+    </div>
+  );
+}
+
 const SOLO_KEY = "cc-solo-mode";
 const readSolo = () => { try { return localStorage.getItem(SOLO_KEY) === "1"; } catch { return false; } };
 const writeSolo = (v) => { try { v ? localStorage.setItem(SOLO_KEY,"1") : localStorage.removeItem(SOLO_KEY); } catch {} };
 
 function Root(){
+  const path = usePath();
   const [session, setSession] = useState(null);
   const [ready, setReady] = useState(false);
   const [recovery, setRecovery] = useState(false);
@@ -567,7 +750,6 @@ function Root(){
   const [orgReady, setOrgReady] = useState(false);
   const [orgError, setOrgError] = useState("");
   const [solo, setSolo] = useState(readSolo());
-  const [showAuthModal, setShowAuthModal] = useState(false);
 
   useEffect(() => {
     if (!CONFIGURED) { setReady(true); return; }
@@ -593,10 +775,17 @@ function Root(){
     return () => { cancelled = true; };
   }, [session && session.user.id]);
 
+  // --- Route Handlers -----------------------------------------------------
+  if (path === "/privacy") return <PrivacyPage />;
+  if (path === "/terms") return <TermsPage />;
+  if (path === "/contact") return <ContactPage />;
+  if (path === "/refund" || path === "/refund-policy") return <RefundPage />;
+  if (path === "/login" || path === "/signin") return <AuthScreen onBack={() => navigate("/")} />;
+
   if (!CONFIGURED) return <ConfigNotice />;
   if (!ready) return <FullScreen>Starting up…</FullScreen>;
   if (recovery) return <ResetPasswordScreen onDone={()=>setRecovery(false)} />;
-  if (!session) return showAuthModal ? <AuthScreen onBack={()=>setShowAuthModal(false)} /> : <LandingScreen onSignIn={()=>setShowAuthModal(true)} />;
+  if (!session) return <LandingScreen onSignIn={() => navigate("/login")} />;
   if (!orgReady) return <FullScreen>Loading your workspace…</FullScreen>;
 
   const joined = (ctx) => { setOrgCtx(ctx); setSolo(false); writeSolo(false); };
