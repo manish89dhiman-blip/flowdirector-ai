@@ -842,19 +842,6 @@ function ConfigNotice(){
 }
 
 /* ================================================================== */
-/*  Landing Page & Access Request                                      */
-/* ================================================================== */
-function LandingScreen({ onSignIn }){
-  const [reqName, setReqName] = useState("");
-  const [reqEmail, setReqEmail] = useState("");
-  const [reqCompany, setReqCompany] = useState("");
-  const [reqSize, setReqSize] = useState("1-10");
-  const [reqNotes, setReqNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [errMsg, setErrMsg] = useState("");
-
-/* ================================================================== */
 /*  Landing Page & Trial Sign-Up                                       */
 /* ================================================================== */
 function LandingScreen({ onSignIn, onSignUp }){
