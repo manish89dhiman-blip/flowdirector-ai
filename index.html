@@ -144,13 +144,22 @@ async function loadOrgContext(userId, email){
   const { data: invites } = await sb
     .from("invites").select("*").is("accepted_at", null);
   const mine = (invites||[]).filter(i => (i.email||"").toLowerCase() === (email||"").toLowerCase());
-  let withOrgNames = [];
   if (mine.length) {
     const { data: orgs } = await sb
       .from("organizations").select("id,name").in("id", mine.map(i=>i.org_id));
-    withOrgNames = mine.map(i => ({ ...i, orgName:(orgs||[]).find(o=>o.id===i.org_id)?.name || "a company" }));
+    const withOrgNames = mine.map(i => ({ ...i, orgName:(orgs||[]).find(o=>o.id===i.org_id)?.name || "a company" }));
+    return { membership:null, org:null, pendingInvites:withOrgNames };
   }
-  return { membership:null, org:null, pendingInvites:withOrgNames };
+
+  // No membership and no pending invites — auto-create default workspace
+  try {
+    const namePart = (email || "My").split("@")[0];
+    const cleanName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
+    const { org, membership } = await createOrg(`${cleanName}'s Workspace`, userId);
+    return { membership, org, pendingInvites:[] };
+  } catch (err) {
+    return { membership:null, org:null, pendingInvites:[] };
+  }
 }
 
 async function createOrg(name, userId){
