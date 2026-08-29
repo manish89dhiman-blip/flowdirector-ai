@@ -506,10 +506,29 @@ async function adminDeleteCompany(orgId) {
   const { error: rpcErr } = await sb.rpc("admin_delete_company", { target_org_id: orgId });
   if (!rpcErr) return;
 
+  // 1. Try deleting organization directly first
+  const { error: directErr } = await sb.from("organizations").delete().eq("id", orgId);
+  if (!directErr) {
+    try { await sb.from("invites").delete().eq("org_id", orgId); } catch (_) {}
+    try { await sb.from("subscriptions").delete().eq("org_id", orgId); } catch (_) {}
+    try { await sb.from("plan_requests").delete().eq("org_id", orgId); } catch (_) {}
+    try { await sb.from("memberships").delete().eq("org_id", orgId); } catch (_) {}
+    return;
+  }
+
+  // 2. Cascade delete non-memberships child records first
   try { await sb.from("invites").delete().eq("org_id", orgId); } catch (_) {}
-  try { await sb.from("memberships").delete().eq("org_id", orgId); } catch (_) {}
   try { await sb.from("subscriptions").delete().eq("org_id", orgId); } catch (_) {}
   try { await sb.from("plan_requests").delete().eq("org_id", orgId); } catch (_) {}
+  
+  // 3. Delete organization again or memberships
+  const { error: retryOrgErr } = await sb.from("organizations").delete().eq("id", orgId);
+  if (!retryOrgErr) {
+    try { await sb.from("memberships").delete().eq("org_id", orgId); } catch (_) {}
+    return;
+  }
+
+  try { await sb.from("memberships").delete().eq("org_id", orgId); } catch (_) {}
   const { error } = await sb.from("organizations").delete().eq("id", orgId);
   if (error) throw error;
 }
