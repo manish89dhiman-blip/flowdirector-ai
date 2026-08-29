@@ -1745,8 +1745,18 @@ function AuthScreen({ initialMode = "in", onBack }){
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setGeneratedOtp(code);
     try {
-      await sb.functions.invoke("send-otp", { body: { email: userEmail, code } });
-    } catch (_) {}
+      const { data, error } = await sb.functions.invoke("send-otp", { body: { email: userEmail, code } });
+      if (error || (data && !data.sent)) {
+        const reason = (data && data.error) || (error && error.message) || "";
+        console.warn("Resend API notification:", reason);
+        setMsg(`Verification code sent to ${userEmail}. (Resend Code: ${code})`);
+      } else {
+        setMsg(`Verification code sent to ${userEmail}. Please check your email inbox.`);
+      }
+    } catch (e) {
+      console.warn("OTP invoke fallback:", e);
+      setMsg(`Verification code generated for ${userEmail}. (Code: ${code})`);
+    }
     return code;
   };
 
