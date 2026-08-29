@@ -890,8 +890,8 @@ function LandingScreen({ onSignIn, onSignUp }){
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-amber-400 selection:text-slate-900">
       {/* Header / Nav */}
       <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#121a25] backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
-          <Logo height={40} onClick={() => navigate("/")} />
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
+          <Logo height={52} onClick={() => navigate("/")} />
           <div className="flex items-center gap-4 text-xs font-medium text-slate-300">
             <button onClick={scrollToPricing} className="hidden hover:text-white sm:block">Pricing</button>
             <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hidden hover:text-white sm:block">Privacy</a>
@@ -1383,8 +1383,8 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-amber-400">
       <header className="sticky top-0 z-20 border-b border-slate-800 bg-[#121a25] text-white shadow-md">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-          <Logo height={38} onClick={() => setTab("capture")} />
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <Logo height={48} onClick={() => setTab("capture")} />
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-1.5">
               <span className="mono text-xs uppercase tracking-wider text-slate-400 font-medium">Hour Value</span>
