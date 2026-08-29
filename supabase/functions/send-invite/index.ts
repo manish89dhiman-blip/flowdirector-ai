@@ -125,10 +125,10 @@ Deno.serve(async (req) => {
         <p style="font-size:15px">Hello,</p>
         <p style="font-size:15px">
           <b>${esc(fromName)}</b> has invited you to join <b>${esc(orgName)}</b>
-          on Command Center as ${esc(roleWord)}.
+          on FlowDirector as ${esc(roleWord)}.
         </p>
         <p style="font-size:15px">
-          Command Center is a planning tool for running your day, your week and your month.
+          FlowDirector is a planning tool for running your day, your week and your month.
           You keep your own plan — your manager can see it, but only you can change it.
         </p>
         <p style="margin:28px 0">
@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from,
         to: [invite.email],
-        subject: `${fromName} invited you to ${orgName} on Command Center`,
+        subject: `${fromName} invited you to ${orgName} on FlowDirector`,
         html,
       }),
     });

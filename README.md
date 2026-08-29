@@ -1,4 +1,4 @@
-# Command Center
+# FlowDirector
 
 A Time Domination planner — Capture, Daily, Weekly, Monthly, Maybe, Reference — with Supabase
 login so it opens on any device. Use it solo, or set up a company so owners and managers can

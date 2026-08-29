@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Command Center · Time Domination</title>
+<title>FlowDirector · Time Domination</title>
 <link rel="manifest" href="/manifest.webmanifest" />
 <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 <link rel="apple-touch-icon" href="/icon.svg" />
@@ -674,7 +674,7 @@ function AuthScreen(){
     <div className="flex min-h-screen items-center justify-center bg-slate-900 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-6 text-white shadow-xl">
         <div className="mono text-xs uppercase tracking-widest text-amber-400">Vyas · Time Domination</div>
-        <h1 className="mt-1 text-xl font-semibold">Command Center</h1>
+        <h1 className="mt-1 text-xl font-semibold">FlowDirector</h1>
         <p className="mt-1 text-sm text-slate-400">
           {mode==="in" && "Sign in to your planner."}
           {mode==="up" && "Create your account."}
@@ -905,7 +905,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div>
             <span className="mono text-xs uppercase tracking-widest text-amber-400">Vyas · Time Domination</span>
-            <h1 className="text-lg font-semibold leading-tight">Command Center</h1>
+            <h1 className="text-lg font-semibold leading-tight">FlowDirector</h1>
             {orgCtx && orgCtx.org &&
               <div className="mt-0.5 flex items-center gap-1.5">
                 <span className="text-xs text-slate-300">{orgCtx.org.name}</span>
@@ -3430,7 +3430,7 @@ function CompanySection({ orgCtx, orgError, userId, onLeftOrg, onStartCompany })
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <h3 className="mb-3 font-semibold text-slate-700">Company</h3>
         <p className="mb-3 text-xs text-slate-400">
-          You're using Command Center solo. Create a company to invite your team and see everyone's plan in one place —
+          You're using FlowDirector solo. Create a company to invite your team and see everyone's plan in one place —
           or accept a pending invite if someone has already invited you.
         </p>
         <button onClick={onStartCompany}
