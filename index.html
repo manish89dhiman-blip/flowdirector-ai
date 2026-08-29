@@ -797,7 +797,12 @@ function AdminPortalDesk({ session, onBack }){
       setIsAdmin(false);
       return;
     }
-    amPlatformAdmin(userId).then(res => setIsAdmin(res));
+    amPlatformAdmin(userId).then(res => {
+      setIsAdmin(res);
+      if (res === false) {
+        setMsg("Access Denied: Your account is not registered as a platform admin.");
+      }
+    });
   }, [userId]);
 
   const handleAdminSignIn = async () => {
