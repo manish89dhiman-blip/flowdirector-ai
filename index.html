@@ -11,7 +11,7 @@
 <meta name="theme-color" content="#121a25" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -882,166 +882,445 @@ function Logo({ height = 36, onClick, className = "" }){
 /*  Landing Page & Trial Sign-Up                                       */
 /* ================================================================== */
 function LandingScreen({ onSignIn, onSignUp }){
-  const scrollToPricing = () => {
-    const el = document.getElementById("pricing-section");
+  const [openFaq, setOpenFaq] = React.useState(null);
+  const [contactSent, setContactSent] = React.useState(false);
+  const [contactForm, setContactForm] = React.useState({ name: "", email: "", message: "" });
+
+  const scrollToSection = (id) => {
+    const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: "smooth" });
   };
 
+  const handleContactSubmit = (e) => {
+    e.preventDefault();
+    setContactSent(true);
+    setTimeout(() => setContactSent(false), 5000);
+    setContactForm({ name: "", email: "", message: "" });
+  };
+
+  const faqs = [
+    { q: 'What is "Time Domination"?', a: 'It is a management philosophy of shifting from reactive firefighting to proactive ownership by ruthlessly calculating your Owner Hour Value and delegating or eliminating low-impact tasks.' },
+    { q: 'How does delegation tracking work?', a: 'FlowDirector calculates your hourly worth threshold (e.g. ₹2,500/hr) and automatically flags any task falling below that rate as a candidate for delegation or elimination.' },
+    { q: 'Is my data secure?', a: 'Yes. We use enterprise-grade encryption via Supabase and SSL. Your strategic notes, financial goals, and team metrics remain completely private.' },
+    { q: 'How does the 15-day free trial work?', a: 'You get 15 days of unlimited executive access to all modules — Daily Cockpit, Weekly Theme Grid, Team Dashboards, and KRAs — with zero credit card required to start.' }
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-amber-400 selection:text-slate-900">
-      {/* Header / Nav */}
-      <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#121a25] backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-2 sm:px-6">
-          <Logo height={72} onClick={() => navigate("/")} />
-          <div className="flex items-center gap-4 text-xs font-medium text-slate-300">
-            <button onClick={scrollToPricing} className="hidden hover:text-white sm:block">Pricing</button>
-            <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hidden hover:text-white sm:block">Privacy</a>
-            <a href="/terms" onClick={(e)=>{e.preventDefault();navigate("/terms");}} className="hidden hover:text-white sm:block">Terms</a>
-            <a href="/refund" onClick={(e)=>{e.preventDefault();navigate("/refund");}} className="hidden hover:text-white sm:block">Refunds</a>
-            <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="hidden hover:text-white sm:block">Contact</a>
-            <button onClick={onSignUp} className="rounded-lg bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 transition hover:bg-amber-300 shadow-md shadow-amber-400/10">
-              Start 15-Day Free Trial
-            </button>
-            <button onClick={onSignIn} className="rounded-lg border border-slate-700 bg-slate-900 px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 hover:text-white">
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 selection:bg-amber-400 selection:text-slate-950 font-sans antialiased">
+      {/* Top Navigation Bar */}
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+          <Logo height={52} onClick={() => navigate("/")} />
+          <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+            <button onClick={() => scrollToSection("features")} className="hover:text-slate-900 transition">Features</button>
+            <button onClick={() => scrollToSection("benefits")} className="hover:text-slate-900 transition">Benefits</button>
+            <button onClick={() => scrollToSection("how-it-works")} className="hover:text-slate-900 transition">How It Works</button>
+            <button onClick={() => scrollToSection("pricing-section")} className="hover:text-slate-900 transition">Pricing</button>
+            <button onClick={() => scrollToSection("faq-section")} className="hover:text-slate-900 transition">FAQ</button>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={onSignIn} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs">
               Sign In
+            </button>
+            <button onClick={onSignUp} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md shadow-slate-950/10">
+              Start Free Trial
             </button>
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden px-4 pt-16 pb-20 sm:px-6 sm:pt-24 sm:pb-28">
-        <div className="absolute top-1/4 left-1/2 -z-10 h-96 w-96 -translate-x-1/2 rounded-full bg-amber-500/10 blur-3xl"></div>
-        <div className="mx-auto max-w-4xl text-center">
-          <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-400/10 px-3.5 py-1 text-xs font-medium text-amber-300 backdrop-blur-sm">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-            15-Day Free Trial • No Credit Card Required
+      {/* Main Content */}
+      <main>
+        {/* Hero Section */}
+        <section className="relative overflow-hidden border-b border-slate-200/80 bg-gradient-to-b from-white via-slate-50/50 to-[#fbf9fa] px-4 py-16 sm:py-28">
+          <div className="absolute top-1/4 left-1/2 -z-10 h-[400px] w-[600px] -translate-x-1/2 rounded-full bg-blue-500/5 blur-3xl"></div>
+          <div className="mx-auto max-w-4xl text-center">
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-100 px-4 py-1 text-xs font-semibold text-slate-800 shadow-xs mb-6">
+              <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
+              SYSTEM 2.0 LIVE • TIME DOMINATION MASTERY
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight text-slate-950 sm:text-6xl lg:text-7xl leading-tight">
+              Dominate Your Time,<br />
+              <span className="text-blue-600">Multiply Your Value</span>
+            </h1>
+            <p className="mx-auto mt-6 max-w-2xl text-base text-slate-600 sm:text-xl leading-relaxed">
+              The only productivity system engineered specifically for business owners who need to delegate ruthlessly and focus exclusively on high-leverage growth.
+            </p>
+            <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+              <button onClick={onSignUp} className="w-full sm:w-auto rounded-xl bg-slate-950 px-8 py-4 text-sm font-bold text-white shadow-xl shadow-slate-950/20 hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
+                Start Your Mastery Trial
+                <span className="material-symbols-outlined text-lg">arrow_forward</span>
+              </button>
+              <button onClick={() => scrollToSection("features")} className="w-full sm:w-auto rounded-xl border border-slate-300 bg-white px-8 py-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition shadow-xs">
+                View Methodology
+              </button>
+            </div>
           </div>
-          <h1 className="mt-6 text-4xl font-extrabold tracking-tight text-white sm:text-6xl sm:leading-none">
-            Master Your Time.<br />
-            <span className="bg-gradient-to-r from-amber-200 via-amber-400 to-amber-500 bg-clip-text text-transparent">
-              Direct Your Team.
-            </span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-base text-slate-300 sm:text-lg leading-relaxed">
-            FlowDirector is the executive time command system — unifying task capture, manual routing, time blocking, and team visibility into a single high-performance cockpit.
-          </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-4 sm:flex-row">
-            <button onClick={onSignUp} className="w-full rounded-xl bg-amber-400 px-7 py-3.5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-400/20 transition hover:bg-amber-300 sm:w-auto">
-              Start 15-Day Free Trial →
-            </button>
-            <button onClick={onSignIn} className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-7 py-3.5 text-sm font-semibold text-slate-200 transition hover:bg-slate-800 hover:text-white sm:w-auto">
-              Sign In to Workspace
-            </button>
-          </div>
-        </div>
-      </section>
+        </section>
 
-      {/* Feature Cards Grid */}
-      <section className="border-t border-slate-800/60 bg-slate-900/40 py-16 sm:py-24">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">Built For High-Output Leaders</h2>
-            <p className="mt-2 text-sm text-slate-400">Zero distraction. Maximum alignment and execution.</p>
-          </div>
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">📥</div>
-              <h3 className="font-semibold text-white">Capture & Route</h3>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">Brain-dump tasks instantly without cognitive load. Route manually by schedule, daily, weekly, or monthly.</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">☀️</div>
-              <h3 className="font-semibold text-white">Daily Cockpit</h3>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">Lock 3 priority outcomes, schedule hourly blocks, track routine checklists, and perform evening closure.</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">📊</div>
-              <h3 className="font-semibold text-white">Team Alignment</h3>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">Owners & managers get read-only visibility into team planners, completion rates, and overdue items.</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-6 shadow-sm">
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-lg text-amber-400">🎯</div>
-              <h3 className="font-semibold text-white">Goals & KPIs</h3>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">Assign KRAs and track monthly or quarterly KPIs with instant green/amber/red status indicators.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Pricing & 15-Day Trial Section */}
-      <section id="pricing-section" className="scroll-mt-20 border-t border-slate-800/60 py-16 sm:py-24">
-        <div className="mx-auto max-w-5xl px-4 sm:px-6">
-          <div className="text-center">
-            <div className="mono text-xs uppercase tracking-widest text-amber-400">Transparent Pricing</div>
-            <h2 className="mt-2 text-3xl font-extrabold text-white">Start Your 15-Day Free Trial</h2>
-            <p className="mt-2 text-sm text-slate-400">All new accounts receive 15 days of full unlimited access. No free plan after trial.</p>
-          </div>
-
-          <div className="mt-12 grid gap-8 md:grid-cols-2">
-            {/* Trial Card */}
-            <div className="rounded-3xl border border-amber-400/40 bg-slate-900 p-8 shadow-xl relative">
-              <div className="absolute -top-3.5 right-6 rounded-full bg-amber-400 px-3 py-0.5 text-[11px] font-bold text-slate-950 uppercase tracking-wide">
-                No Credit Card Needed
+        {/* Feature 1: Owner Hour Value */}
+        <section id="features" className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            <div className="space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+                ⭐ CORE METHODOLOGY
               </div>
-              <h3 className="text-xl font-bold text-white">15-Day Free Trial</h3>
-              <p className="mt-1 text-xs text-slate-400">Complete access to all FlowDirector modules.</p>
-              <div className="mt-6 flex items-baseline">
-                <span className="text-4xl font-extrabold text-white">₹0</span>
-                <span className="ml-2 text-sm text-slate-400">/ 15 days</span>
-              </div>
-              <ul className="mt-6 space-y-3 text-xs text-slate-300">
-                <li className="flex items-center gap-2">✓ Full Daily Cockpit & Hourly Block Scheduling</li>
-                <li className="flex items-center gap-2">✓ Team Visibility & Owner Dashboards</li>
-                <li className="flex items-center gap-2">✓ KRA & KPI Performance Attainment</li>
-                <li className="flex items-center gap-2">✓ Unlimited Task Capture & Routing</li>
+              <h2 className="text-3xl font-extrabold text-slate-950 sm:text-4xl">The Owner Hour Value</h2>
+              <p className="text-base text-slate-600 leading-relaxed">
+                Stop managing your time like an employee. Calculate your true hourly worth and aggressively delegate or eliminate any task that falls below that threshold. FlowDirector visually flags high-value "Owner Hour" tasks in gold.
+              </p>
+              <ul className="space-y-3 pt-2 text-sm font-medium text-slate-800">
+                <li className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-amber-600 font-bold">check_circle</span>
+                  <span>Automated value threshold calculation</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-amber-600 font-bold">check_circle</span>
+                  <span>Visual task hierarchy highlighting high-value items</span>
+                </li>
               </ul>
-              <button onClick={onSignUp} className="mt-8 w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-slate-950 shadow-md shadow-amber-400/20 transition hover:bg-amber-300">
-                Start 15-Day Free Trial
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-400/10 blur-2xl rounded-full"></div>
+              <div className="space-y-4 relative z-10">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">Task Evaluation</span>
+                  <span className="text-xs font-bold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-200">High Impact</span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Strategic Q4 Planning & Board Review</h3>
+                <div className="flex items-center gap-2 text-sm text-slate-600">
+                  <span className="material-symbols-outlined text-amber-600 text-base">monetization_on</span>
+                  <span className="font-semibold">Est. Value: ₹5,000 / hr</span>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs">
+                  <p className="text-amber-900 font-medium">Recommendation: <span className="font-bold text-amber-700">Execute Personally (Owner Hour Task)</span></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Feature 2: Capture Inbox */}
+        <section className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            <div className="order-2 lg:order-1 bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xl shadow-slate-200/50 relative overflow-hidden">
+              <div className="space-y-3 relative z-10">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-3 mb-4">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">Quick Capture Inbox</span>
+                  <span className="material-symbols-outlined text-blue-600 text-sm">bolt</span>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center gap-3 shadow-xs">
+                  <div className="w-4 h-4 rounded-full border-2 border-slate-400"></div>
+                  <span className="text-sm font-semibold text-slate-800">Review new executive hires for Q4</span>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center gap-3 shadow-xs opacity-80">
+                  <div className="w-4 h-4 rounded-full border-2 border-slate-400"></div>
+                  <span className="text-sm font-semibold text-slate-800">Call legal advisor regarding IP trademark</span>
+                </div>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center gap-3 shadow-xs opacity-60">
+                  <div className="w-4 h-4 rounded-full border-2 border-slate-400"></div>
+                  <span className="text-sm font-semibold text-slate-800">Approve quarterly tax filing documentation</span>
+                </div>
+              </div>
+            </div>
+            <div className="order-1 lg:order-2 space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-blue-300 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-800">
+                ⚡ ZERO FRICTION
+              </div>
+              <h2 className="text-3xl font-extrabold text-slate-950 sm:text-4xl">The Capture Inbox</h2>
+              <p className="text-base text-slate-600 leading-relaxed">
+                Achieve instant mental clarity with zero-friction task dumping. Your brain is for having ideas, not holding them. Dump every thought into a clean inbox so your mind can focus 100% on execution.
+              </p>
+              <ul className="space-y-3 pt-2 text-sm font-medium text-slate-800">
+                <li className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-blue-600 font-bold">check_circle</span>
+                  <span>Instant thought capture without cognitive overhead</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-blue-600 font-bold">check_circle</span>
+                  <span>Manual or automatic task routing into daily & weekly views</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* Feature 3: Daily Planning Mastery */}
+        <section className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            <div className="space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800">
+                🎯 DAILY FOCUS
+              </div>
+              <h2 className="text-3xl font-extrabold text-slate-950 sm:text-4xl">Daily Planning Mastery</h2>
+              <p className="text-base text-slate-600 leading-relaxed">
+                Stop drowning in endless to-do lists. Lock in your "One Main Outcome" and Top 3 Priorities each day. Track progress with the "Intention vs. Reality" timeline and perform evening closure.
+              </p>
+              <ul className="space-y-3 pt-2 text-sm font-medium text-slate-800">
+                <li className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-emerald-600 font-bold">check_circle</span>
+                  <span>One Main Outcome priority focus</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="material-symbols-outlined text-emerald-600 font-bold">check_circle</span>
+                  <span>Intention vs. Reality hourly block tracking</span>
+                </li>
+              </ul>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xl shadow-slate-200/50">
+              <div className="space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-400">Today's Cockpit</span>
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full border border-emerald-200">In Progress</span>
+                </div>
+                <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-4 shadow-xs">
+                  <span className="text-xs font-mono font-bold text-amber-800 uppercase block mb-1">One Main Outcome</span>
+                  <p className="text-base font-bold text-slate-900">Finalize Series A Investor Pitch Deck</p>
+                </div>
+                <div className="space-y-2">
+                  <span className="text-xs font-mono font-bold text-slate-400 uppercase block">Top 3 Priorities</span>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex items-center gap-3">
+                    <span className="material-symbols-outlined text-amber-600 text-sm font-bold">check_box</span>
+                    <span className="text-xs text-slate-500 line-through">Review financial model projections</span>
+                  </div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex items-center gap-3">
+                    <span className="material-symbols-outlined text-slate-400 text-sm">check_box_outline_blank</span>
+                    <span className="text-xs font-semibold text-slate-800">Draft slide narrative & traction metrics</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Feature 4: Benefits Grid */}
+        <section id="benefits" className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h2 className="text-3xl font-extrabold text-slate-950 sm:text-5xl">Shift from Manager to Owner</h2>
+            <p className="mt-4 text-base text-slate-600">The tools to elevate your role and scale your impact.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4 shadow-sm hover:shadow-md transition">
+              <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto text-amber-700">
+                <span className="material-symbols-outlined text-3xl">cut</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-950">Ruthless Delegation</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Our system flags tasks falling below your hourly value threshold, making it glaringly obvious what you need to hand off or eliminate.
+              </p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4 shadow-sm hover:shadow-md transition">
+              <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto text-blue-700">
+                <span className="material-symbols-outlined text-3xl">psychology</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-950">Mental Clarity</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Transition from an overwhelmed manager fighting daily fires to a strategic owner directing growth with a clear mind.
+              </p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-4 shadow-sm hover:shadow-md transition">
+              <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto text-emerald-700">
+                <span className="material-symbols-outlined text-3xl">trending_up</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-950">Systematized Growth</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">
+                You can only scale your business as much as you scale your focus. Build structural discipline for long-term expansion.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* How It Works Section */}
+        <section id="how-it-works" className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <h2 className="text-3xl font-extrabold text-slate-950 sm:text-4xl">How It Works</h2>
+            <p className="mt-3 text-base text-slate-600">A simple, relentless 3-step process for time mastery.</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center relative shadow-sm">
+              <div className="w-12 h-12 bg-slate-900 text-white font-bold text-lg rounded-full flex items-center justify-center mx-auto mb-6">1</div>
+              <h3 className="text-lg font-bold text-slate-950 mb-2">Capture</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">Dump every thought and obligation into the clean inbox to clear your mental RAM instantly.</p>
+            </div>
+            <div className="bg-white border-2 border-blue-500 rounded-2xl p-8 text-center relative shadow-md">
+              <div className="w-12 h-12 bg-blue-600 text-white font-bold text-lg rounded-full flex items-center justify-center mx-auto mb-6">2</div>
+              <h3 className="text-lg font-bold text-slate-950 mb-2">Plan</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">Define your One Main Outcome and map tasks to themed days, protecting non-negotiable time.</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center relative shadow-sm">
+              <div className="w-12 h-12 bg-slate-900 text-white font-bold text-lg rounded-full flex items-center justify-center mx-auto mb-6">3</div>
+              <h3 className="text-lg font-bold text-slate-950 mb-2">Dominate</h3>
+              <p className="text-sm text-slate-600 leading-relaxed">Execute ruthlessly on high-value "Owner Hour" tasks while delegating the rest to your team.</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Pricing Section */}
+        <section id="pricing-section" className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <div className="text-xs font-mono font-bold uppercase tracking-wider text-amber-600">Transparent Pricing</div>
+            <h2 className="mt-2 text-3xl font-extrabold text-slate-950 sm:text-5xl">Start Your 15-Day Free Trial</h2>
+            <p className="mt-3 text-base text-slate-600">All new accounts receive 15 days of full unlimited access. No credit card needed.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Solo Trial */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-8 flex flex-col shadow-sm">
+              <div className="mb-6">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">15-Day Trial</span>
+                <h3 className="text-2xl font-bold text-slate-950 mt-1">Full Executive Trial</h3>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-4xl font-extrabold text-slate-950">₹0</span>
+                  <span className="text-sm font-medium text-slate-500">/ 15 days</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">Full access for individual founders & executives.</p>
+              </div>
+              <ul className="space-y-3 mb-8 text-xs text-slate-700 flex-grow">
+                <li className="flex items-center gap-2 font-medium">✓ Full Daily Cockpit & Time Blocking</li>
+                <li className="flex items-center gap-2 font-medium">✓ Owner Hour Value Calculator</li>
+                <li className="flex items-center gap-2 font-medium">✓ Capture Inbox & Routines</li>
+                <li className="flex items-center gap-2 font-medium">✓ Zero Credit Card Required</li>
+              </ul>
+              <button onClick={onSignUp} className="w-full py-3.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition shadow-sm">
+                Start Free Trial
               </button>
             </div>
 
-            {/* Team Plan Card */}
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
-              <div className="text-xs font-semibold uppercase tracking-wider text-amber-400">Pro & Team</div>
-              <h3 className="mt-1 text-xl font-bold text-white">Executive Team Plan</h3>
-              <p className="mt-1 text-xs text-slate-400">Billed monthly per seat after your 15-day trial.</p>
-              <div className="mt-6 flex items-baseline">
-                <span className="text-4xl font-extrabold text-white">₹399</span>
-                <span className="ml-2 text-sm text-slate-400">/ seat / month</span>
+            {/* Team Plan */}
+            <div className="bg-white border-2 border-amber-400 rounded-3xl p-8 flex flex-col relative shadow-xl">
+              <div className="absolute -top-3.5 right-6 bg-amber-400 text-slate-950 px-3 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wide">
+                RECOMMENDED
               </div>
-              <ul className="mt-6 space-y-3 text-xs text-slate-300">
-                <li className="flex items-center gap-2">✓ Everything in 15-Day Free Trial</li>
-                <li className="flex items-center gap-2">✓ Razorpay Indian Cards, UPI, Netbanking</li>
-                <li className="flex items-center gap-2">✓ Automated Seat Adjustments & Invoicing</li>
-                <li className="flex items-center gap-2">✓ Dedicated Priority Support</li>
+              <div className="mb-6">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-700">Per-Seat Billing</span>
+                <h3 className="text-2xl font-bold text-slate-950 mt-1">Company Addon Plan</h3>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-4xl font-extrabold text-slate-950">₹2,999</span>
+                  <span className="text-sm font-medium text-slate-500">/ mo (includes 10 seats)</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">Add extra seats anytime for ₹399 / extra seat / month.</p>
+              </div>
+              <ul className="space-y-3 mb-8 text-xs text-slate-700 flex-grow">
+                <li className="flex items-center gap-2 font-medium">✓ Includes 10 Team Seats out of the box</li>
+                <li className="flex items-center gap-2 font-medium">✓ Immediate Prorated Seat Addon Billing</li>
+                <li className="flex items-center gap-2 font-medium">✓ Team Dashboard & Goal KPI Tracking</li>
+                <li className="flex items-center gap-2 font-medium">✓ Razorpay UPI, Cards & Netbanking</li>
               </ul>
-              <button onClick={onSignUp} className="mt-8 w-full rounded-xl border border-slate-700 bg-slate-800 py-3 text-sm font-bold text-white transition hover:bg-slate-700">
+              <button onClick={onSignUp} className="w-full py-3.5 rounded-xl bg-amber-400 text-slate-950 font-bold hover:bg-amber-300 transition shadow-md shadow-amber-400/20">
                 Start Trial & Upgrade
               </button>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        {/* FAQ Section */}
+        <section id="faq-section" className="py-20 px-4 sm:px-6 max-w-4xl mx-auto border-b border-slate-200/80">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-extrabold text-slate-950 sm:text-4xl">Frequently Asked Questions</h2>
+          </div>
+          <div className="space-y-4">
+            {faqs.map((faq, idx) => {
+              const isOpen = openFaq === idx;
+              return (
+                <div key={idx} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs transition cursor-pointer" onClick={() => setOpenFaq(isOpen ? null : idx)}>
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-base font-bold text-slate-950">{faq.q}</h4>
+                    <span className="material-symbols-outlined text-slate-400">{isOpen ? "expand_less" : "expand_more"}</span>
+                  </div>
+                  {isOpen && <p className="mt-3 text-sm text-slate-600 leading-relaxed pt-2 border-t border-slate-100">{faq.a}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Contact Support Section */}
+        <section id="contact-section" className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+            <div>
+              <h2 className="text-3xl font-extrabold text-slate-950 mb-4">Need Executive Support?</h2>
+              <p className="text-base text-slate-600 leading-relaxed mb-8">
+                Our productivity team is here to assist you with onboarding, team setup, or custom enterprise requirements. Reach out anytime.
+              </p>
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <span className="material-symbols-outlined text-blue-600 bg-blue-50 p-3 rounded-full">mail</span>
+                  <div>
+                    <span className="text-xs text-slate-400 font-mono uppercase block">Direct Support</span>
+                    <a href="mailto:hello@flowdirector.co" className="text-base font-bold text-slate-900 hover:text-blue-600 transition">hello@flowdirector.co</a>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="material-symbols-outlined text-blue-600 bg-blue-50 p-3 rounded-full">help</span>
+                  <div>
+                    <span className="text-xs text-slate-400 font-mono uppercase block">Help Center</span>
+                    <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="text-base font-bold text-slate-900 hover:text-blue-600 transition">Visit Documentation</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-xl">
+              {contactSent ? (
+                <div className="text-center py-12 space-y-3">
+                  <span className="material-symbols-outlined text-emerald-600 text-5xl">check_circle</span>
+                  <h3 className="text-xl font-bold text-slate-900">Message Received!</h3>
+                  <p className="text-sm text-slate-600">Our team will respond to your email shortly.</p>
+                </div>
+              ) : (
+                <form onSubmit={handleContactSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-mono uppercase text-slate-500 mb-1">Your Name</label>
+                    <input required type="text" value={contactForm.name} onChange={(e)=>setContactForm({...contactForm, name: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" placeholder="Manish Dhiman" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-mono uppercase text-slate-500 mb-1">Email Address</label>
+                    <input required type="email" value={contactForm.email} onChange={(e)=>setContactForm({...contactForm, email: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" placeholder="manish@example.com" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-mono uppercase text-slate-500 mb-1">Message</label>
+                    <textarea required rows={4} value={contactForm.message} onChange={(e)=>setContactForm({...contactForm, message: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition resize-none" placeholder="How can we help your team dominate time?"></textarea>
+                  </div>
+                  <button type="submit" className="w-full py-3.5 bg-slate-950 text-white font-bold rounded-xl hover:bg-slate-800 transition shadow-md">
+                    Send Support Message
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Final CTA Banner */}
+        <section className="py-24 px-4 sm:px-6 max-w-4xl mx-auto text-center">
+          <h2 className="text-4xl font-extrabold text-slate-950 sm:text-5xl tracking-tight">Reclaim Your Time Today</h2>
+          <p className="mt-4 text-base text-slate-600 max-w-xl mx-auto">
+            Join the elite group of business owners who have transformed their relationship with time.
+          </p>
+          <div className="mt-8">
+            <button onClick={onSignUp} className="rounded-xl bg-slate-950 px-8 py-4 text-sm font-bold text-white shadow-xl shadow-slate-950/20 hover:bg-slate-800 transition inline-flex items-center gap-2">
+              Start Mastery Free Trial 🚀
+            </button>
+          </div>
+        </section>
+      </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950 py-10 text-center text-xs text-slate-500">
-        <div className="mx-auto mb-4 flex max-w-4xl flex-wrap justify-center gap-6 text-sm text-slate-300">
-          <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hover:text-amber-400 font-medium transition">Privacy Policy</a>
-          <span>•</span>
-          <a href="/terms" onClick={(e)=>{e.preventDefault();navigate("/terms");}} className="hover:text-amber-400 font-medium transition">Terms of Service</a>
-          <span>•</span>
-          <a href="/refund" onClick={(e)=>{e.preventDefault();navigate("/refund");}} className="hover:text-amber-400 font-medium transition">Refund & Cancellation Policy</a>
-          <span>•</span>
-          <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="hover:text-amber-400 font-medium transition">Contact Us</a>
+      <footer className="w-full bg-white border-t border-slate-200 py-12 text-slate-600 text-xs">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
+          <div className="space-y-2">
+            <Logo height={44} onClick={() => navigate("/")} />
+            <p className="text-slate-500 max-w-sm">The executive time domination system designed for high-output business owners.</p>
+          </div>
+          <div className="flex flex-wrap gap-6 text-sm font-medium text-slate-700">
+            <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hover:text-blue-600 transition">Privacy Policy</a>
+            <a href="/terms" onClick={(e)=>{e.preventDefault();navigate("/terms");}} className="hover:text-blue-600 transition">Terms of Service</a>
+            <a href="/refund" onClick={(e)=>{e.preventDefault();navigate("/refund");}} className="hover:text-blue-600 transition">Refund Policy</a>
+            <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="hover:text-blue-600 transition">Contact Us</a>
+          </div>
         </div>
-        <p>© 2026 FlowDirector (<a href="https://flowdirector.co" target="_blank" rel="noreferrer" className="underline hover:text-slate-300">flowdirector.co</a>). Operated by Manish Dhiman.</p>
-        <p className="mt-2 text-slate-400">
-          Already have an account?{" "}
-          <button onClick={onSignIn} className="text-amber-400 font-medium hover:underline">
-            Sign In to your workspace
-          </button>
-        </p>
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 mt-8 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center text-slate-400 gap-2">
+          <span>© 2026 FlowDirector (flowdirector.co). All rights reserved. Operated by Manish Dhiman.</span>
+          <button onClick={onSignIn} className="text-slate-700 font-semibold hover:underline">Sign In to Workspace →</button>
+        </div>
       </footer>
     </div>
   );
