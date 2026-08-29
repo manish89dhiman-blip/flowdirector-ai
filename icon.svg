@@ -1,6 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#0f172a"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#fbbf24" stroke-width="24"/>
-  <circle cx="256" cy="256" r="28" fill="#fbbf24"/>
-  <line x1="256" y1="106" x2="256" y2="150" stroke="#fbbf24" stroke-width="24" stroke-linecap="round"/>
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <circle cx="256" cy="256" r="160" fill="none" stroke="url(#goldGrad)" stroke-width="24" opacity="0.9"/>
+  <circle cx="256" cy="256" r="100" fill="none" stroke="#334155" stroke-width="12" stroke-dasharray="12 12"/>
+  <polygon points="256,120 290,256 256,230 222,256" fill="url(#goldGrad)"/>
+  <polygon points="256,392 290,256 256,282 222,256" fill="url(#blueGrad)"/>
+  <circle cx="256" cy="256" r="22" fill="#0f172a" stroke="url(#goldGrad)" stroke-width="10"/>
 </svg>
