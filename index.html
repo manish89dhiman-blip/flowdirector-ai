@@ -1197,6 +1197,7 @@ function Logo({ height = 44, onClick, className = "", lightMode = false }){
 /* ================================================================== */
 function LandingScreen({ onSignIn, onSignUp }){
   const [openFaq, setOpenFaq] = React.useState(null);
+  const [caseStudyTab, setCaseStudyTab] = React.useState("service");
   const [contactSent, setContactSent] = React.useState(false);
   const [contactForm, setContactForm] = React.useState({ name: "", email: "", message: "" });
 
@@ -1229,6 +1230,7 @@ function LandingScreen({ onSignIn, onSignUp }){
             <button onClick={() => scrollToSection("features")} className="hover:text-slate-900 transition">Features</button>
             <button onClick={() => scrollToSection("benefits")} className="hover:text-slate-900 transition">Benefits</button>
             <button onClick={() => scrollToSection("how-it-works")} className="hover:text-slate-900 transition">How It Works</button>
+            <button onClick={() => scrollToSection("case-studies")} className="hover:text-blue-600 font-semibold text-blue-700 transition">Case Studies</button>
             <button onClick={() => scrollToSection("pricing-section")} className="hover:text-slate-900 transition">Pricing</button>
             <button onClick={() => scrollToSection("faq-section")} className="hover:text-slate-900 transition">FAQ</button>
           </div>
@@ -1532,6 +1534,223 @@ function LandingScreen({ onSignIn, onSignUp }){
               <h3 className="text-base font-bold text-slate-950 mb-2">Align KRAs & Track KPIs</h3>
               <p className="text-xs text-slate-600 leading-relaxed">Assign Key Result Areas (KRAs) to team members and track monthly/quarterly Key Performance Indicators (KPIs) with visual status badges.</p>
             </div>
+          </div>
+        </section>
+
+        {/* Case Studies & Real-World User Guide Section */}
+        <section id="case-studies" className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80 bg-slate-50/50">
+          <div className="text-center max-w-3xl mx-auto mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-300 bg-blue-50 px-3.5 py-1 text-xs font-bold text-blue-800 mb-3 shadow-xs">
+              📖 REAL-WORLD CASE STUDIES & OPERATING MANUAL
+            </div>
+            <h2 className="text-3xl font-extrabold text-slate-950 sm:text-5xl tracking-tight">See How FlowDirector Operates</h2>
+            <p className="mt-3 text-base text-slate-600">
+              Explore step-by-step case studies of how real business owners eliminate daily friction, delegate routine admin, and hit 100%+ KPI targets.
+            </p>
+          </div>
+
+          {/* Industry Selector Tabs */}
+          <div className="flex justify-center mb-10">
+            <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+              <button
+                onClick={() => setCaseStudyTab("service")}
+                className={`rounded-xl px-5 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+                  caseStudyTab === "service"
+                    ? "bg-slate-950 text-white shadow-md"
+                    : "text-slate-600 hover:text-slate-950"
+                }`}
+              >
+                🏢 Service Business (Digital Agency)
+              </button>
+              <button
+                onClick={() => setCaseStudyTab("manufacturing")}
+                className={`rounded-xl px-5 py-2.5 text-xs sm:text-sm font-bold transition-all ${
+                  caseStudyTab === "manufacturing"
+                    ? "bg-slate-950 text-white shadow-md"
+                    : "text-slate-600 hover:text-slate-950"
+                }`}
+              >
+                🏭 Manufacturing (Auto Components Factory)
+              </button>
+            </div>
+          </div>
+
+          {/* Service Business Case Study */}
+          {caseStudyTab === "service" && (
+            <div className="max-w-4xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-xl shadow-slate-200/60">
+              <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-6">
+                <span className="text-3xl">🏢</span>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-950">Apex Marketing & Tech Solutions (Digital Agency)</h3>
+                  <p className="text-xs text-slate-500 font-mono">Owner: Anish Sharma (Founder) • Owner Hour Value Threshold: ₹5,000 / hr • Team Size: 12</p>
+                </div>
+              </div>
+
+              <div className="space-y-6 text-sm text-slate-700 leading-relaxed">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">1. Morning Thought Dump (Capture Inbox)</h4>
+                  <p className="text-xs text-slate-600 mb-3">Anish wakes up with 5 uncaptured items racing in his mind and dumps them into the FlowDirector Capture tab in 90 seconds:</p>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs font-mono text-slate-800">
+                    <div>• Client X homepage redesign proposal due Thursday</div>
+                    <div>• Follow up on ₹3.5 Lakh overdue invoice from Client Y</div>
+                    <div>• Fix broken SSL certificate on staging server</div>
+                    <div>• Draft ₹12 Lakh/yr retainer proposal for Apex International</div>
+                    <div>• Review monthly Facebook ad spend reports</div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">2. Daily Triage & Delegation Matrix</h4>
+                  <p className="text-xs text-slate-600 mb-3">During his 10-minute morning coffee triage, Anish routes tasks based on hourly leverage:</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 font-mono">
+                          <th className="p-3 border border-slate-200">Captured Item</th>
+                          <th className="p-3 border border-slate-200">Hourly Value</th>
+                          <th className="p-3 border border-slate-200">FlowDirector Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border border-slate-200">
+                          <td className="p-3 font-semibold text-slate-900">Apex Int'l Retainer Proposal</td>
+                          <td className="p-3 font-bold text-amber-700">₹15,000/hr</td>
+                          <td className="p-3 text-emerald-700 font-bold">☀️ Daily Cockpit (One Main Outcome - Gold ⭐)</td>
+                        </tr>
+                        <tr className="border border-slate-200 bg-slate-50">
+                          <td className="p-3 font-semibold text-slate-900">Client X Redesign Proposal</td>
+                          <td className="p-3 font-bold text-amber-700">₹6,000/hr</td>
+                          <td className="p-3 text-emerald-700 font-bold">☀️ Daily Cockpit (Priority #2)</td>
+                        </tr>
+                        <tr className="border border-slate-200">
+                          <td className="p-3">Follow up on ₹3.5L Invoice</td>
+                          <td className="p-3 text-slate-500">₹1,000/hr</td>
+                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Accountant (Rohan)</td>
+                        </tr>
+                        <tr className="border border-slate-200 bg-slate-50">
+                          <td className="p-3">Fix Broken SSL Certificate</td>
+                          <td className="p-3 text-slate-500">₹800/hr</td>
+                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Lead Dev (Priya)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">3. Daily Time Blocking & Evening Closure</h4>
+                  <p className="text-xs text-slate-600">
+                    Anish blocks 9:30 AM – 12:30 PM for deep work on the ₹12 Lakh proposal. By delegating the SSL fix and invoice follow-up, he saves 3 hours of distraction and completes evening shutdown with a 100% daily closure score.
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">4. Goals & KPI Attainment Metrics</h4>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-900">MRR Revenue Target: ₹25,00,000</span>
+                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 110% Attainment (₹27.5L Actual)</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-900">On-Time Client Delivery Rate: 90%</span>
+                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 105% Attainment (95% Actual)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Manufacturing Case Study */}
+          {caseStudyTab === "manufacturing" && (
+            <div className="max-w-4xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 sm:p-10 shadow-xl shadow-slate-200/60">
+              <div className="flex items-center gap-3 border-b border-slate-200 pb-4 mb-6">
+                <span className="text-3xl">🏭</span>
+                <div>
+                  <h3 className="text-xl font-bold text-slate-950">Precision Tech Components (Auto Parts Factory)</h3>
+                  <p className="text-xs text-slate-500 font-mono">Owner: Rajesh Verma (MD) • Owner Hour Value Threshold: ₹8,000 / hr • Staff: 45</p>
+                </div>
+              </div>
+
+              <div className="space-y-6 text-sm text-slate-700 leading-relaxed">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">1. Shop-Floor Thought Dump (Capture Inbox)</h4>
+                  <p className="text-xs text-slate-600 mb-3">During his morning plant walkthrough, Rajesh captures 5 critical observations on his tablet:</p>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 text-xs font-mono text-slate-800">
+                    <div>• CNC Machine #4 spindle bearing vibrating — needs maintenance</div>
+                    <div>• Raw steel sheet shipment delayed by supplier</div>
+                    <div>• Negotiate JSW Steel annual bulk pricing contract (Save ₹18 Lakhs)</div>
+                    <div>• Worker safety audit required before ISO inspection</div>
+                    <div>• Explore European export distributor partnership</div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">2. Daily Triage & Delegation Matrix</h4>
+                  <p className="text-xs text-slate-600 mb-3">At 8:45 AM, Rajesh routes operational fires to his department heads:</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 text-slate-700 font-mono">
+                          <th className="p-3 border border-slate-200">Captured Item</th>
+                          <th className="p-3 border border-slate-200">Hourly Value</th>
+                          <th className="p-3 border border-slate-200">FlowDirector Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr className="border border-slate-200">
+                          <td className="p-3 font-semibold text-slate-900">JSW Steel Contract Negotiation</td>
+                          <td className="p-3 font-bold text-amber-700">₹25,000/hr</td>
+                          <td className="p-3 text-emerald-700 font-bold">☀️ Daily Cockpit (One Main Outcome - Gold ⭐)</td>
+                        </tr>
+                        <tr className="border border-slate-200 bg-slate-50">
+                          <td className="p-3 font-semibold text-slate-900">European Export Strategy</td>
+                          <td className="p-3 font-bold text-amber-700">₹15,000/hr</td>
+                          <td className="p-3 text-blue-700 font-bold">🗓 Weekly Grid (Friday Expansion)</td>
+                        </tr>
+                        <tr className="border border-slate-200">
+                          <td className="p-3">CNC Machine #4 Spindle Maintenance</td>
+                          <td className="p-3 text-slate-500">₹1,500/hr</td>
+                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Plant Head (Suresh)</td>
+                        </tr>
+                        <tr className="border border-slate-200 bg-slate-50">
+                          <td className="p-3">Steel Shipment Delay Follow-up</td>
+                          <td className="p-3 text-slate-500">₹1,000/hr</td>
+                          <td className="p-3 text-blue-700 font-semibold">👥 Delegated to Purchase Mgr (Vikram)</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">3. Daily Execution & Time Blocking</h4>
+                  <p className="text-xs text-slate-600">
+                    Rajesh blocks 10:00 AM – 1:00 PM for JSW negotiation prep. By delegating machine repairs and supplier calls, he secures an 8% bulk discount saving ₹18 Lakhs.
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="font-bold text-slate-900 text-base mb-2">4. Plant KRA & KPI Attainment Metrics</h4>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-900">Monthly Units Produced: 50,000 Units</span>
+                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 104.8% Attainment (52,400 Actual)</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="font-bold text-slate-900">Quality Defect Rejection Rate: &lt; 500 PPM</span>
+                      <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200">🟢 124% Quality Attainment (380 PPM Actual)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-8 text-center">
+            <button onClick={() => navigate("/guide")} className="inline-flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-800 transition bg-white border border-blue-200 px-4 py-2.5 rounded-xl shadow-xs">
+              📖 Read Complete Executive Manual & Operating Guide →
+            </button>
           </div>
         </section>
 
