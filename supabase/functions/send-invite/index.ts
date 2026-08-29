@@ -99,10 +99,10 @@ Deno.serve(async (req) => {
 
     // --- is email switched on? ----------------------------------------------
     const apiKey = Deno.env.get("RESEND_API_KEY");
-    const from = Deno.env.get("INVITE_FROM");
-    const origin = Deno.env.get("APP_ORIGIN") ?? req.headers.get("origin") ?? "";
+    const from = Deno.env.get("INVITE_FROM") ?? "FlowDirector <hello@flowdirector.co>";
+    const origin = Deno.env.get("APP_ORIGIN") ?? req.headers.get("origin") ?? "https://flowdirector.co";
 
-    if (!apiKey || !from) {
+    if (!apiKey) {
       // Not an error. The invite is valid and usable; there's just no sender
       // configured, so the app tells the owner to pass the link along.
       return json({ sent: false, reason: "not_configured", link: origin });
