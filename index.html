@@ -16,6 +16,7 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <style>
   body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -421,7 +422,7 @@ const friendlyError = (msg) => isSeatLimitError(msg)
 // once a provider account is actually active and a test purchase has gone
 // through, and the Choose buttons come back with nothing else to change.
 // ------------------------------------------------------------------------
-const PAYMENTS_ENABLED = false;
+const PAYMENTS_ENABLED = true;
 
 // Which payment provider can sell this plan. Razorpay first — the customers
 // are in India — with Stripe as the fallback for when we sell abroad. A plan
