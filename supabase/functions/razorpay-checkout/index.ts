@@ -110,9 +110,8 @@ Deno.serve(async (req) => {
         .eq("org_id", membership.org_id).maybeSingle(),
     ]);
 
-    const inUse = (memberCount ?? 0) + (inviteCount ?? 0);
-    const quantity = plan.seat_limit == null ? Math.max(inUse, 1)
-                                             : Math.max(Math.min(plan.seat_limit, inUse), 1);
+    // Flat plan tier pricing: quantity is always 1 for the whole company seat quota.
+    const quantity = 1;
 
     // --- reuse the Razorpay customer if we already made one -----------------
     let customerId: string | null = sub?.razorpay_customer_id ?? null;

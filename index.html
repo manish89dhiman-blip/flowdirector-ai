@@ -3810,12 +3810,12 @@ function AdminPlans({ plans, onSaved }){
             </label>
             <label className="text-xs text-slate-500">Monthly Price Text
               <input value={draft.price_display||""} onChange={e=>setDraft({...draft, price_display:e.target.value})}
-                placeholder="₹399 / seat / month"
+                placeholder="₹2,999 / month (up to 10 seats)"
                 className="mt-0.5 block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm" />
             </label>
             <label className="text-xs text-slate-500">Yearly Price Text (Discounted)
               <input value={draft.price_display_yearly||""} onChange={e=>setDraft({...draft, price_display_yearly:e.target.value})}
-                placeholder="₹299 / seat / month (billed yearly)"
+                placeholder="₹26,999 / year (Save 25%)"
                 className="mt-0.5 block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm" />
             </label>
             <label className="text-xs text-slate-500">Sort Order
