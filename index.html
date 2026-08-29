@@ -1771,7 +1771,12 @@ function AuthScreen({ initialMode = "in", onBack }){
         const { data, error } = await sb.auth.signUp({ email, password: pw });
         if (error || !data.session) {
           const { error: inErr } = await sb.auth.signInWithPassword({ email, password: pw });
-          if (inErr) throw inErr;
+          if (inErr) {
+            if (/invalid login credentials/i.test(inErr.message)) {
+              throw new Error("Account already exists with a different password! Please click 'Already have an account? Sign in' below to sign in.");
+            }
+            throw inErr;
+          }
         }
         setMsg("Email verified! Opening workspace setup and Razorpay mandate authorization...");
       } else {
