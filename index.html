@@ -1268,11 +1268,23 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const [isAdmin, setIsAdmin] = useState(false);
   const notifiedRef = useRef(false);
 
-  useEffect(() => { loadState(userId).then(setData).catch(()=>setData(structuredClone(SEED))); }, [userId]);
+  const [sub, setSub] = useState(null);
+  const [subLoading, setSubLoading] = useState(true);
 
-  // Platform admin is separate from any company role — it's about running the
-  // service, not belonging to a customer. A solo user can be one.
+  useEffect(() => { loadState(userId).then(setData).catch(()=>setData(structuredClone(SEED))); }, [userId]);
   useEffect(() => { amPlatformAdmin(userId).then(setIsAdmin); }, [userId]);
+
+  useEffect(() => {
+    if (!orgCtx || !orgCtx.membership) {
+      setSubLoading(false);
+      return;
+    }
+    setSubLoading(true);
+    loadBilling(orgCtx.membership.org_id)
+      .then(b => setSub(b.sub))
+      .catch(() => setSub(null))
+      .finally(() => setSubLoading(false));
+  }, [orgCtx && orgCtx.membership && orgCtx.membership.org_id]);
 
   useEffect(() => {
     if (!data) return;
@@ -1296,7 +1308,44 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   }, [data]);
 
   const patch = (fn) => setData(d => { const c = structuredClone(d); fn(c); return c; });
+
+  const isCompanyUser = orgCtx && orgCtx.membership;
+  const isAuthorized = !isCompanyUser || isAdmin || (sub && sub.status === "active");
+
+  if (isCompanyUser && subLoading) return <FullScreen>Verifying workspace subscription status…</FullScreen>;
   if (!data) return <FullScreen>Loading your system…</FullScreen>;
+
+  if (isCompanyUser && !isAuthorized) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 px-4 text-center text-white">
+        <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-800 p-8 shadow-2xl">
+          <div className="mono text-xs uppercase tracking-widest text-amber-400">Authorization Required</div>
+          <h2 className="mt-2 text-2xl font-bold">Activate Your Workspace</h2>
+          <p className="mt-3 text-xs leading-relaxed text-slate-300">
+            To start using <b>{orgCtx.org?.name || "your workspace"}</b>, authorize your subscription payment mandate via Razorpay.
+          </p>
+
+          <div className="mt-6 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4 text-left">
+            <div className="text-xs font-semibold text-amber-300">15-Day Free Trial Mandate</div>
+            <p className="mt-1 text-[11px] text-slate-300">
+              Authorize your recurring mandate today. No charges will be incurred during your 15-day trial.
+            </p>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            <button onClick={() => startCheckout("team", "razorpay").catch(e => alert(e.message || "Couldn't start checkout."))}
+              className="w-full rounded-xl bg-amber-400 py-3 text-sm font-bold text-slate-950 shadow-md shadow-amber-400/20 transition hover:bg-amber-300">
+              Authorize via Razorpay →
+            </button>
+            <button onClick={() => sb.auth.signOut()}
+              className="w-full rounded-xl border border-slate-700 bg-slate-900 py-2.5 text-xs font-medium text-slate-300 hover:bg-slate-800">
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const ohv = Math.round((data.settings.income||0)/(data.settings.hours||1));
   const role = orgCtx && orgCtx.membership ? orgCtx.membership.role : null;
