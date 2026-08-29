@@ -607,9 +607,9 @@ function usePath() {
 /* ================================================================== */
 function LegalHeader({ title, session }){
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur-md">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-        <Logo size={32} subtitle="" onClick={() => navigate("/")} />
+    <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#121a25] backdrop-blur-md">
+      <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3.5 sm:px-6">
+        <Logo height={36} onClick={() => navigate("/")} />
         <div className="flex items-center gap-3 text-xs">
           <button onClick={() => navigate("/")} className="text-slate-300 hover:text-white">Home</button>
           <button onClick={() => navigate(session ? "/" : "/login")} className="rounded-lg bg-amber-400 px-3 py-1.5 font-semibold text-slate-950 hover:bg-amber-300">
@@ -869,30 +869,10 @@ function ConfigNotice(){
   );
 }
 
-function LogoIcon({ size = 36, className = "" }){
+function Logo({ height = 36, onClick, className = "" }){
   return (
-    <svg width={size} height={size} viewBox="0 0 512 512" className={className} xmlns="http://www.w3.org/2000/svg">
-      <rect width="512" height="512" rx="120" fill="#0f172a"/>
-      <g stroke="#ffffff" strokeWidth="28" strokeLinecap="round" strokeLinejoin="round" fill="none">
-        <path d="M 230 420 A 170 170 0 1 1 310 95" />
-        <path d="M 275 105 L 318 90 L 305 135" />
-        <path d="M 190 380 L 190 225 C 190 175 225 155 275 155 C 305 155 320 175 320 198 C 320 222 300 238 250 238 L 190 238" />
-        <path d="M 190 300 L 275 300" />
-      </g>
-    </svg>
-  );
-}
-
-function Logo({ size = 36, subtitle = "TIME DOMINATION OS", onClick, dark = true, className = "" }){
-  return (
-    <div onClick={onClick} className={`flex items-center gap-3 cursor-pointer ${className}`}>
-      <LogoIcon size={size} className="shadow-md shadow-slate-900/10 transition hover:scale-105" />
-      <div>
-        <div className={`text-lg font-extrabold tracking-tight flex items-center gap-1.5 ${dark ? "text-white" : "text-slate-900"}`}>
-          Flow<span className={dark ? "text-amber-400" : "text-indigo-600"}>Director</span>
-        </div>
-        {subtitle && <div className={`mono text-[10px] tracking-widest font-semibold ${dark ? "text-amber-400" : "text-indigo-600"}`}>{subtitle}</div>}
-      </div>
+    <div onClick={onClick} className={`inline-flex items-center cursor-pointer transition hover:opacity-90 ${className}`}>
+      <img src="/logo.png" alt="FlowDirector" style={{ height: `${height}px` }} className="w-auto object-contain" />
     </div>
   );
 }
@@ -909,9 +889,9 @@ function LandingScreen({ onSignIn, onSignUp }){
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-amber-400 selection:text-slate-900">
       {/* Header / Nav */}
-      <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-          <Logo size={38} onClick={() => navigate("/")} />
+      <header className="sticky top-0 z-50 border-b border-slate-800 bg-[#121a25] backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6">
+          <Logo height={40} onClick={() => navigate("/")} />
           <div className="flex items-center gap-4 text-xs font-medium text-slate-300">
             <button onClick={scrollToPricing} className="hidden hover:text-white sm:block">Pricing</button>
             <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hidden hover:text-white sm:block">Privacy</a>
@@ -1132,8 +1112,8 @@ function AuthScreen({ initialMode = "in", onBack }){
           ← Back to FlowDirector Home
         </button>
       )}
-      <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-800 p-6 text-white shadow-xl">
-        <Logo size={42} className="mb-3" />
+      <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-[#121a25] p-6 text-white shadow-xl">
+        <Logo height={44} className="mb-4 justify-center flex" />
         <p className="mt-1 text-sm text-slate-400">
           {mode==="in" && "Sign in to your planner."}
           {mode==="up" && "Start your 15-Day Free Trial (Mandate Required)."}
@@ -1402,24 +1382,31 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-amber-400">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur-md text-slate-900 shadow-sm">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <Logo size={36} dark={false} subtitle={orgCtx && orgCtx.org ? `${orgCtx.org.name} · ${ROLE_LABEL[role]}` : "TIME DOMINATION OS"} onClick={() => setTab("capture")} />
+      <header className="sticky top-0 z-20 border-b border-slate-800 bg-[#121a25] text-white shadow-md">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-100/80 px-3 py-1.5">
-              <span className="mono text-xs uppercase tracking-wider text-slate-500 font-medium">Hour Value</span>
-              <span className="mono text-lg font-bold text-amber-600">₹{ohv.toLocaleString("en-IN")}</span>
+            <Logo height={38} onClick={() => setTab("capture")} />
+            {orgCtx && orgCtx.org &&
+              <div className="flex items-center gap-1.5 border-l border-slate-700/60 pl-3">
+                <span className="text-xs font-semibold text-slate-300">{orgCtx.org.name}</span>
+                <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400 border border-slate-700">{ROLE_LABEL[role]}</span>
+              </div>}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-1.5">
+              <span className="mono text-xs uppercase tracking-wider text-slate-400 font-medium">Hour Value</span>
+              <span className="mono text-lg font-bold text-amber-400">₹{ohv.toLocaleString("en-IN")}</span>
             </div>
             <div className="text-right">
-              <div className="text-xs text-slate-600 font-medium">{session.user.email}</div>
-              <button onClick={()=>sb.auth.signOut()} className="text-xs font-semibold text-amber-600 hover:text-amber-700 hover:underline">Sign out</button>
+              <div className="text-xs text-slate-400 font-medium">{session.user.email}</div>
+              <button onClick={()=>sb.auth.signOut()} className="text-xs font-semibold text-amber-400 hover:text-amber-300 hover:underline">Sign out</button>
             </div>
           </div>
         </div>
         <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-2 pb-2">
           {TABS.map(([id,label]) => (
             <button key={id} onClick={()=>setTab(id)}
-              className={"flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition "+(tab===id?"bg-slate-900 font-semibold text-white shadow-sm":"text-slate-600 hover:bg-slate-100 hover:text-slate-900")}>
+              className={"flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition "+(tab===id?"bg-amber-400 font-semibold text-slate-950 shadow-sm":"text-slate-300 hover:bg-slate-800 hover:text-white")}>
               <Ic n={id} /> {label}
             </button>
           ))}
