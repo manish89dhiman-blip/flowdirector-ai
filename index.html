@@ -1053,7 +1053,13 @@ function AuthScreen({ initialMode = "in", onBack }){
         if (error) throw error;
         setMsg("Reset link sent — check your inbox and follow the link to set a new password.");
       }
-    } catch (e) { setMsg(e.message || "Something went wrong."); }
+    } catch (e) {
+      let msg = e.message || "Something went wrong.";
+      if (/signups not allowed/i.test(msg)) {
+        msg = "Public signups are currently disabled in your Supabase project. Enable 'Allow new users to sign up' under Supabase Dashboard → Authentication → Providers → Email.";
+      }
+      setMsg(msg);
+    }
     setBusy(false);
   };
 
