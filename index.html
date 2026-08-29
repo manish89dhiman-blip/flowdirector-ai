@@ -864,8 +864,8 @@ function Root(){
     }
   };
 
-  if (!orgCtx.membership && orgCtx.pendingInvites && orgCtx.pendingInvites.length > 0) {
-    return <OnboardingScreen session={session} pendingInvites={orgCtx.pendingInvites}
+  if (!orgCtx.membership) {
+    return <OnboardingScreen session={session} pendingInvites={orgCtx.pendingInvites || []}
              onJoined={joined} />;
   }
 
