@@ -3967,10 +3967,11 @@ function BillingSection({ orgCtx, userId }){
       }
 
       // Perform instant self-service subscription plan change
+      const newSeatCapacity = targetPlan.seat_limit != null ? Math.max(targetPlan.seat_limit, used) : null;
       await setSubscription(membership.org_id, {
         plan_code: targetPlan.code,
         status: "active",
-        seats: targetPlan.seat_limit,
+        seats: newSeatCapacity,
         until: sub ? sub.current_period_end : null,
       });
 
