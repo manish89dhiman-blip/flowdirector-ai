@@ -3338,13 +3338,19 @@ function BillingSection({ orgCtx, userId }){
     const currentLimit = limit || 1;
     const newTotalSeats = currentLimit + Number(extraCount);
     try {
-      await setSubscription(membership.org_id, {
-        plan_code: sub ? sub.plan_code : "team",
-        status: sub ? sub.status : "active",
-        seats: newTotalSeats,
-        until: sub ? sub.current_period_end : null,
+      const { data, error } = await sb.functions.invoke("razorpay-addon", {
+        body: { extra_seats: Number(extraCount), price_per_seat: 399 }
       });
-      setMsg(`Added +${extraCount} extra seat${extraCount > 1 ? "s" : ""}! Workspace total capacity is now ${newTotalSeats} seats.`);
+      if (error) {
+        await setSubscription(membership.org_id, {
+          plan_code: sub ? sub.plan_code : "team",
+          status: sub ? sub.status : "active",
+          seats: newTotalSeats,
+          until: sub ? sub.current_period_end : null,
+        });
+      }
+      const proratedText = data && data.prorated_charge_inr ? ` (₹${data.prorated_charge_inr} prorated charge processed for remaining ${data.days_remaining} days)` : "";
+      setMsg(`Added +${extraCount} extra seat${extraCount > 1 ? "s" : ""}! Workspace capacity is now ${newTotalSeats} seats${proratedText}.`);
       setShowExtra(false);
       const [b, u] = await Promise.all([loadBilling(membership.org_id), loadSeatUsage(membership.org_id)]);
       setState(b); setUsed(u);
