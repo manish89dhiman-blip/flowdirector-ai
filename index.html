@@ -1982,7 +1982,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const patch = (fn) => setData(d => { const c = structuredClone(d); fn(c); return c; });
 
   const isCompanyUser = orgCtx && orgCtx.membership;
-  const isAuthorized = !isCompanyUser || isAdmin || (sub && sub.status === "active");
+  const isAuthorized = sub && (sub.status === "active" || sub.status === "trialing");
 
   if (isCompanyUser && subLoading) return <FullScreen>Verifying workspace subscription status…</FullScreen>;
   if (!data) return <FullScreen>Loading your system…</FullScreen>;
