@@ -1035,14 +1035,28 @@ function AuthScreen({ initialMode = "in", onBack }){
         const { error } = await sb.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
       } else if (mode === "up") {
+        writeSolo(false);
         const { data, error } = await sb.auth.signUp({ email, password: pw });
         if (error) throw error;
         if (data && data.session) {
-          setMsg("Account created! Opening Razorpay payment mandate setup…");
+          try {
+            const rawName = email.split("@")[0];
+            const companyName = rawName.charAt(0).toUpperCase() + rawName.slice(1) + "'s Workspace";
+            await createOrg(companyName, data.session.user.id);
+          } catch (orgErr) {
+            // Org may already exist
+          }
+          writeSolo(false);
+          setMsg("Workspace created! Opening Razorpay payment mandate setup…");
           try {
             await startCheckout("team", "razorpay");
           } catch (checkoutErr) {
-            setMsg("Account created! Please authorize your trial mandate in Settings → Billing.");
+            const reason = checkoutErr.message || "";
+            if (reason.includes("razorpay_plan_id") || reason.includes("online payment")) {
+              setMsg("Workspace created with 15-Day Free Trial! Set your Razorpay Plan ID in Settings → Billing to test live mandate checkout.");
+            } else {
+              setMsg("Workspace created with 15-Day Free Trial! (" + reason + ")");
+            }
           }
         } else {
           setMsg("Account created! Please check your inbox if confirmation is on, then sign in.");
