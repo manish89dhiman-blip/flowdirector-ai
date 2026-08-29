@@ -1384,14 +1384,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
     <div className="min-h-screen bg-slate-50 text-slate-900 selection:bg-amber-400">
       <header className="sticky top-0 z-20 border-b border-slate-800 bg-[#121a25] text-white shadow-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-          <div className="flex items-center gap-3">
-            <Logo height={38} onClick={() => setTab("capture")} />
-            {orgCtx && orgCtx.org &&
-              <div className="flex items-center gap-1.5 border-l border-slate-700/60 pl-3">
-                <span className="text-xs font-semibold text-slate-300">{orgCtx.org.name}</span>
-                <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400 border border-slate-700">{ROLE_LABEL[role]}</span>
-              </div>}
-          </div>
+          <Logo height={38} onClick={() => setTab("capture")} />
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-1.5">
               <span className="mono text-xs uppercase tracking-wider text-slate-400 font-medium">Hour Value</span>
