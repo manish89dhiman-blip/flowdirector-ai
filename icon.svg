@@ -1,11 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="120" fill="#0f172a"/>
-  <g stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- Outer Arrow Arc -->
+  <rect width="512" height="512" rx="120" fill="#121a25"/>
+  <g stroke="#ffffff" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" fill="none">
     <path d="M 230 420 A 170 170 0 1 1 310 95" />
     <path d="M 275 105 L 318 90 L 305 135" />
-    
-    <!-- Stylized 'F' Ribbon -->
     <path d="M 190 380 L 190 225 C 190 175 225 155 275 155 C 305 155 320 175 320 198 C 320 222 300 238 250 238 L 190 238" />
     <path d="M 190 300 L 275 300" />
   </g>
