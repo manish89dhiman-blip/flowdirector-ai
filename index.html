@@ -779,12 +779,21 @@ function Root(){
   if (path === "/terms") return <TermsPage />;
   if (path === "/contact") return <ContactPage />;
   if (path === "/refund" || path === "/refund-policy") return <RefundPage />;
-  if (path === "/login" || path === "/signin") return <AuthScreen onBack={() => navigate("/")} />;
 
   if (!CONFIGURED) return <ConfigNotice />;
   if (!ready) return <FullScreen>Starting up…</FullScreen>;
   if (recovery) return <ResetPasswordScreen onDone={()=>setRecovery(false)} />;
-  if (!session) return <LandingScreen onSignIn={() => navigate("/login")} />;
+
+  if (!session) {
+    if (path === "/login" || path === "/signin") return <AuthScreen onBack={() => navigate("/")} />;
+    return <LandingScreen onSignIn={() => navigate("/login")} />;
+  }
+
+  // Signed in — if still on login route, navigate to main app
+  if (path === "/login" || path === "/signin") {
+    navigate("/");
+  }
+
   if (!orgReady) return <FullScreen>Loading your workspace…</FullScreen>;
 
   const joined = (ctx) => { setOrgCtx(ctx); setSolo(false); writeSolo(false); };
