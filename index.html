@@ -1657,9 +1657,9 @@ function AuthScreen({ initialMode = "in", onBack }){
         const { error } = await sb.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
       } else if (mode === "up") {
+        if (!email || !email.includes("@")) throw new Error("Please enter a valid email address.");
+        if (!pw || pw.length < 6) throw new Error("Password must be at least 6 characters.");
         writeSolo(false);
-        const { data, error } = await sb.auth.signUp({ email, password: pw });
-        if (error) throw error;
         await sendOtpEmail(email);
         setMode("otp_verify");
         setMsg("Verification code sent to " + email + ". Please enter the 6-digit code below.");
@@ -1667,10 +1667,13 @@ function AuthScreen({ initialMode = "in", onBack }){
         if (otpInput.trim() !== generatedOtp && otpInput.trim() !== "123456") {
           throw new Error("Invalid verification code. Please check your email or click Resend.");
         }
-        const { error } = await sb.auth.signInWithPassword({ email, password: pw });
-        if (error) {
-          setMsg("Email verified! Opening workspace setup and Razorpay mandate authorization...");
+        // Verification success! Now proceed to sign up / sign in session
+        const { data, error } = await sb.auth.signUp({ email, password: pw });
+        if (error || !data.session) {
+          const { error: inErr } = await sb.auth.signInWithPassword({ email, password: pw });
+          if (inErr) throw inErr;
         }
+        setMsg("Email verified! Opening workspace setup and Razorpay mandate authorization...");
       } else {
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
         if (error) throw error;
