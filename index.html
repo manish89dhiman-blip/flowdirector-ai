@@ -152,15 +152,8 @@ async function loadOrgContext(userId, email){
     return { membership:null, org:null, pendingInvites:withOrgNames };
   }
 
-  // No membership and no pending invites — auto-create default workspace
-  try {
-    const namePart = (email || "My").split("@")[0];
-    const cleanName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-    const { org, membership } = await createOrg(`${cleanName}'s Workspace`, userId);
-    return { membership, org, pendingInvites:[] };
-  } catch (err) {
-    return { membership:null, org:null, pendingInvites:[] };
-  }
+  // No membership and no pending invites — return null membership so user lands on OnboardingScreen
+  return { membership: null, org: null, pendingInvites: [] };
 }
 
 async function createOrg(name, userId){
