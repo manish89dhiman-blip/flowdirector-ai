@@ -506,10 +506,10 @@ async function adminDeleteCompany(orgId) {
   const { error: rpcErr } = await sb.rpc("admin_delete_company", { target_org_id: orgId });
   if (!rpcErr) return;
 
-  await sb.from("invites").delete().eq("org_id", orgId).catch(() => {});
-  await sb.from("memberships").delete().eq("org_id", orgId).catch(() => {});
-  await sb.from("subscriptions").delete().eq("org_id", orgId).catch(() => {});
-  await sb.from("plan_requests").delete().eq("org_id", orgId).catch(() => {});
+  try { await sb.from("invites").delete().eq("org_id", orgId); } catch (_) {}
+  try { await sb.from("memberships").delete().eq("org_id", orgId); } catch (_) {}
+  try { await sb.from("subscriptions").delete().eq("org_id", orgId); } catch (_) {}
+  try { await sb.from("plan_requests").delete().eq("org_id", orgId); } catch (_) {}
   const { error } = await sb.from("organizations").delete().eq("id", orgId);
   if (error) throw error;
 }
@@ -518,8 +518,8 @@ async function adminDeleteUser(userId) {
   const { error: rpcErr } = await sb.rpc("admin_delete_user", { target_user_id: userId });
   if (!rpcErr) return;
 
-  await sb.from("memberships").delete().eq("user_id", userId).catch(() => {});
-  await sb.from("planner_state").delete().eq("user_id", userId).catch(() => {});
+  try { await sb.from("memberships").delete().eq("user_id", userId); } catch (_) {}
+  try { await sb.from("planner_state").delete().eq("user_id", userId); } catch (_) {}
   const { error } = await sb.from("profiles").delete().eq("id", userId);
   if (error) throw error;
 }
@@ -1622,7 +1622,7 @@ function LandingScreen({ onSignIn, onSignUp }){
 /*  Auth                                                               */
 /* ================================================================== */
 function AuthScreen({ initialMode = "in", onBack }){
-  const [mode, setMode] = useState(initialMode); // in | up | reset
+  const [mode, setMode] = useState(initialMode); // in | up | reset | confirm_sent
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [msg, setMsg] = useState("");
@@ -1641,8 +1641,7 @@ function AuthScreen({ initialMode = "in", onBack }){
         if (data && data.session) {
           setMsg("Account created! Opening workspace setup and Razorpay mandate authorization…");
         } else {
-          setMsg("Account created! Please check your inbox if email confirmation is turned on, then sign in to setup your workspace.");
-          setMode("in");
+          setMode("confirm_sent");
         }
       } else {
         const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
@@ -1668,42 +1667,64 @@ function AuthScreen({ initialMode = "in", onBack }){
       )}
       <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-8 text-slate-900 shadow-xl">
         <Logo height={44} lightMode={true} className="mb-4 justify-center flex" />
-        <p className="mt-1 text-xs text-slate-600 text-center font-medium">
-          {mode==="in" && "Sign in to your planner."}
-          {mode==="up" && "Start your 15-Day Free Trial (Mandate Required)."}
-          {mode==="reset" && "Enter your email and we'll send you a reset link."}
-        </p>
 
-        <div className="mt-6 space-y-3">
-          <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Email Address"
-            onKeyDown={e=>e.key==="Enter"&&mode==="reset"&&submit()}
-            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
-          {mode!=="reset" &&
-            <input value={pw} onChange={e=>setPw(e.target.value)} type="password" placeholder="Password"
-              onKeyDown={e=>e.key==="Enter"&&submit()}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />}
-          <button onClick={submit} disabled={busy}
-            className="w-full rounded-xl bg-slate-950 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60">
-            {busy ? "…" : mode==="in" ? "Sign in" : mode==="up" ? "Start Trial & Setup Mandate" : "Send reset link"}
-          </button>
-        </div>
+        {mode === "confirm_sent" ? (
+          <div className="text-center space-y-4">
+            <div className="text-4xl">📧</div>
+            <h2 className="text-xl font-bold text-slate-950">Confirm Your Email</h2>
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+              We sent a verification email to <b className="text-slate-950">{email}</b>.
+              Please check your email inbox and click <b>Confirm Email</b> to complete your signup and set up your workspace mandate.
+            </p>
+            <div className="pt-4 border-t border-slate-100 space-y-2">
+              <button onClick={() => setMode("in")} className="w-full py-2.5 rounded-xl bg-slate-950 text-white text-xs font-bold hover:bg-slate-800 transition shadow-md">
+                Confirmed Email? Sign In →
+              </button>
+              <button onClick={() => setMode("up")} className="w-full py-2 text-xs text-slate-500 hover:text-slate-900 font-medium">
+                Try Another Email
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <p className="mt-1 text-xs text-slate-600 text-center font-medium">
+              {mode==="in" && "Sign in to your planner."}
+              {mode==="up" && "Start your 15-Day Free Trial (Mandate Required)."}
+              {mode==="reset" && "Enter your email and we'll send you a reset link."}
+            </p>
 
-        {msg && <p className="mt-3 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl">{msg}</p>}
+            <div className="mt-6 space-y-3">
+              <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Email Address"
+                onKeyDown={e=>e.key==="Enter"&&mode==="reset"&&submit()}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+              {mode!=="reset" &&
+                <input value={pw} onChange={e=>setPw(e.target.value)} type="password" placeholder="Password"
+                  onKeyDown={e=>e.key==="Enter"&&submit()}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />}
+              <button onClick={submit} disabled={busy}
+                className="w-full rounded-xl bg-slate-950 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60">
+                {busy ? "…" : mode==="in" ? "Sign in" : mode==="up" ? "Start Trial & Setup Mandate" : "Send reset link"}
+              </button>
+            </div>
 
-        <div className="mt-5 flex flex-col items-center gap-2 pt-2 border-t border-slate-100">
-          {mode==="in" &&
-            <button onClick={()=>{setMode("reset"); setMsg("");}} className="text-xs text-slate-500 hover:text-slate-900 font-medium">
-              Forgot password?
-            </button>}
-          {mode!=="reset" &&
-            <button onClick={()=>{setMode(mode==="in"?"up":"in"); setMsg("");}} className="text-xs text-slate-600 hover:text-slate-950 font-semibold">
-              {mode==="in" ? "Need an account? Start Trial & Mandate" : "Already have an account? Sign in"}
-            </button>}
-          {mode==="reset" &&
-            <button onClick={()=>{setMode("in"); setMsg("");}} className="text-xs text-slate-500 hover:text-slate-900 font-medium">
-              Back to sign in
-            </button>}
-        </div>
+            {msg && <p className="mt-3 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl">{msg}</p>}
+
+            <div className="mt-5 flex flex-col items-center gap-2 pt-2 border-t border-slate-100">
+              {mode==="in" &&
+                <button onClick={()=>{setMode("reset"); setMsg("");}} className="text-xs text-slate-500 hover:text-slate-900 font-medium">
+                  Forgot password?
+                </button>}
+              {mode!=="reset" &&
+                <button onClick={()=>{setMode(mode==="in"?"up":"in"); setMsg("");}} className="text-xs text-slate-600 hover:text-slate-950 font-semibold">
+                  {mode==="in" ? "Need an account? Start Trial & Mandate" : "Already have an account? Sign in"}
+                </button>}
+              {mode==="reset" &&
+                <button onClick={()=>{setMode("in"); setMsg("");}} className="text-xs text-slate-500 hover:text-slate-900 font-medium">
+                  Back to sign in
+                </button>}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
