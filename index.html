@@ -783,6 +783,108 @@ const SOLO_KEY = "cc-solo-mode";
 const readSolo = () => false;
 const writeSolo = () => {};
 
+function AdminPortalDesk({ session, onBack }){
+  const [isAdmin, setIsAdmin] = useState(null);
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const userId = session && session.user ? session.user.id : null;
+
+  useEffect(() => {
+    if (!userId) {
+      setIsAdmin(false);
+      return;
+    }
+    amPlatformAdmin(userId).then(res => setIsAdmin(res));
+  }, [userId]);
+
+  const handleAdminSignIn = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
+      if (error) throw error;
+      if (data && data.user) {
+        const ok = await amPlatformAdmin(data.user.id);
+        if (!ok) {
+          await sb.auth.signOut();
+          throw new Error("Access Denied: This account is not registered as a platform admin.");
+        }
+        setIsAdmin(true);
+      }
+    } catch (e) {
+      setMsg(e.message || "Failed to sign in to admin console.");
+    }
+    setBusy(false);
+  };
+
+  if (!session || isAdmin === false) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 py-8">
+        {onBack && (
+          <button onClick={onBack} className="mb-6 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition">
+            ← Back to FlowDirector Home
+          </button>
+        )}
+        <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-8 text-slate-900 shadow-xl space-y-5">
+          <div className="text-center">
+            <Logo height={44} lightMode={true} className="mb-3 justify-center flex" />
+            <span className="inline-block rounded-full bg-slate-950 px-3 py-1 text-[11px] font-bold text-white uppercase tracking-wider">
+              Platform Admin Console
+            </span>
+            <p className="mt-2 text-xs text-slate-600 font-medium">
+              Sign in with your administrative credentials to manage companies, subscription plans, and platform users.
+            </p>
+          </div>
+
+          <div className="space-y-3 pt-2">
+            <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Admin Email (manish@airlogic.in)"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+            <input value={pw} onChange={e=>setPw(e.target.value)} type="password" placeholder="Password"
+              onKeyDown={e=>e.key==="Enter"&&handleAdminSignIn()}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+            <button onClick={handleAdminSignIn} disabled={busy}
+              className="w-full rounded-xl bg-slate-950 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60">
+              {busy ? "Authenticating Admin..." : "Sign In to Admin Desk →"}
+            </button>
+          </div>
+
+          {msg && <p className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 p-2.5 rounded-xl">{msg}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (isAdmin === null) {
+    return <FullScreen>Verifying platform admin privileges...</FullScreen>;
+  }
+
+  return (
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans">
+      <header className="border-b border-slate-200 bg-white px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <Logo height={36} lightMode={true} />
+          <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-bold text-white uppercase tracking-wider">
+            Admin Console
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate("/")} className="rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition">
+            Go to Landing Page
+          </button>
+          <button onClick={() => sb.auth.signOut()} className="rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-rose-700 transition shadow-xs">
+            Sign Out
+          </button>
+        </div>
+      </header>
+      <main className="max-w-7xl mx-auto p-6">
+        <AdminView meId={userId} />
+      </main>
+    </div>
+  );
+}
+
 function Root(){
   const path = usePath();
   const [session, setSession] = useState(null);
@@ -804,9 +906,6 @@ function Root(){
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Company context loads once per signed-in user. A failure here (e.g. the
-  // Phase 1 SQL hasn't been run yet) must not lock anyone out of their own
-  // planner — fall back to solo rather than showing a dead screen.
   useEffect(() => {
     if (!session) { setOrgReady(false); return; }
     let cancelled = false;
@@ -822,6 +921,9 @@ function Root(){
   if (path === "/terms") return <TermsPage session={session} />;
   if (path === "/contact") return <ContactPage session={session} />;
   if (path === "/refund" || path === "/refund-policy") return <RefundPage session={session} />;
+  if (path === "/admin" || path === "/admin-login" || path === "/admin-desk") {
+    return <AdminPortalDesk session={session} onBack={() => navigate("/")} />;
+  }
 
   if (!CONFIGURED) return <ConfigNotice />;
   if (!ready) return <FullScreen>Starting up…</FullScreen>;
