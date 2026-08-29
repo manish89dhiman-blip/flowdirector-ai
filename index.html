@@ -878,7 +878,7 @@ function LandingScreen({ onSignIn }){
       {/* Header / Nav */}
       <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => navigate("/")}>
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400 font-bold text-slate-950 shadow-md shadow-amber-400/20">
               FD
             </div>
@@ -887,7 +887,11 @@ function LandingScreen({ onSignIn }){
               <div className="mono text-[10px] tracking-widest text-amber-400">TIME DOMINATION OS</div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4 text-xs font-medium text-slate-300">
+            <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hidden hover:text-white sm:block">Privacy</a>
+            <a href="/terms" onClick={(e)=>{e.preventDefault();navigate("/terms");}} className="hidden hover:text-white sm:block">Terms</a>
+            <a href="/refund" onClick={(e)=>{e.preventDefault();navigate("/refund");}} className="hidden hover:text-white sm:block">Refunds</a>
+            <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="hidden hover:text-white sm:block">Contact</a>
             <button onClick={scrollToRequest} className="hidden text-xs font-medium text-slate-300 hover:text-white sm:block">
               Request Access
             </button>
@@ -1025,9 +1029,18 @@ function LandingScreen({ onSignIn }){
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950 py-8 text-center text-xs text-slate-500">
-        <p>© 2026 FlowDirector (<a href="https://flowdirector.co" target="_blank" rel="noreferrer" className="underline hover:text-slate-300">flowdirector.co</a>). All rights reserved.</p>
-        <p className="mt-2">
+      <footer className="border-t border-slate-800/80 bg-slate-950 py-10 text-center text-xs text-slate-500">
+        <div className="mx-auto mb-4 flex max-w-4xl flex-wrap justify-center gap-6 text-sm text-slate-300">
+          <a href="/privacy" onClick={(e)=>{e.preventDefault();navigate("/privacy");}} className="hover:text-amber-400 font-medium transition">Privacy Policy</a>
+          <span>•</span>
+          <a href="/terms" onClick={(e)=>{e.preventDefault();navigate("/terms");}} className="hover:text-amber-400 font-medium transition">Terms of Service</a>
+          <span>•</span>
+          <a href="/refund" onClick={(e)=>{e.preventDefault();navigate("/refund");}} className="hover:text-amber-400 font-medium transition">Refund & Cancellation Policy</a>
+          <span>•</span>
+          <a href="/contact" onClick={(e)=>{e.preventDefault();navigate("/contact");}} className="hover:text-amber-400 font-medium transition">Contact Us</a>
+        </div>
+        <p>© 2026 FlowDirector (<a href="https://flowdirector.co" target="_blank" rel="noreferrer" className="underline hover:text-slate-300">flowdirector.co</a>). Operated by Manish Dhiman.</p>
+        <p className="mt-2 text-slate-400">
           Already have access?{" "}
           <button onClick={onSignIn} className="text-amber-400 font-medium hover:underline">
             Sign In to your workspace
