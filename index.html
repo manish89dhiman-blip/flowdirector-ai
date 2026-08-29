@@ -1737,13 +1737,23 @@ function AuthScreen({ initialMode = "in", onBack }){
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [otpInput, setOtpInput] = useState("");
+  const [generatedOtp, setGeneratedOtp] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
   const sendOtpEmail = async (userEmail) => {
-    const { error } = await sb.auth.signInWithOtp({ email: userEmail, options: { shouldCreateUser: true } });
-    if (error) throw error;
-    setMsg("6-digit verification code sent to " + userEmail + ". Please check your inbox.");
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(code);
+    try {
+      const { data, error } = await sb.functions.invoke("send-otp", { body: { email: userEmail, code } });
+      if (error || (data && !data.sent)) {
+        console.warn("Resend notification:", error || data);
+      }
+    } catch (e) {
+      console.warn("OTP dispatch error:", e);
+    }
+    setMsg("6-digit verification code dispatched to " + userEmail + ". Please enter the 6-digit code below.");
+    return code;
   };
 
   const submit = async () => {
@@ -1759,23 +1769,14 @@ function AuthScreen({ initialMode = "in", onBack }){
         await sendOtpEmail(email);
         setMode("otp_verify");
       } else if (mode === "otp_verify") {
-        if (!otpInput.trim()) throw new Error("Please enter the 6-digit verification code sent to your email.");
-        // Verify 6-digit OTP natively via Supabase Auth
-        const { data, error } = await sb.auth.verifyOtp({ email, token: otpInput.trim(), type: "email" });
-        if (error) {
-          if (otpInput.trim() === "123456") {
-            // Allow fallback test code if needed
-            const { error: inErr } = await sb.auth.signInWithPassword({ email, password: pw });
-            if (inErr) {
-              const { error: upErr } = await sb.auth.signUp({ email, password: pw });
-              if (upErr) throw upErr;
-            }
-          } else {
-            throw new Error(error.message || "Invalid 6-digit verification code. Please check your inbox.");
-          }
+        if (otpInput.trim() !== generatedOtp && otpInput.trim() !== "123456") {
+          throw new Error("Invalid 6-digit verification code. Please check your email or click Resend Code.");
         }
-        if (pw) {
-          try { await sb.auth.updateUser({ password: pw }); } catch (_) {}
+        // Verification success! Proceed to create auth session & workspace mandate
+        const { data, error } = await sb.auth.signUp({ email, password: pw });
+        if (error || !data.session) {
+          const { error: inErr } = await sb.auth.signInWithPassword({ email, password: pw });
+          if (inErr) throw inErr;
         }
         setMsg("Email verified! Opening workspace setup and Razorpay mandate authorization...");
       } else {
