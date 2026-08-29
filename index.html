@@ -574,7 +574,7 @@ function usePath() {
 /* ================================================================== */
 /*  Legal & Compliance Pages (Razorpay Compliant)                      */
 /* ================================================================== */
-function LegalHeader({ title }){
+function LegalHeader({ title, session }){
   return (
     <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
@@ -584,7 +584,9 @@ function LegalHeader({ title }){
         </div>
         <div className="flex items-center gap-3 text-xs">
           <button onClick={() => navigate("/")} className="text-slate-300 hover:text-white">Home</button>
-          <button onClick={() => navigate("/login")} className="rounded-lg bg-amber-400 px-3 py-1.5 font-semibold text-slate-950 hover:bg-amber-300">Sign In</button>
+          <button onClick={() => navigate(session ? "/" : "/login")} className="rounded-lg bg-amber-400 px-3 py-1.5 font-semibold text-slate-950 hover:bg-amber-300">
+            {session ? "Workspace" : "Sign In"}
+          </button>
         </div>
       </div>
     </header>
@@ -608,10 +610,10 @@ function LegalFooter(){
   );
 }
 
-function PrivacyPage(){
+function PrivacyPage({ session }){
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      <LegalHeader title="Privacy Policy" />
+      <LegalHeader title="Privacy Policy" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <h1 className="text-3xl font-extrabold text-white">Privacy Policy</h1>
         <p className="mt-1 text-xs text-amber-400">Last updated: August 2026</p>
@@ -644,10 +646,10 @@ function PrivacyPage(){
   );
 }
 
-function TermsPage(){
+function TermsPage({ session }){
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      <LegalHeader title="Terms of Service" />
+      <LegalHeader title="Terms of Service" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <h1 className="text-3xl font-extrabold text-white">Terms of Service</h1>
         <p className="mt-1 text-xs text-amber-400">Last updated: August 2026</p>
@@ -676,10 +678,10 @@ function TermsPage(){
   );
 }
 
-function ContactPage(){
+function ContactPage({ session }){
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      <LegalHeader title="Contact Us" />
+      <LegalHeader title="Contact Us" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <h1 className="text-3xl font-extrabold text-white">Contact Us</h1>
         <p className="mt-1 text-xs text-amber-400">We're here to help</p>
@@ -708,10 +710,10 @@ function ContactPage(){
   );
 }
 
-function RefundPage(){
+function RefundPage({ session }){
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      <LegalHeader title="Refund & Cancellation Policy" />
+      <LegalHeader title="Refund & Cancellation Policy" session={session} />
       <main className="mx-auto max-w-3xl px-4 py-12 sm:px-6">
         <h1 className="text-3xl font-extrabold text-white">Refund & Cancellation Policy</h1>
         <p className="mt-1 text-xs text-amber-400">Razorpay & Customer Protection Compliant</p>
@@ -775,10 +777,10 @@ function Root(){
   }, [session && session.user.id]);
 
   // --- Route Handlers -----------------------------------------------------
-  if (path === "/privacy") return <PrivacyPage />;
-  if (path === "/terms") return <TermsPage />;
-  if (path === "/contact") return <ContactPage />;
-  if (path === "/refund" || path === "/refund-policy") return <RefundPage />;
+  if (path === "/privacy") return <PrivacyPage session={session} />;
+  if (path === "/terms") return <TermsPage session={session} />;
+  if (path === "/contact") return <ContactPage session={session} />;
+  if (path === "/refund" || path === "/refund-policy") return <RefundPage session={session} />;
 
   if (!CONFIGURED) return <ConfigNotice />;
   if (!ready) return <FullScreen>Starting up…</FullScreen>;
@@ -1303,7 +1305,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     const { overdue, today } = collectDueItems(data);
     if (overdue.length + today.length > 0) {
-      new Notification("Command Center", { body: `${overdue.length} overdue, ${today.length} due today.` });
+      new Notification("FlowDirector", { body: `${overdue.length} overdue, ${today.length} due today.` });
     }
     notifiedRef.current = true;
   }, [data]);
