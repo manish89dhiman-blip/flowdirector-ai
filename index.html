@@ -770,8 +770,8 @@ function RefundPage({ session }){
 }
 
 const SOLO_KEY = "cc-solo-mode";
-const readSolo = () => { try { return localStorage.getItem(SOLO_KEY) === "1"; } catch { return false; } };
-const writeSolo = (v) => { try { v ? localStorage.setItem(SOLO_KEY,"1") : localStorage.removeItem(SOLO_KEY); } catch {} };
+const readSolo = () => false;
+const writeSolo = () => {};
 
 function Root(){
   const path = usePath();
@@ -781,7 +781,7 @@ function Root(){
   const [orgCtx, setOrgCtx] = useState(null);      // {membership, org, pendingInvites}
   const [orgReady, setOrgReady] = useState(false);
   const [orgError, setOrgError] = useState("");
-  const [solo, setSolo] = useState(readSolo());
+  const [solo, setSolo] = useState(false);
 
   useEffect(() => {
     if (!CONFIGURED) { setReady(true); return; }
@@ -830,7 +830,7 @@ function Root(){
 
   if (!orgReady) return <FullScreen>Loading your workspace…</FullScreen>;
 
-  const joined = (ctx) => { setOrgCtx(ctx); setSolo(false); writeSolo(false); };
+  const joined = (ctx) => { setOrgCtx(ctx); setSolo(false); };
 
   // "Set up a company" retries the org lookup rather than assuming it will
   // work. If the company tables still aren't reachable (the usual cause: the
@@ -840,20 +840,20 @@ function Root(){
     try {
       const ctx = await loadOrgContext(session.user.id, session.user.email);
       setOrgCtx(ctx);
-      setSolo(false); writeSolo(false);
+      setSolo(false);
     } catch (e) {
       setOrgCtx(c => ({ ...c, degraded:true }));
       setOrgError(e.message || "Company features aren't available yet.");
     }
   };
 
-  if (!orgCtx.membership && !solo && !orgCtx.degraded) {
+  if (!orgCtx.membership && orgCtx.pendingInvites && orgCtx.pendingInvites.length > 0) {
     return <OnboardingScreen session={session} pendingInvites={orgCtx.pendingInvites}
-             onJoined={joined} onSolo={()=>{ setSolo(true); writeSolo(true); }} />;
+             onJoined={joined} />;
   }
 
   return <Planner session={session} orgCtx={orgCtx} orgError={orgError}
-           onLeftOrg={()=>{ setOrgCtx({membership:null, org:null, pendingInvites:[]}); setSolo(true); writeSolo(true); }}
+           onLeftOrg={()=>{ setOrgCtx({membership:null, org:null, pendingInvites:[]}); }}
            onStartCompany={startCompany} />;
 }
 
@@ -1274,13 +1274,6 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
         </div>
 
         {msg && <p className="mt-3 text-xs text-amber-300">{msg}</p>}
-
-        <div className="mt-5 border-t border-slate-700 pt-4">
-          <button onClick={onSolo} className="text-xs text-slate-400 hover:text-white">
-            Just me for now — skip the company setup
-          </button>
-          <p className="mt-1 text-xs text-slate-500">You can create or join one later from Settings. Nothing you've already planned is affected either way.</p>
-        </div>
       </div>
     </div>
   );
