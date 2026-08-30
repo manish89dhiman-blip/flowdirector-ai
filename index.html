@@ -6272,7 +6272,8 @@ function CalendarSyncModal({ data, dk, userId, onClose }){
   const [copiedFeed, setCopiedFeed] = useState(false);
   const icsData = generateDayIcs(data, dk);
 
-  const feedUrl = userId ? `${SUPABASE_URL}/functions/v1/calendar-feed?u=${userId}` : "";
+  const actualUserId = userId || (typeof sb !== "undefined" && (sb.auth?.currentUser?.id || sb.auth?.user?.()?.id || sb.auth?.session?.()?.user?.id)) || "";
+  const feedUrl = actualUserId ? `${SUPABASE_URL}/functions/v1/calendar-feed?u=${actualUserId}` : "";
   const webcalUrl = feedUrl ? feedUrl.replace(/^https?:\/\//i, "webcal://") : "";
 
   const copyFeedUrl = () => {
@@ -6309,19 +6310,19 @@ function CalendarSyncModal({ data, dk, userId, onClose }){
         </div>
 
         {/* Feature 1: Live Continuous Subscription Feed */}
-        {feedUrl && (
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></span>
-                <span>Live Auto-Updating Subscription (Always in Sync)</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-700">
-              Subscribe once. Whenever you edit time blocks or priorities in FlowDirector, your calendar updates automatically in the background.
-            </p>
-            
-            <div className="flex flex-wrap gap-2 pt-1">
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></span>
+              <span>Live Auto-Updating Subscription (Always in Sync)</span>
+            </span>
+          </div>
+          <p className="text-xs text-slate-700">
+            Subscribe once. Whenever you edit time blocks or priorities in FlowDirector, your calendar updates automatically in the background.
+          </p>
+          
+          <div className="flex flex-wrap gap-2 pt-1">
+            {webcalUrl ? (
               <a
                 href={webcalUrl}
                 target="_blank"
@@ -6331,20 +6332,21 @@ function CalendarSyncModal({ data, dk, userId, onClose }){
                 <span>🍏</span>
                 <span>Subscribe in Apple Calendar</span>
               </a>
-              <button
-                onClick={copyFeedUrl}
-                className="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 py-2 px-3.5 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
-              >
-                <span>{copiedFeed ? "✓" : "📋"}</span>
-                <span>{copiedFeed ? "URL Copied!" : "Copy Feed URL"}</span>
-              </button>
-            </div>
-
-            <div className="pt-2 border-t border-indigo-100 text-[11px] text-slate-600 space-y-1">
-              <p><b>Google Calendar setup:</b> Copy Feed URL &gt; Go to Google Calendar &gt; <i>Other calendars (+)</i> &gt; <i>From URL</i> &gt; Paste.</p>
-            </div>
+            ) : null}
+            <button
+              onClick={copyFeedUrl}
+              className="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 py-2 px-3.5 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+            >
+              <span>{copiedFeed ? "✓" : "📋"}</span>
+              <span>{copiedFeed ? "URL Copied!" : "Copy Feed URL"}</span>
+            </button>
           </div>
-        )}
+
+          <div className="pt-2 border-t border-indigo-100 text-[11px] text-slate-600 space-y-1">
+            <p><b>Google Calendar setup:</b> Copy Feed URL &gt; Go to Google Calendar &gt; <i>Other calendars (+)</i> &gt; <i>From URL</i> &gt; Paste.</p>
+            <p><b>Apple Calendar (Mac/iPhone):</b> Click the Apple Calendar button above or subscribe via <code>webcal://</code>.</p>
+          </div>
+        </div>
 
         {/* Feature 2: Static 1-Click .ICS File Download */}
         <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
@@ -10261,6 +10263,103 @@ function CompanySection({ orgCtx, orgError, userId, onLeftOrg, onStartCompany })
     </div>
   );
 }
+function CalendarIntegrationSection({ data, userId }){
+  const [copiedFeed, setCopiedFeed] = useState(false);
+  const actualUserId = userId || (typeof sb !== "undefined" && (sb.auth?.currentUser?.id || sb.auth?.user?.()?.id || sb.auth?.session?.()?.user?.id)) || "";
+  const feedUrl = actualUserId ? `${SUPABASE_URL}/functions/v1/calendar-feed?u=${actualUserId}` : "";
+  const webcalUrl = feedUrl ? feedUrl.replace(/^https?:\/\//i, "webcal://") : "";
+
+  const copyFeedUrl = () => {
+    if (!feedUrl) return;
+    navigator.clipboard.writeText(feedUrl);
+    setCopiedFeed(true);
+    setTimeout(() => setCopiedFeed(false), 3000);
+  };
+
+  const downloadIcs = () => {
+    const dk = todayKey(data?.settings?.timezone || "Asia/Kolkata");
+    const icsData = generateDayIcs(data, dk);
+    const blob = new Blob([icsData], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `flowdirector-focus-${dk}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+      <div className="flex items-center gap-2.5">
+        <span className="text-xl">🗓️</span>
+        <div>
+          <h3 className="font-bold text-sm text-slate-900">Live Calendar Sync &amp; Feed</h3>
+          <p className="text-xs text-slate-500">Keep Google Calendar, Apple Calendar, and Outlook continuously updated in real-time</p>
+        </div>
+      </div>
+
+      {/* Live Continuous WebCal Subscription */}
+      <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></span>
+            <span>Live Auto-Updating Subscription (Always in Sync)</span>
+          </span>
+        </div>
+        <p className="text-xs text-slate-700">
+          Subscribe once. Whenever you edit time blocks, priorities, or outcomes in FlowDirector, your calendar updates automatically in the background.
+        </p>
+        
+        <div className="flex flex-wrap gap-2 pt-1">
+          {webcalUrl ? (
+            <a
+              href={webcalUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2 px-4 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+            >
+              <span>🍏</span>
+              <span>1-Click Subscribe in Apple Calendar</span>
+            </a>
+          ) : null}
+          <button
+            onClick={copyFeedUrl}
+            className="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 py-2 px-4 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>{copiedFeed ? "✓" : "📋"}</span>
+            <span>{copiedFeed ? "URL Copied!" : "Copy Live Feed URL"}</span>
+          </button>
+        </div>
+
+        <div className="pt-2 border-t border-indigo-100 text-[11px] text-slate-600 space-y-1">
+          <p><b>Google Calendar setup:</b> Copy Feed URL &gt; Go to Google Calendar &gt; <i>Other calendars (+)</i> &gt; <i>From URL</i> &gt; Paste.</p>
+          <p><b>Apple Calendar (Mac / iPhone):</b> Click the Apple Calendar button above or subscribe via <code>webcal://</code>.</p>
+        </div>
+      </div>
+
+      {/* Static 1-Click .ICS Download */}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-black uppercase tracking-wider text-slate-700">
+            Snapshot Export: Single-Day .ICS File
+          </span>
+        </div>
+        <p className="text-xs text-slate-600">
+          Download a standalone snapshot of today's One Main Outcome and planned hourly focus blocks for offline use.
+        </p>
+        <button
+          onClick={downloadIcs}
+          className="rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 px-4 py-2 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+        >
+          <span>📥</span>
+          <span>Download Today's Focus Blocks (.ICS)</span>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany, onOpenTraining, isAdmin }){
   const ohv=Math.round((data.settings.income||0)/(data.settings.hours||1));
@@ -10474,35 +10573,7 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
       <TaskTypeLabelsSection data={data} patch={patch} />
       <TeamSection data={data} patch={patch} inCompany={!!(orgCtx && orgCtx.membership)} />
       <NotificationSection />
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-3">
-        <div className="flex items-center gap-2.5">
-          <span className="text-xl">🗓️</span>
-          <div>
-            <h3 className="font-bold text-sm text-slate-900">Calendar Integration &amp; .ICS Sync</h3>
-            <p className="text-xs text-slate-500">Sync planned focus blocks and One Main Outcomes to Apple Calendar, Google Calendar, or Microsoft Outlook.</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <button 
-            onClick={() => {
-              const icsData = generateDayIcs(data, todayKey(data.settings.timezone || "Asia/Kolkata"));
-              const blob = new Blob([icsData], { type: "text/calendar;charset=utf-8" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = `flowdirector-focus-${todayKey(data.settings.timezone || "Asia/Kolkata")}.ics`;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-            }} 
-            className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 px-3.5 py-2 text-xs font-bold text-slate-800 transition shadow-2xs"
-          >
-            <span>📥</span>
-            <span>Download Today's Focus Blocks (.ICS)</span>
-          </button>
-        </div>
-      </div>
+      <CalendarIntegrationSection data={data} userId={userId} />
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2.5">
