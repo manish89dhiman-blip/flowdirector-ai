@@ -127,18 +127,20 @@ const ROLE_HELP = {
   employee:"Sees their own planner only."
 };
 
-// Everything the app needs to know about the signed-in user's company.
-// Returns { membership, org, pendingInvites } — membership is null when solo.
+// Everything the app needs to know about the signed-in user's company & profile.
+// Returns { membership, org, profile, pendingInvites } — membership is null when solo.
 async function loadOrgContext(userId, email){
-  const { data: m, error: mErr } = await sb
-    .from("memberships").select("*").eq("user_id", userId).maybeSingle();
+  const [{ data: m, error: mErr }, { data: profile }] = await Promise.all([
+    sb.from("memberships").select("*").eq("user_id", userId).maybeSingle(),
+    sb.from("profiles").select("*").eq("id", userId).maybeSingle()
+  ]);
   if (mErr) throw mErr;
 
   if (m) {
     const { data: org, error: oErr } = await sb
       .from("organizations").select("*").eq("id", m.org_id).maybeSingle();
     if (oErr) throw oErr;
-    return { membership:m, org, pendingInvites:[] };
+    return { membership:m, org, profile, pendingInvites:[] };
   }
 
   // No company yet — is somebody waiting for them to accept?
@@ -149,11 +151,16 @@ async function loadOrgContext(userId, email){
     const { data: orgs } = await sb
       .from("organizations").select("id,name").in("id", mine.map(i=>i.org_id));
     const withOrgNames = mine.map(i => ({ ...i, orgName:(orgs||[]).find(o=>o.id===i.org_id)?.name || "a company" }));
-    return { membership:null, org:null, pendingInvites:withOrgNames };
+    return { membership:null, org:null, profile, pendingInvites:withOrgNames };
   }
 
   // No membership and no pending invites — return null membership so user lands on OnboardingScreen
-  return { membership: null, org: null, pendingInvites: [] };
+  return { membership: null, org: null, profile, pendingInvites: [] };
+}
+
+async function updateProfile(userId, updates) {
+  const { error } = await sb.from("profiles").upsert({ id: userId, ...updates }, { onConflict: "id" });
+  if (error) throw error;
 }
 
 async function createOrg(name, userId){
@@ -2342,25 +2349,76 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
 }
 
 /* ================================================================== */
-/*  Training & Coaching Call Modal (Google Meet)                      */
+/*  Executive Welcome & Onboarding Flow (Profile & Google Meet)       */
 /* ================================================================== */
-function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
+function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated }) {
   const org = orgCtx?.org;
+  const profile = orgCtx?.profile;
+  const userId = session.user.id;
+
+  const isProfileDone = !!(profile && profile.profile_completed);
+  const [step, setStep] = useState(isProfileDone ? "training" : "profile"); // profile | training | booked
+
+  // Profile Form State
+  const [fullName, setFullName] = useState(profile?.full_name || "");
+  const [phone, setPhone] = useState(profile?.phone || org?.phone || "");
+  const [roleTitle, setRoleTitle] = useState(profile?.role_title || "Founder / CEO");
+  const [industry, setIndustry] = useState(profile?.industry || org?.industry || "Technology / SaaS");
+  const [teamSize, setTeamSize] = useState(profile?.team_size || org?.team_size || "2–5 team members");
+  const [primaryGoal, setPrimaryGoal] = useState(profile?.primary_goal || "Delegating Operational Bottlenecks");
+
+  // Training Slot State
   const isBooked = org?.training_status === "booked";
   const [preferredDate, setPreferredDate] = useState("");
   const [preferredTime, setPreferredTime] = useState("11:00 AM");
-  const [topic, setTopic] = useState("Owner Hour Value & Delegation Setup");
+  const [topic, setTopic] = useState(profile?.primary_goal || "Owner Hour Value & Delegation Setup");
   const [notes, setNotes] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [externalUrl, setExternalUrl] = useState("");
 
+  // Sync topic with primary goal
   useEffect(() => {
-    loadPlatformSetting("google_meet_booking_url", "https://calendar.google.com/calendar/appointments/schedules")
-      .then(setExternalUrl);
-  }, []);
+    if (primaryGoal) setTopic(primaryGoal);
+  }, [primaryGoal]);
 
-  const handleBook = async () => {
+  const handleSaveProfile = async () => {
+    const fn = fullName.trim();
+    const ph = phone.trim();
+    if (!fn) { setMsg("Please enter your full name."); return; }
+    if (!ph || ph.length < 7) { setMsg("Please enter a valid mobile / WhatsApp number."); return; }
+
+    setBusy(true); setMsg("");
+    try {
+      // 1. Update Profile in Supabase
+      await updateProfile(userId, {
+        full_name: fn,
+        phone: ph,
+        role_title: roleTitle,
+        industry: industry,
+        team_size: teamSize,
+        primary_goal: primaryGoal,
+        profile_completed: true
+      });
+
+      // 2. Update Org info
+      if (org) {
+        await updateOrgTraining(org.id, {
+          phone: ph,
+          industry: industry,
+          team_size: teamSize
+        });
+      }
+
+      if (onUpdated) onUpdated();
+      setStep("training");
+    } catch (e) {
+      setMsg(e.message || "Couldn't save profile.");
+    }
+    setBusy(false);
+  };
+
+  const handleBookTraining = async () => {
     if (!preferredDate) {
       setMsg("Please select your preferred date for the Google Meet call.");
       return;
@@ -2375,19 +2433,18 @@ function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
         training_notes: `Scheduled for: ${scheduledTimeStr} | Topic: ${topic} ${notes ? `| Notes: ${notes}` : ""}`,
         training_meet_link: meetLink
       });
-      
-      const { data: { session } } = await sb.auth.getSession();
-      if (session && session.user && session.user.email) {
-        sendTransactionalEmail("training_booked", session.user.email, {
-          scheduled_time: scheduledTimeStr,
-          topic,
-          notes,
-          meet_link: meetLink
-        });
-      }
 
-      if (onBookingUpdated) onBookingUpdated();
+      // Dispatch confirmation email via Resend
+      sendTransactionalEmail("training_booked", session.user.email, {
+        scheduled_time: scheduledTimeStr,
+        topic,
+        notes,
+        meet_link: meetLink
+      });
+
+      if (onUpdated) onUpdated();
       setMsg("Training session confirmed! We have reserved your Google Meet slot and sent confirmation to your email.");
+      setStep("booked");
     } catch (e) {
       setMsg(e.message || "Couldn't save booking.");
     }
@@ -2401,101 +2458,173 @@ function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
         training_status: "unbooked",
         training_booked_at: null
       });
-      if (onBookingUpdated) onBookingUpdated();
+      if (onUpdated) onUpdated();
+      setStep("training");
     } catch (e) {
       setMsg(e.message || "Couldn't update booking.");
     }
     setBusy(false);
   };
 
-  const handleSkip = async () => {
+  const handleSkipTraining = async () => {
     try {
       if (org && org.training_status === "unbooked") {
         await updateOrgTraining(org.id, { training_status: "skipped" });
-        if (onBookingUpdated) onBookingUpdated();
+        if (onUpdated) onUpdated();
       }
     } catch (_) {}
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 text-slate-900 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 text-slate-900 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+        
+        {/* Header */}
         <div className="flex items-start justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-2xl border border-emerald-200 text-emerald-700">
-              📹
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-50 text-2xl border border-amber-200 text-amber-700 shadow-xs">
+              {step === "profile" ? "👤" : "📹"}
             </div>
             <div>
-              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100/70 px-2.5 py-0.5 text-[10px] font-bold text-emerald-950 mb-1">
-                COMPLIMENTARY EXECUTIVE COACHING
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-100/80 px-2.5 py-0.5 text-[10px] font-bold text-amber-950 mb-1 uppercase tracking-wider">
+                {step === "profile" ? "MANDATORY EXECUTIVE SETUP · STEP 1 OF 2" : "COMPLIMENTARY EXECUTIVE COACHING · STEP 2 OF 2"}
               </div>
-              <h2 className="text-xl font-extrabold text-slate-950">1-on-1 Google Meet Training Call</h2>
+              <h2 className="text-xl font-extrabold text-slate-950">
+                {step === "profile" ? "Complete Your Executive Profile" : "1-on-1 Google Meet Training Call"}
+              </h2>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
-            ✕
-          </button>
+          {/* Close button ONLY allowed when profile is already completed */}
+          {isProfileDone && (
+            <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+              ✕
+            </button>
+          )}
         </div>
 
-        {isBooked ? (
+        {/* STEP 1: MANDATORY PROFILE FORM */}
+        {step === "profile" && (
           <div className="space-y-4">
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 text-left space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider">Session Scheduled</span>
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+              Welcome to FlowDirector! Please provide your executive contact details so we can tailor your workspace, configure your 15-day trial, and coordinate your training session.
+            </p>
+
+            <div className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">
+                    Full Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    value={fullName} 
+                    onChange={e => setFullName(e.target.value)}
+                    placeholder="e.g. Manish Kumar"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">
+                    Mobile / WhatsApp No. <span className="text-rose-500">*</span>
+                  </label>
+                  <input 
+                    type="tel" 
+                    value={phone} 
+                    onChange={e => setPhone(e.target.value)}
+                    placeholder="e.g. +91 98765 43210"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  />
+                </div>
               </div>
-              <div className="text-sm font-bold text-slate-900">
-                {org.training_notes || "Executive Onboarding Strategy Call"}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Your Role / Title</label>
+                  <select 
+                    value={roleTitle} 
+                    onChange={e => setRoleTitle(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  >
+                    <option value="Founder / CEO">Founder / CEO</option>
+                    <option value="Managing Director">Managing Director</option>
+                    <option value="Co-Founder">Co-Founder</option>
+                    <option value="Chief Operating Officer">Chief Operating Officer</option>
+                    <option value="VP / General Manager">VP / General Manager</option>
+                    <option value="Other">Other Executive</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Industry / Sector</label>
+                  <select 
+                    value={industry} 
+                    onChange={e => setIndustry(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  >
+                    <option value="Technology / SaaS">Technology / SaaS</option>
+                    <option value="Consulting & Professional Services">Consulting & Professional Services</option>
+                    <option value="Marketing & Media Agency">Marketing & Media Agency</option>
+                    <option value="Manufacturing & Logistics">Manufacturing & Logistics</option>
+                    <option value="Real Estate & Construction">Real Estate & Construction</option>
+                    <option value="E-commerce & Retail">E-commerce & Retail</option>
+                    <option value="Financial Services">Financial Services</option>
+                    <option value="Healthcare">Healthcare</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
               </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Your 1-on-1 session is booked. We will connect over Google Meet to review your company KRAs, calculate delegation velocity, and set up your team's weekly focus grid.
-              </p>
-              <div className="pt-2 flex flex-wrap gap-2">
-                <a 
-                  href={org.training_meet_link || "https://meet.google.com"} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-sm inline-flex items-center gap-1.5"
-                >
-                  <span>Open Google Meet</span>
-                  <span>↗</span>
-                </a>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Team Size</label>
+                  <select 
+                    value={teamSize} 
+                    onChange={e => setTeamSize(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  >
+                    <option value="Solo (1)">Solo (1 person)</option>
+                    <option value="2–5 team members">2–5 team members</option>
+                    <option value="6–20 team members">6–20 team members</option>
+                    <option value="20–50 team members">20–50 team members</option>
+                    <option value="50+ team members">50+ team members</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Primary Strategic Focus</label>
+                  <select 
+                    value={primaryGoal} 
+                    onChange={e => setPrimaryGoal(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  >
+                    <option value="Delegating Operational Bottlenecks">Delegating Operational Bottlenecks</option>
+                    <option value="Setting & Tracking Team KRAs/KPIs">Setting & Tracking Team KRAs/KPIs</option>
+                    <option value="Mastering Daily Time-Blocking & Focus">Mastering Daily Time-Blocking & Focus</option>
+                    <option value="Scaling Revenue & Business Systems">Scaling Revenue & Business Systems</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-3">
                 <button 
-                  onClick={handleCancelOrReschedule} 
+                  onClick={handleSaveProfile} 
                   disabled={busy}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-xs"
+                  className="w-full py-3.5 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition shadow-md disabled:opacity-60 flex items-center justify-center gap-2"
                 >
-                  Reschedule / Change Slot
+                  {busy ? "Saving Profile..." : "Save Executive Profile & Continue to Training Call →"}
                 </button>
               </div>
             </div>
-            <button onClick={onClose} className="w-full py-3 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition">
-              Back to Cockpit →
-            </button>
+
+            {msg && <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl leading-relaxed">{msg}</p>}
           </div>
-        ) : (
+        )}
+
+        {/* STEP 2: GOOGLE MEET TRAINING SCHEDULER */}
+        {step === "training" && (
           <div className="space-y-4">
             <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              Accelerate your team's results with a dedicated 20-minute onboarding strategy call with our product specialist. We will help you dial in your <b>Owner Hour Value</b>, configure custom task labels, and structure your monthly KRAs.
+              Accelerate your team's results with a dedicated 20-minute onboarding strategy call over <b>Google Meet</b>. We will help you dial in your <b>Owner Hour Value (OHV)</b>, configure custom task labels, and structure your monthly KRAs.
             </p>
-
-            {externalUrl && (
-              <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 flex items-center justify-between gap-3">
-                <div className="text-xs text-blue-950 font-medium">
-                  <b>Prefer direct calendar booking?</b> Pick a live instant slot on our Google Calendar schedule.
-                </div>
-                <a 
-                  href={externalUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="shrink-0 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shadow-xs flex items-center gap-1"
-                >
-                  <span>Open Calendar</span>
-                  <span>↗</span>
-                </a>
-              </div>
-            )}
 
             <div className="space-y-3 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2528,16 +2657,12 @@ function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Primary Focus Area</label>
-                <select 
+                <input 
+                  type="text" 
                   value={topic} 
                   onChange={e => setTopic(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
-                >
-                  <option value="Owner Hour Value & Delegation Setup">Owner Hour Value & Delegation Setup</option>
-                  <option value="Team KRA / KPI Goal Alignment">Team KRA / KPI Goal Alignment</option>
-                  <option value="Weekly Time Blocking & Focus Grid Mastery">Weekly Time Blocking & Focus Grid Mastery</option>
-                  <option value="Custom Workflow & Multi-User Rollout">Custom Workflow & Multi-User Rollout</option>
-                </select>
+                />
               </div>
 
               <div>
@@ -2546,21 +2671,21 @@ function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
                   type="text" 
                   value={notes} 
                   onChange={e => setNotes(e.target.value)} 
-                  placeholder="e.g. We have 4 managers and want to standardize weekly reporting"
+                  placeholder="e.g. We want to align weekly delegation for our 4 managers"
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
                 />
               </div>
 
               <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
                 <button 
-                  onClick={handleBook} 
+                  onClick={handleBookTraining} 
                   disabled={busy}
                   className="w-full sm:flex-1 py-3 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition shadow-md disabled:opacity-60 flex items-center justify-center gap-1.5"
                 >
                   <span>{busy ? "Reserving Slot..." : "Confirm Google Meet Training Session →"}</span>
                 </button>
                 <button 
-                  onClick={handleSkip} 
+                  onClick={handleSkipTraining} 
                   className="w-full sm:w-auto py-3 px-4 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 transition"
                 >
                   Skip for Now
@@ -2571,6 +2696,46 @@ function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
             {msg && <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl leading-relaxed">{msg}</p>}
           </div>
         )}
+
+        {/* STEP 3: BOOKED STATE */}
+        {(step === "booked" || (isBooked && step !== "profile")) && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 text-left space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider">Session Scheduled</span>
+              </div>
+              <div className="text-sm font-bold text-slate-900">
+                {org?.training_notes || "Executive Onboarding Strategy Call"}
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Your 1-on-1 session is booked. We will connect over Google Meet to review your company KRAs, calculate delegation velocity, and set up your team's weekly focus grid.
+              </p>
+              <div className="pt-2 flex flex-wrap gap-2">
+                <a 
+                  href={org?.training_meet_link || "https://meet.google.com"} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-sm inline-flex items-center gap-1.5"
+                >
+                  <span>Open Google Meet</span>
+                  <span>↗</span>
+                </a>
+                <button 
+                  onClick={handleCancelOrReschedule} 
+                  disabled={busy}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-xs"
+                >
+                  Reschedule / Change Slot
+                </button>
+              </div>
+            </div>
+            <button onClick={onClose} className="w-full py-3 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition">
+              Back to Cockpit →
+            </button>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -2723,17 +2888,20 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const isCompanyUser = orgCtx && orgCtx.membership;
   const isAuthorized = sub && (sub.status === "active" || sub.status === "trialing");
 
-  // Post-Mandate Auto-Trigger for 1:1 Executive Training Call
+  // Post-Mandate Mandatory Profile & Executive Training Auto-Trigger
   useEffect(() => {
-    if (orgCtx && orgCtx.org && isAuthorized && !trainingChecked) {
+    if (orgCtx && isAuthorized && !trainingChecked) {
       setTrainingChecked(true);
-      const st = orgCtx.org.training_status;
-      if ((!st || st === "unbooked") && !sessionStorage.getItem("fd_training_prompted")) {
+      const isProfileDone = !!(orgCtx.profile && orgCtx.profile.profile_completed);
+      const st = orgCtx.org?.training_status;
+      if (!isProfileDone) {
+        setShowTrainingModal(true);
+      } else if ((!st || st === "unbooked") && !sessionStorage.getItem("fd_training_prompted")) {
         sessionStorage.setItem("fd_training_prompted", "1");
         setShowTrainingModal(true);
       }
     }
-  }, [orgCtx && orgCtx.org && orgCtx.org.id, isAuthorized, trainingChecked]);
+  }, [orgCtx && orgCtx.org && orgCtx.org.id, isAuthorized, trainingChecked, orgCtx?.profile?.profile_completed]);
 
   const patch = (fn) => setData(d => { const c = structuredClone(d); fn(c); return c; });
 
@@ -2887,10 +3055,11 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       </main>
 
       {showTrainingModal && (
-        <TrainingBookingModal 
+        <ExecutiveWelcomeOnboardingFlow 
           orgCtx={orgCtx} 
+          session={session}
           onClose={() => setShowTrainingModal(false)}
-          onBookingUpdated={async () => {
+          onUpdated={async () => {
             try {
               const freshCtx = await loadOrgContext(userId, session.user.email);
               if (onLeftOrg) onLeftOrg(); // clear
@@ -5676,7 +5845,11 @@ function AdminPlans({ plans, onSaved }){
 function AccountSection({ userId }){
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [roleTitle, setRoleTitle] = useState("");
   const [savedName, setSavedName] = useState("");
+  const [savedPhone, setSavedPhone] = useState("");
+  const [savedRoleTitle, setSavedRoleTitle] = useState("");
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [msg, setMsg] = useState("");
@@ -5688,21 +5861,32 @@ function AccountSection({ userId }){
     (async () => {
       const { data: { session } } = await sb.auth.getSession();
       if (!cancelled && session) setEmail(session.user.email || "");
-      const { data } = await sb.from("profiles").select("full_name").eq("id", userId).maybeSingle();
-      if (!cancelled && data) { setName(data.full_name || ""); setSavedName(data.full_name || ""); }
+      const { data } = await sb.from("profiles").select("full_name, phone, role_title").eq("id", userId).maybeSingle();
+      if (!cancelled && data) {
+        setName(data.full_name || ""); setSavedName(data.full_name || "");
+        setPhone(data.phone || ""); setSavedPhone(data.phone || "");
+        setRoleTitle(data.role_title || ""); setSavedRoleTitle(data.role_title || "");
+      }
     })();
     return () => { cancelled = true; };
   }, [userId]);
 
   const say = (t, bad) => { setMsg(t); setTone(bad ? "bad" : "ok"); };
 
-  const saveName = async () => {
-    setBusy("name"); setMsg("");
-    // No upsert: the profile row is created by a trigger at sign-up, and an
-    // upsert here would quietly recreate it with a null email if it were gone.
-    const { error } = await sb.from("profiles").update({ full_name: name.trim() || null }).eq("id", userId);
-    if (error) say(error.message || "Couldn't save your name.", true);
-    else { setSavedName(name.trim()); say("Name saved. This is what your team sees."); }
+  const saveProfile = async () => {
+    setBusy("profile"); setMsg("");
+    const { error } = await sb.from("profiles").update({
+      full_name: name.trim() || null,
+      phone: phone.trim() || null,
+      role_title: roleTitle.trim() || null
+    }).eq("id", userId);
+    if (error) say(error.message || "Couldn't save your profile details.", true);
+    else {
+      setSavedName(name.trim());
+      setSavedPhone(phone.trim());
+      setSavedRoleTitle(roleTitle.trim());
+      say("Profile details saved successfully.");
+    }
     setBusy("");
   };
 
@@ -5718,60 +5902,59 @@ function AccountSection({ userId }){
   };
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 font-semibold text-slate-700">Your account</h3>
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
+      <h3 className="font-bold text-slate-900 text-sm">Your Account & Executive Profile</h3>
 
-      <div className="mb-4">
-        <label className="text-xs font-medium text-slate-500">Signed in as</label>
-        <div className="mono mt-1 text-sm text-slate-700">{email || "…"}</div>
-        <p className="mt-1 text-xs text-slate-400">
-          Changing your email address isn't self-service yet — it would move every invite and
-          membership tied to it. Ask your owner, or start a fresh account.
-        </p>
+      <div>
+        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Signed in as</label>
+        <div className="mono mt-1 text-sm font-semibold text-slate-900">{email || "…"}</div>
       </div>
 
-      <div className="mb-4">
-        <label className="text-xs font-medium text-slate-500">Display name</label>
-        <div className="mt-1 flex flex-wrap gap-2">
-          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Your name"
-            onKeyDown={e=>e.key==="Enter"&&saveName()}
-            className="min-w-[12rem] flex-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm outline-none focus:border-amber-400" />
-          <button onClick={saveName} disabled={busy==="name" || name.trim()===savedName}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-40">
-            {busy==="name" ? "…" : "Save"}
-          </button>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1">Full Name</label>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Your Name"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
         </div>
-        <p className="mt-1 text-xs text-slate-400">Shown to your team instead of your email address.</p>
+        <div>
+          <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1">Mobile / WhatsApp</label>
+          <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+91 98765 43210"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+        </div>
+        <div>
+          <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1">Role / Title</label>
+          <input value={roleTitle} onChange={e=>setRoleTitle(e.target.value)} placeholder="Founder / CEO"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+        </div>
       </div>
 
-      <div className="mb-2">
-        <label className="text-xs font-medium text-slate-500">Change password</label>
-        <div className="mt-1 flex flex-wrap gap-2">
+      <div>
+        <button onClick={saveProfile} disabled={busy==="profile" || (name.trim()===savedName && phone.trim()===savedPhone && roleTitle.trim()===savedRoleTitle)}
+          className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-40 transition shadow-xs">
+          {busy==="profile" ? "Saving..." : "Save Profile Details"}
+        </button>
+      </div>
+
+      <div className="pt-4 border-t border-slate-100">
+        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">Change Password</label>
+        <div className="flex flex-wrap gap-2">
           <input type="password" value={pw1} onChange={e=>setPw1(e.target.value)}
             placeholder="New password" autoComplete="new-password"
-            className="min-w-[10rem] flex-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            className="min-w-[10rem] flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-600 focus:bg-white transition" />
           <input type="password" value={pw2} onChange={e=>setPw2(e.target.value)}
-            placeholder="Repeat it" autoComplete="new-password"
+            placeholder="Repeat password" autoComplete="new-password"
             onKeyDown={e=>e.key==="Enter"&&changePassword()}
-            className="min-w-[10rem] flex-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm outline-none focus:border-amber-400" />
+            className="min-w-[10rem] flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs outline-none focus:border-blue-600 focus:bg-white transition" />
           <button onClick={changePassword} disabled={busy==="pw" || !pw1 || !pw2}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-40">
+            className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-40 transition shadow-xs">
             {busy==="pw" ? "…" : "Change"}
           </button>
         </div>
-        <p className="mt-1 text-xs text-slate-400">
-          At least 8 characters. You stay signed in here; other devices keep their session until it expires.
-        </p>
       </div>
 
-      {msg && <p className={"mt-3 rounded-md border px-3 py-2 text-xs "+(tone==="bad"
+      {msg && <p className={"rounded-xl border px-3.5 py-2.5 text-xs "+(tone==="bad"
         ? "border-rose-200 bg-rose-50 text-rose-700"
         : "border-emerald-200 bg-emerald-50 text-emerald-700")}>{msg}</p>}
-
-      <button onClick={()=>sb.auth.signOut()}
-        className="mt-4 rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50">
-        Sign out
-      </button>
     </div>
   );
 }
