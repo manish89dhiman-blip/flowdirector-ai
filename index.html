@@ -746,7 +746,11 @@ async function bookTrainingSession({
     selectedCoach = coaches[0];
   }
 
-  const meetLink = selectedCoach ? selectedCoach.google_meet_link : "https://meet.google.com/new";
+  const roomHash = (Math.random().toString(36).substring(2, 7) + Date.now().toString(36).substring(4)).toLowerCase();
+  const defaultRoom = `https://meet.jit.si/FlowDirector-Session-${roomHash}`;
+  const meetLink = (selectedCoach && selectedCoach.google_meet_link && !selectedCoach.google_meet_link.endsWith("/new")) 
+    ? selectedCoach.google_meet_link 
+    : defaultRoom;
   const coachName = selectedCoach ? selectedCoach.name : "FlowDirector Executive Coaching Team";
   const coachEmail = selectedCoach ? selectedCoach.email : null;
 
@@ -774,11 +778,14 @@ async function bookTrainingSession({
     training_notes: noteSummary
   });
 
-  // 7. Dispatch instant confirmation emails via Resend
+  // 7. Dispatch instant confirmation emails via Resend with 1-Click Calendar Sync & .ICS
   // To Founder:
   if (founderEmail) {
     sendTransactionalEmail("training_booked", founderEmail, {
       scheduled_time: `${dateStr} at ${timeSlot}`,
+      date_str: dateStr,
+      slot_str: timeSlot,
+      coach_name: coachName,
       topic,
       meet_link: meetLink,
       notes: notes ? `${notes} (Assigned Coach: ${coachName})` : `Assigned Coach: ${coachName}`
@@ -796,13 +803,15 @@ async function bookTrainingSession({
       industry,
       team_size: teamSize,
       scheduled_time: `${dateStr} at ${timeSlot}`,
+      date_str: dateStr,
+      slot_str: timeSlot,
       topic,
       notes,
       meet_link: meetLink
     });
   }
 
-  return { ok: true, session: sessionRow, coach: selectedCoach };
+  return { ok: true, session: sessionRow, coach: selectedCoach, meetLink };
 }
 
 const SAMPLE_EXECUTIVE_BLUEPRINT = {
@@ -1308,6 +1317,32 @@ function CoachPortalDesk({ session, onBack }){
     setBusy(false);
   };
 
+  const handleSendReminder = async (s) => {
+    setBusy(true);
+    try {
+      let targetEmail = "";
+      const { data: mem } = await sb.from("memberships").select("user_id").eq("org_id", s.org_id).limit(1).maybeSingle();
+      if (mem && mem.user_id) {
+        const { data: prof } = await sb.from("profiles").select("email, full_name").eq("id", mem.user_id).maybeSingle();
+        if (prof && prof.email) targetEmail = prof.email;
+      }
+      if (!targetEmail) {
+        throw new Error("Could not find registered founder email for this company.");
+      }
+      await sendTransactionalEmail("training_reminder", targetEmail, {
+        scheduled_time: `${s.scheduled_date} at ${s.scheduled_slot}`,
+        meet_link: s.meet_link,
+        coach_name: coach.name,
+        founder_name: s.org?.name || "Leader",
+        topic: s.topic
+      });
+      say(`Pre-meeting reminder email dispatched to ${targetEmail}!`);
+    } catch (e) {
+      say("Couldn't dispatch reminder: " + (e.message || ""));
+    }
+    setBusy(false);
+  };
+
   if (loading) return <FullScreen>Loading Coach Operations Desk...</FullScreen>;
 
   if (!coach) {
@@ -1480,12 +1515,26 @@ function CoachPortalDesk({ session, onBack }){
                   <div className="flex flex-wrap items-center gap-2">
                     <a href={s.meet_link} target="_blank" rel="noopener noreferrer"
                       className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1.5">
-                      <span>📹 Join Google Meet</span>
+                      <span>📹 Join Video Room</span>
                       <span>↗</span>
                     </a>
 
                     {s.status === "scheduled" && (
                       <>
+                        <button onClick={() => handleSendReminder(s)} disabled={busy} title="Send 1-hour pre-call reminder email"
+                          className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900 hover:bg-amber-100 transition shadow-2xs flex items-center gap-1">
+                          <span>📧</span>
+                          <span>Send 1h Reminder</span>
+                        </button>
+                        {org.phone && (
+                          <a 
+                            href={`https://wa.me/${org.phone.replace(/\D/g,'')}?text=${encodeURIComponent(`Hello! This is ${coach.name} from FlowDirector. Looking forward to our 1:1 executive strategy call scheduled for ${s.scheduled_date} at ${s.scheduled_slot}. Here is our meeting room link: ${s.meet_link}`)}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition shadow-2xs flex items-center gap-1"
+                          >
+                            <span>📱 WhatsApp</span>
+                          </a>
+                        )}
                         <button onClick={() => { setSelectedSession(s); setOutcomeNotes(""); }}
                           className="rounded-xl bg-slate-950 px-3.5 py-2 text-xs font-bold text-white hover:bg-slate-800 transition shadow-xs">
                           ✓ Complete Session
@@ -6609,6 +6658,31 @@ function AdminTrainingOperations({ onNotice }){
     }
   };
 
+  const handleSendAdminReminder = async (s) => {
+    try {
+      let targetEmail = "";
+      const { data: mem } = await sb.from("memberships").select("user_id").eq("org_id", s.org_id).limit(1).maybeSingle();
+      if (mem && mem.user_id) {
+        const { data: prof } = await sb.from("profiles").select("email, full_name").eq("id", mem.user_id).maybeSingle();
+        if (prof && prof.email) targetEmail = prof.email;
+      }
+      if (!targetEmail) {
+        throw new Error("Could not locate registered founder email for this company.");
+      }
+      const coach = s.coach || coaches.find(c => c.id === s.coach_id) || { name: "Executive Onboarding Team" };
+      await sendTransactionalEmail("training_reminder", targetEmail, {
+        scheduled_time: `${s.scheduled_date} at ${s.scheduled_slot}`,
+        meet_link: s.meet_link,
+        coach_name: coach.name,
+        founder_name: s.org?.name || "Leader",
+        topic: s.topic
+      });
+      if (onNotice) onNotice(`Pre-call 1-hour reminder email dispatched to ${targetEmail}!`);
+    } catch (e) {
+      if (onNotice) onNotice("Couldn't dispatch reminder: " + (e.message || ""));
+    }
+  };
+
   const handleUpdateSessionStatus = async (sessionId, status) => {
     try {
       await updateTrainingSession(sessionId, { status });
@@ -6884,9 +6958,27 @@ function AdminTrainingOperations({ onNotice }){
                       </div>
 
                       <a href={s.meet_link} target="_blank" rel="noopener noreferrer"
-                        className="rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs inline-flex items-center gap-1">
+                        className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs inline-flex items-center gap-1">
                         📹 Join ↗
                       </a>
+
+                      {s.status === "scheduled" && (
+                        <>
+                          <button onClick={() => handleSendAdminReminder(s)} title="Send pre-call reminder email with meeting link"
+                            className="rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 transition shadow-2xs">
+                            📧 1h Reminder
+                          </button>
+                          {org.phone && (
+                            <a 
+                              href={`https://wa.me/${org.phone.replace(/\D/g,'')}?text=${encodeURIComponent(`Hello! Looking forward to our FlowDirector 1:1 strategy call scheduled for ${s.scheduled_date} at ${s.scheduled_slot}. Here is our meeting room link: ${s.meet_link}`)}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition shadow-2xs"
+                            >
+                              📱 WhatsApp
+                            </a>
+                          )}
+                        </>
+                      )}
 
                       <select 
                         value={s.status} 

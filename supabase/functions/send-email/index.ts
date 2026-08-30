@@ -30,6 +30,89 @@ const esc = (s: string) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
   );
 
+function parseSlotUtc(dateStr: string, slotStr: string) {
+  let startHour = 11, startMin = 30;
+  let endHour = 12, endMin = 0;
+
+  const match = String(slotStr || "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+  if (match) {
+    let h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    const ampm = match[3].toUpperCase();
+    if (ampm === "PM" && h < 12) h += 12;
+    if (ampm === "AM" && h === 12) h = 0;
+    startHour = h;
+    startMin = m;
+
+    const endMatch = slotStr.match(/-\s*(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (endMatch) {
+      let eh = parseInt(endMatch[1], 10);
+      const em = parseInt(endMatch[2], 10);
+      const eampm = endMatch[3].toUpperCase();
+      if (eampm === "PM" && eh < 12) eh += 12;
+      if (eampm === "AM" && eh === 12) eh = 0;
+      endHour = eh;
+      endMin = em;
+    } else {
+      const totalMin = startHour * 60 + startMin + 30;
+      endHour = Math.floor(totalMin / 60) % 24;
+      endMin = totalMin % 60;
+    }
+  }
+
+  const [yr, mo, dy] = (dateStr || new Date().toISOString().slice(0, 10)).split("-").map(Number);
+  const startDateIST = new Date(Date.UTC(yr || 2026, (mo || 1) - 1, dy || 1, startHour, startMin, 0));
+  const startUTC = new Date(startDateIST.getTime() - 5.5 * 60 * 60 * 1000);
+  const endDateIST = new Date(Date.UTC(yr || 2026, (mo || 1) - 1, dy || 1, endHour, endMin, 0));
+  const endUTC = new Date(endDateIST.getTime() - 5.5 * 60 * 60 * 1000);
+
+  const formatIsoUtc = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+
+  return {
+    startUtcStr: formatIsoUtc(startUTC),
+    endUtcStr: formatIsoUtc(endUTC),
+    isoStart: startUTC.toISOString(),
+  };
+}
+
+function buildCalendarData(opts: { title: string; description: string; location: string; dateStr: string; slotStr: string }) {
+  const { startUtcStr, endUtcStr } = parseSlotUtc(opts.dateStr, opts.slotStr);
+  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(opts.title)}&dates=${startUtcStr}/${endUtcStr}&details=${encodeURIComponent(opts.description)}&location=${encodeURIComponent(opts.location)}`;
+  const outlookUrl = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${encodeURIComponent(opts.title)}&startdt=${startUtcStr}&enddt=${endUtcStr}&body=${encodeURIComponent(opts.description)}&location=${encodeURIComponent(opts.location)}`;
+
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//FlowDirector//Executive Strategy Session//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:REQUEST",
+    "BEGIN:VEVENT",
+    `UID:flowdirector-${Date.now()}@flowdirector.co`,
+    `DTSTAMP:${startUtcStr}`,
+    `DTSTART:${startUtcStr}`,
+    `DTEND:${endUtcStr}`,
+    `SUMMARY:${opts.title}`,
+    `DESCRIPTION:${opts.description.replace(/\n/g, "\\n")}`,
+    `LOCATION:${opts.location}`,
+    `URL:${opts.location}`,
+    "STATUS:CONFIRMED",
+    "BEGIN:VALARM",
+    "TRIGGER:-PT15M",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Reminder: FlowDirector Strategy Call in 15 minutes!",
+    "END:VALARM",
+    "BEGIN:VALARM",
+    "TRIGGER:-PT1H",
+    "ACTION:DISPLAY",
+    "DESCRIPTION:Reminder: FlowDirector Strategy Call in 1 hour!",
+    "END:VALARM",
+    "END:VEVENT",
+    "END:VCALENDAR"
+  ].join("\r\n");
+
+  return { gcalUrl, outlookUrl, ics };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -59,6 +142,7 @@ Deno.serve(async (req) => {
 
     let subject = "";
     let html = "";
+    let icsAttachment: { filename: string; content: string } | null = null;
 
     // --------------------------------------------------------------------------
     // 1. WELCOME EMAIL
@@ -122,15 +206,34 @@ Deno.serve(async (req) => {
     }
 
     // --------------------------------------------------------------------------
-    // 2. 1:1 GOOGLE MEET TRAINING BOOKED EMAIL
+    // --------------------------------------------------------------------------
+    // 2. 1:1 STRATEGY & TRAINING BOOKED EMAIL (with Calendar & .ICS Alarms)
     // --------------------------------------------------------------------------
     else if (type === "training_booked") {
       const scheduledTime = data.scheduled_time || "Soon";
       const topic = data.topic || "Owner Hour Value & Delegation Setup";
       const meetLink = data.meet_link || "https://meet.google.com";
       const notes = data.notes || "";
+      const dateStr = data.date_str || "";
+      const slotStr = data.slot_str || scheduledTime;
+      const coachName = data.coach_name || "Executive Onboarding Specialist";
 
-      subject = `Confirmed: 1-on-1 Google Meet Strategy Call · ${scheduledTime}`;
+      const calData = buildCalendarData({
+        title: "FlowDirector 1:1 Executive Strategy & Onboarding Call",
+        description: `20-minute onboarding strategy call with ${coachName}.\nFocus: ${topic}\nJoin Video Room: ${meetLink}`,
+        location: meetLink,
+        dateStr,
+        slotStr
+      });
+
+      if (calData.ics) {
+        icsAttachment = {
+          filename: "flowdirector-strategy-session.ics",
+          content: btoa(calData.ics)
+        };
+      }
+
+      subject = `Confirmed: 1-on-1 Strategy Call · ${scheduledTime}`;
       html = `
         <!DOCTYPE html>
         <html>
@@ -145,19 +248,23 @@ Deno.serve(async (req) => {
               <span style="font-size:12px;font-weight:800;color:#065f46;text-transform:uppercase;letter-spacing:0.5px;">✓ 1-on-1 Session Confirmed</span>
             </div>
 
-            <h1 style="font-size:22px;font-weight:800;color:#0f172a;line-height:1.3;margin:0 0 12px 0;">Your Google Meet Training Call is Scheduled</h1>
+            <h1 style="font-size:22px;font-weight:800;color:#0f172a;line-height:1.3;margin:0 0 12px 0;">Your Strategy & Onboarding Call is Scheduled</h1>
             
             <p style="font-size:15px;line-height:1.6;color:#475569;margin:0 0 20px 0;">
-              We look forward to connecting with you. In this 20-minute session, we will align your monthly KRAs, dial in your Owner Hour Value, and configure your delegation workflows.
+              In this 20-minute executive session, we will align your monthly KRAs, dial in your Owner Hour Value (OHV), and configure your delegation workflows.
             </p>
 
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin:24px 0;">
               <div style="margin-bottom:12px;">
-                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Scheduled Time</span>
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Scheduled Date & Time</span>
                 <span style="font-size:16px;font-weight:800;color:#0f172a;">${esc(scheduledTime)}</span>
               </div>
               <div style="margin-bottom:12px;">
-                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Focus Area</span>
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Assigned Coach</span>
+                <span style="font-size:14px;font-weight:700;color:#0f172a;">${esc(coachName)}</span>
+              </div>
+              <div style="margin-bottom:12px;">
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Focus Objective</span>
                 <span style="font-size:14px;font-weight:700;color:#0f172a;">${esc(topic)}</span>
               </div>
               ${notes ? `
@@ -167,10 +274,29 @@ Deno.serve(async (req) => {
               </div>` : ""}
             </div>
 
-            <div style="margin:32px 0;text-align:center;">
+            <!-- Join Video Room Button -->
+            <div style="margin:28px 0;text-align:center;">
               <a href="${esc(meetLink)}" style="background:#059669;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;display:inline-block;box-shadow:0 4px 12px rgba(5,150,105,0.2);">
-                📹 Join Google Meet Room →
+                📹 Join Video Meeting Room →
               </a>
+            </div>
+
+            <!-- 1-Click Calendar Sync Options -->
+            <div style="background:#f1f5f9;border-radius:14px;padding:16px;margin:24px 0;text-align:center;">
+              <span style="font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:10px;">
+                📅 1-Click Add to Your Calendar (With Auto-Reminders)
+              </span>
+              <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;">
+                <a href="${esc(calData.gcalUrl)}" target="_blank" style="background:#ffffff;border:1px solid #cbd5e1;color:#1e293b;text-decoration:none;font-weight:700;font-size:12px;padding:8px 16px;border-radius:10px;display:inline-block;">
+                  Google Calendar ↗
+                </a>
+                <a href="${esc(calData.outlookUrl)}" target="_blank" style="background:#ffffff;border:1px solid #cbd5e1;color:#1e293b;text-decoration:none;font-weight:700;font-size:12px;padding:8px 16px;border-radius:10px;display:inline-block;">
+                  Outlook / Office 365 ↗
+                </a>
+              </div>
+              <p style="font-size:11px;color:#64748b;margin:10px 0 0 0;">
+                Includes automated 1-hour & 15-minute alarms on your phone & laptop. The <b>.ics</b> invite is also attached below.
+              </p>
             </div>
 
             <p style="font-size:13px;color:#64748b;line-height:1.5;margin-top:24px;">
@@ -258,6 +384,23 @@ Deno.serve(async (req) => {
       const topic = data.topic || "Executive Strategy & Onboarding";
       const notes = data.notes || "";
       const meetLink = data.meet_link || "https://meet.google.com";
+      const dateStr = data.date_str || "";
+      const slotStr = data.slot_str || scheduledTime;
+
+      const calData = buildCalendarData({
+        title: `FlowDirector Coaching: ${founderName} (${companyName})`,
+        description: `1:1 Strategy session with ${founderName}.\nCompany: ${companyName}\nPhone: ${founderPhone}\nFocus: ${topic}\nJoin Room: ${meetLink}`,
+        location: meetLink,
+        dateStr,
+        slotStr
+      });
+
+      if (calData.ics) {
+        icsAttachment = {
+          filename: `flowdirector-coaching-${founderName.replace(/[^a-zA-Z0-9]/g, "_")}.ics`,
+          content: btoa(calData.ics)
+        };
+      }
 
       subject = `New 1:1 Session Assigned: ${founderName} (${companyName}) · ${scheduledTime}`;
       html = `
@@ -305,10 +448,25 @@ Deno.serve(async (req) => {
               </div>` : ""}
             </div>
 
-            <div style="margin:32px 0;text-align:center;">
+            <div style="margin:28px 0;text-align:center;">
               <a href="${esc(meetLink)}" style="background:#0f172a;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;display:inline-block;box-shadow:0 4px 12px rgba(15,23,42,0.15);">
-                📹 Join Google Meet Room →
+                📹 Join Video Meeting Room →
               </a>
+            </div>
+
+            <!-- 1-Click Calendar Sync Options -->
+            <div style="background:#f1f5f9;border-radius:14px;padding:16px;margin:24px 0;text-align:center;">
+              <span style="font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:10px;">
+                📅 1-Click Add to Your Coach Calendar
+              </span>
+              <div style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap;">
+                <a href="${esc(calData.gcalUrl)}" target="_blank" style="background:#ffffff;border:1px solid #cbd5e1;color:#1e293b;text-decoration:none;font-weight:700;font-size:12px;padding:8px 16px;border-radius:10px;display:inline-block;">
+                  Google Calendar ↗
+                </a>
+                <a href="${esc(calData.outlookUrl)}" target="_blank" style="background:#ffffff;border:1px solid #cbd5e1;color:#1e293b;text-decoration:none;font-weight:700;font-size:12px;padding:8px 16px;border-radius:10px;display:inline-block;">
+                  Outlook / Office 365 ↗
+                </a>
+              </div>
             </div>
 
             <div style="border-top:1px solid #f1f5f9;padding-top:20px;text-align:center;">
@@ -319,6 +477,61 @@ Deno.serve(async (req) => {
 
             <p style="font-size:12px;color:#94a3b8;margin-top:32px;border-top:1px solid #f1f5f9;padding-top:16px;">
               FlowDirector · Coach Operations & Executive Training System
+            </p>
+          </div>
+        </body>
+        </html>
+      `;
+    }
+
+    // --------------------------------------------------------------------------
+    // 5. TRAINING PRE-CALL REMINDER EMAIL (Dispatched to Founder)
+    // --------------------------------------------------------------------------
+    else if (type === "training_reminder") {
+      const scheduledTime = data.scheduled_time || "Today";
+      const meetLink = data.meet_link || "https://meet.google.com";
+      const coachName = data.coach_name || "Your Executive Coach";
+      const founderName = data.founder_name || "Leader";
+      const topic = data.topic || "Executive Strategy & Onboarding";
+
+      subject = `Reminder: Your 1-on-1 Strategy Call Starts in 1 Hour (${scheduledTime})`;
+      html = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"/></head>
+        <body style="font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px;background-color:#f8fafc;color:#0f172a;">
+          <div style="max-width:540px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:24px;padding:36px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="margin-bottom:24px;">
+              <span style="font-size:24px;font-weight:900;letter-spacing:-0.5px;color:#0f172a;">FLOW<span style="color:#d97706;">DIRECTOR</span></span>
+            </div>
+
+            <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:12px;padding:12px 16px;margin-bottom:24px;">
+              <span style="font-size:12px;font-weight:800;color:#92400e;text-transform:uppercase;">⏰ Meeting Starting in 1 Hour</span>
+            </div>
+
+            <h1 style="font-size:20px;font-weight:800;color:#0f172a;line-height:1.3;margin:0 0 12px 0;">Hello ${esc(founderName)},</h1>
+            
+            <p style="font-size:14px;line-height:1.6;color:#475569;margin:0 0 20px 0;">
+              This is a quick reminder that your 1-on-1 strategy call with <b>${esc(coachName)}</b> is scheduled for <b>${esc(scheduledTime)}</b>.
+            </p>
+
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin:20px 0;">
+              <div style="font-size:13px;color:#334155;margin-bottom:8px;">
+                <b>Scheduled Slot:</b> ${esc(scheduledTime)}
+              </div>
+              <div style="font-size:13px;color:#334155;">
+                <b>Focus Objective:</b> ${esc(topic)}
+              </div>
+            </div>
+
+            <div style="margin:28px 0;text-align:center;">
+              <a href="${esc(meetLink)}" style="background:#059669;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;display:inline-block;box-shadow:0 4px 12px rgba(5,150,105,0.2);">
+                📹 Enter Meeting Room →
+              </a>
+            </div>
+
+            <p style="font-size:12px;color:#94a3b8;margin-top:32px;border-top:1px solid #f1f5f9;padding-top:16px;">
+              FlowDirector · Time Domination for Founders & Executives · flowdirector.co
             </p>
           </div>
         </body>
@@ -374,18 +587,24 @@ Deno.serve(async (req) => {
     // --------------------------------------------------------------------------
     // DISPATCH VIA RESEND API
     // --------------------------------------------------------------------------
+    const resendBody: Record<string, unknown> = {
+      from,
+      to: [email],
+      subject,
+      html,
+    };
+
+    if (icsAttachment) {
+      resendBody.attachments = [icsAttachment];
+    }
+
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from,
-        to: [email],
-        subject,
-        html,
-      }),
+      body: JSON.stringify(resendBody),
     });
 
     const resData = await res.json().catch(() => ({}));
