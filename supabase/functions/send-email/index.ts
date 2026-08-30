@@ -244,7 +244,90 @@ Deno.serve(async (req) => {
     }
 
     // --------------------------------------------------------------------------
-    // 4. MANDATE / TRIAL CONFIRMATION EMAIL
+    // 4. COACH NOTIFICATION EMAIL (New Session Assigned to Trainer)
+    // --------------------------------------------------------------------------
+    else if (type === "training_coach_assigned") {
+      const coachName = data.coach_name || "Coach";
+      const founderName = data.founder_name || "Executive Leader";
+      const founderEmail = data.founder_email || "";
+      const founderPhone = data.founder_phone || "";
+      const companyName = data.company_name || "New Workspace";
+      const industry = data.industry || "General";
+      const teamSize = data.team_size || "Solo / Team";
+      const scheduledTime = data.scheduled_time || "Scheduled Slot";
+      const topic = data.topic || "Executive Strategy & Onboarding";
+      const notes = data.notes || "";
+      const meetLink = data.meet_link || "https://meet.google.com";
+
+      subject = `New 1:1 Session Assigned: ${founderName} (${companyName}) · ${scheduledTime}`;
+      html = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"/></head>
+        <body style="font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px;background-color:#f8fafc;color:#0f172a;">
+          <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:24px;padding:36px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="margin-bottom:24px;display:flex;align-items:center;gap:12px;">
+              <span style="font-size:24px;font-weight:900;letter-spacing:-0.5px;color:#0f172a;">FLOW<span style="color:#d97706;">DIRECTOR</span></span>
+            </div>
+
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px 16px;margin-bottom:24px;">
+              <span style="font-size:12px;font-weight:800;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;">📹 New Coaching Session Assigned</span>
+            </div>
+
+            <h1 style="font-size:20px;font-weight:800;color:#0f172a;line-height:1.3;margin:0 0 12px 0;">Hello ${esc(coachName)},</h1>
+            
+            <p style="font-size:14px;line-height:1.6;color:#475569;margin:0 0 20px 0;">
+              A new 1-on-1 Executive Strategy & Onboarding Call has been automatically scheduled with you on FlowDirector.
+            </p>
+
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin:24px 0;">
+              <div style="margin-bottom:12px;">
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Scheduled Date & Time</span>
+                <span style="font-size:16px;font-weight:800;color:#0f172a;">${esc(scheduledTime)}</span>
+              </div>
+              <div style="margin-bottom:12px;">
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Founder / Executive</span>
+                <span style="font-size:15px;font-weight:700;color:#0f172a;">${esc(founderName)} (${esc(companyName)})</span>
+              </div>
+              <div style="margin-bottom:12px;font-size:13px;color:#334155;">
+                <b>Email:</b> <a href="mailto:${esc(founderEmail)}" style="color:#2563eb;">${esc(founderEmail)}</a><br/>
+                ${founderPhone ? `<b>Phone / WhatsApp:</b> <a href="https://wa.me/${esc(founderPhone.replace(/\D/g, ''))}" style="color:#059669;font-weight:700;">${esc(founderPhone)} (Message on WhatsApp ↗)</a><br/>` : ""}
+                <b>Industry:</b> ${esc(industry)} · <b>Team Size:</b> ${esc(teamSize)}
+              </div>
+              <div style="margin-bottom:12px;">
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Focus Objective</span>
+                <span style="font-size:14px;font-weight:700;color:#0f172a;">${esc(topic)}</span>
+              </div>
+              ${notes ? `
+              <div>
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Founder's Notes</span>
+                <span style="font-size:13px;color:#475569;">${esc(notes)}</span>
+              </div>` : ""}
+            </div>
+
+            <div style="margin:32px 0;text-align:center;">
+              <a href="${esc(meetLink)}" style="background:#0f172a;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;display:inline-block;box-shadow:0 4px 12px rgba(15,23,42,0.15);">
+                📹 Join Google Meet Room →
+              </a>
+            </div>
+
+            <div style="border-top:1px solid #f1f5f9;padding-top:20px;text-align:center;">
+              <a href="${esc(origin)}/#coach" style="font-size:13px;font-weight:700;color:#2563eb;text-decoration:none;">
+                Open Coach Operations Desk ↗
+              </a>
+            </div>
+
+            <p style="font-size:12px;color:#94a3b8;margin-top:32px;border-top:1px solid #f1f5f9;padding-top:16px;">
+              FlowDirector · Coach Operations & Executive Training System
+            </p>
+          </div>
+        </body>
+        </html>
+      `;
+    }
+
+    // --------------------------------------------------------------------------
+    // 5. MANDATE / TRIAL CONFIRMATION EMAIL
     // --------------------------------------------------------------------------
     else if (type === "mandate_active") {
       const planName = data.plan_name || "Solo Executive";

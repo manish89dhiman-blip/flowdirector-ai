@@ -607,6 +607,204 @@ async function updateOrgTraining(orgId, updates) {
   if (error) throw error;
 }
 
+/* ================================================================== */
+/*  Training Operations & Coach Auto-Assignment Engine                 */
+/* ================================================================== */
+async function amTrainingCoach(userId, email) {
+  if (!userId && !email) return false;
+  try {
+    let q = sb.from("training_coaches").select("id, name, is_active").eq("is_active", true);
+    if (userId) q = q.or(`user_id.eq.${userId},email.eq.${email}`);
+    else q = q.eq("email", email);
+    const { data } = await q.maybeSingle();
+    return !!data;
+  } catch {
+    return false;
+  }
+}
+
+async function loadTrainingConfig() {
+  const fallback = {
+    slots: [
+      "10:00 AM - 10:30 AM (IST)",
+      "11:30 AM - 12:00 PM (IST)",
+      "02:00 PM - 02:30 PM (IST)",
+      "03:30 PM - 04:00 PM (IST)",
+      "05:00 PM - 05:30 PM (IST)",
+      "06:30 PM - 07:00 PM (IST)"
+    ],
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    default_meet_link: "https://meet.google.com/new"
+  };
+  try {
+    const raw = await loadPlatformSetting("training_config", "");
+    if (!raw) return fallback;
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return fallback;
+  }
+}
+
+async function saveTrainingConfig(cfg) {
+  await savePlatformSetting("training_config", JSON.stringify(cfg));
+}
+
+async function loadCoaches() {
+  const { data, error } = await sb.from("training_coaches").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+async function saveCoach(row) {
+  const { data, error } = await sb.from("training_coaches").upsert(row).select().single();
+  if (error) throw error;
+  return data;
+}
+
+async function deleteCoach(id) {
+  const { error } = await sb.from("training_coaches").delete().eq("id", id);
+  if (error) throw error;
+}
+
+async function loadTrainingSessions(filter = {}) {
+  let q = sb.from("training_sessions").select(`
+    *,
+    coach:coach_id(id, name, email, phone, google_meet_link),
+    org:org_id(id, name, phone, industry, team_size)
+  `).order("scheduled_date", { ascending: true });
+
+  if (filter.coachId) q = q.eq("coach_id", filter.coachId);
+  if (filter.status) q = q.eq("status", filter.status);
+  if (filter.date) q = q.eq("scheduled_date", filter.date);
+
+  const { data, error } = await q;
+  if (error) throw error;
+  return data || [];
+}
+
+async function updateTrainingSession(id, updates) {
+  const { error } = await sb.from("training_sessions").update({ ...updates, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) throw error;
+}
+
+// Smart Round-Robin / Load-Balanced Auto-Assignment Engine
+async function bookTrainingSession({
+  orgId,
+  userId,
+  dateStr,
+  timeSlot,
+  topic,
+  notes = "",
+  founderName = "Founder",
+  founderEmail,
+  founderPhone = "",
+  companyName = "Company",
+  industry = "Technology / SaaS",
+  teamSize = "2-5 members"
+}) {
+  // 1. Fetch all active coaches
+  const { data: coaches, error: coachErr } = await sb.from("training_coaches").select("*").eq("is_active", true);
+  if (coachErr) throw coachErr;
+  
+  // 2. Fetch existing sessions booked on dateStr
+  const { data: dateSessions } = await sb.from("training_sessions")
+    .select("id, coach_id, scheduled_date, scheduled_slot, status")
+    .eq("scheduled_date", dateStr)
+    .neq("status", "cancelled");
+
+  const bookedSlotsByCoach = {};
+  const sessionCountByCoach = {};
+
+  (coaches || []).forEach(c => {
+    bookedSlotsByCoach[c.id] = new Set();
+    sessionCountByCoach[c.id] = 0;
+  });
+
+  (dateSessions || []).forEach(s => {
+    if (s.coach_id && bookedSlotsByCoach[s.coach_id]) {
+      bookedSlotsByCoach[s.coach_id].add(s.scheduled_slot);
+      sessionCountByCoach[s.coach_id]++;
+    }
+  });
+
+  // 3. Find available coaches who do not have a conflict at timeSlot and have not exceeded max daily limit
+  const availableCoaches = (coaches || []).filter(c => {
+    const isSlotBusy = bookedSlotsByCoach[c.id]?.has(timeSlot);
+    const count = sessionCountByCoach[c.id] || 0;
+    const maxLimit = c.max_daily_sessions || 6;
+    return !isSlotBusy && count < maxLimit;
+  });
+
+  // 4. Select the coach with lowest session count (load balancing)
+  let selectedCoach = null;
+  if (availableCoaches.length > 0) {
+    availableCoaches.sort((a, b) => (sessionCountByCoach[a.id] || 0) - (sessionCountByCoach[b.id] || 0));
+    selectedCoach = availableCoaches[0];
+  } else if (coaches && coaches.length > 0) {
+    // Fallback: pick coach with least daily load
+    coaches.sort((a, b) => (sessionCountByCoach[a.id] || 0) - (sessionCountByCoach[b.id] || 0));
+    selectedCoach = coaches[0];
+  }
+
+  const meetLink = selectedCoach ? selectedCoach.google_meet_link : "https://meet.google.com/new";
+  const coachName = selectedCoach ? selectedCoach.name : "FlowDirector Executive Coaching Team";
+  const coachEmail = selectedCoach ? selectedCoach.email : null;
+
+  // 5. Insert into training_sessions ledger
+  const { data: sessionRow, error: sessionErr } = await sb.from("training_sessions").insert({
+    org_id: orgId,
+    user_id: userId,
+    coach_id: selectedCoach ? selectedCoach.id : null,
+    scheduled_date: dateStr,
+    scheduled_slot: timeSlot,
+    topic: topic,
+    notes: notes,
+    meet_link: meetLink,
+    status: "scheduled"
+  }).select().single();
+
+  if (sessionErr) throw sessionErr;
+
+  // 6. Update organization record
+  const noteSummary = `Scheduled for: ${dateStr} at ${timeSlot} | Coach: ${coachName} | Topic: ${topic} ${notes ? `| Notes: ${notes}` : ""}`;
+  await updateOrgTraining(orgId, {
+    training_status: "booked",
+    training_booked_at: new Date().toISOString(),
+    training_meet_link: meetLink,
+    training_notes: noteSummary
+  });
+
+  // 7. Dispatch instant confirmation emails via Resend
+  // To Founder:
+  if (founderEmail) {
+    sendTransactionalEmail("training_booked", founderEmail, {
+      scheduled_time: `${dateStr} at ${timeSlot}`,
+      topic,
+      meet_link: meetLink,
+      notes: notes ? `${notes} (Assigned Coach: ${coachName})` : `Assigned Coach: ${coachName}`
+    });
+  }
+
+  // To Coach:
+  if (coachEmail) {
+    sendTransactionalEmail("training_coach_assigned", coachEmail, {
+      coach_name: coachName,
+      founder_name: founderName,
+      founder_email: founderEmail,
+      founder_phone: founderPhone,
+      company_name: companyName,
+      industry,
+      team_size: teamSize,
+      scheduled_time: `${dateStr} at ${timeSlot}`,
+      topic,
+      notes,
+      meet_link: meetLink
+    });
+  }
+
+  return { ok: true, session: sessionRow, coach: selectedCoach };
+}
+
 const SAMPLE_EXECUTIVE_BLUEPRINT = {
   settings: { income: 500000, hours: 200 },
   dayThemes: {
@@ -1023,6 +1221,327 @@ function AdminPortalDesk({ session, onBack }){
   );
 }
 
+/* ================================================================== */
+/*  Coach Operations Portal & Desk                                     */
+/* ================================================================== */
+function CoachPortalDesk({ session, onBack }){
+  const [coach, setCoach] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sessions, setSessions] = useState([]);
+  const [tab, setTab] = useState("today"); // today | upcoming | completed
+  const [msg, setMsg] = useState("");
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [outcomeNotes, setOutcomeNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [meetLinkInput, setMeetLinkInput] = useState("");
+
+  const email = session?.user?.email;
+  const userId = session?.user?.id;
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      let q = sb.from("training_coaches").select("*");
+      if (userId) q = q.or(`user_id.eq.${userId},email.eq.${email}`);
+      else q = q.eq("email", email);
+      const { data: coachData, error: coachErr } = await q.maybeSingle();
+      
+      if (!coachData) {
+        setCoach(null);
+        setLoading(false);
+        return;
+      }
+      setCoach(coachData);
+      setMeetLinkInput(coachData.google_meet_link || "https://meet.google.com/new");
+
+      const sess = await loadTrainingSessions({ coachId: coachData.id });
+      setSessions(sess);
+    } catch (e) {
+      setMsg(e.message || "Failed to load coach operations data.");
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (session) refresh();
+  }, [session]);
+
+  const say = (t) => { setMsg(t); setTimeout(() => setMsg(""), 6000); };
+
+  const handleUpdateStatus = async (sessionId, newStatus, notes = "") => {
+    setBusy(true);
+    try {
+      await updateTrainingSession(sessionId, { status: newStatus, outcome_notes: notes });
+      say(`Session marked as ${newStatus}.`);
+      setSelectedSession(null);
+      setOutcomeNotes("");
+      refresh();
+    } catch (e) {
+      say("Couldn't update session: " + (e.message || ""));
+    }
+    setBusy(false);
+  };
+
+  const handleSaveMeetLink = async () => {
+    if (!coach) return;
+    setBusy(true);
+    try {
+      await saveCoach({ id: coach.id, google_meet_link: meetLinkInput });
+      say("Personal Google Meet room link updated!");
+      refresh();
+    } catch (e) {
+      say("Couldn't update link: " + (e.message || ""));
+    }
+    setBusy(false);
+  };
+
+  const handleToggleDuty = async () => {
+    if (!coach) return;
+    setBusy(true);
+    try {
+      await saveCoach({ id: coach.id, is_active: !coach.is_active });
+      say(`Availability set to ${!coach.is_active ? "On Duty (Accepting Bookings)" : "Away (Paused)"}.`);
+      refresh();
+    } catch (e) {
+      say("Couldn't update status: " + (e.message || ""));
+    }
+    setBusy(false);
+  };
+
+  if (loading) return <FullScreen>Loading Coach Operations Desk...</FullScreen>;
+
+  if (!coach) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 py-8">
+        {onBack && (
+          <button onClick={onBack} className="mb-6 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition">
+            ← Back to FlowDirector Cockpit
+          </button>
+        )}
+        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xl space-y-4">
+          <span className="text-4xl">📹</span>
+          <h2 className="text-xl font-extrabold text-slate-950">Coach Portal Access</h2>
+          <p className="text-xs text-slate-600 leading-relaxed font-medium">
+            Your account (<b>{email}</b>) is not currently registered in the FlowDirector Coaching Roster. Contact the platform administrator to be added as an onboarding specialist.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const todaySessions = sessions.filter(s => s.scheduled_date === todayStr && s.status === "scheduled");
+  const upcomingSessions = sessions.filter(s => s.scheduled_date >= todayStr && s.status === "scheduled");
+  const completedSessions = sessions.filter(s => s.status === "completed");
+
+  const activeTabList = tab === "today" ? todaySessions : tab === "upcoming" ? upcomingSessions : completedSessions;
+
+  return (
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans">
+      <header className="border-b border-slate-200 bg-white px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <Logo height={36} lightMode={true} />
+          <span className="rounded-full bg-emerald-950 px-3 py-1 text-xs font-bold text-emerald-400 uppercase tracking-wider">
+            Coach Desk
+          </span>
+          <span className="text-xs font-bold text-slate-600">
+            {coach.name}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button onClick={handleToggleDuty} disabled={busy}
+            className={`rounded-xl px-3 py-1.5 text-xs font-bold border transition flex items-center gap-1.5 ${
+              coach.is_active 
+                ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100" 
+                : "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+            }`}>
+            <span className={`h-2 w-2 rounded-full ${coach.is_active ? "bg-emerald-600 animate-pulse" : "bg-amber-500"}`}></span>
+            <span>{coach.is_active ? "On Duty (Active)" : "Away (Paused)"}</span>
+          </button>
+
+          <button onClick={() => navigate("/")} className="rounded-xl border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-50 transition shadow-xs flex items-center gap-1">
+            ← Return to Workspace
+          </button>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto p-6 space-y-6">
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Today's Scheduled Calls</div>
+            <div className="text-3xl font-extrabold text-slate-950 mt-1">{todaySessions.length}</div>
+            <div className="text-[11px] font-medium text-emerald-600 mt-1">Ready for 1:1 onboarding</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Upcoming Pipeline</div>
+            <div className="text-3xl font-extrabold text-slate-950 mt-1">{upcomingSessions.length}</div>
+            <div className="text-[11px] font-medium text-blue-600 mt-1">Next 7–14 days</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Completed Sessions</div>
+            <div className="text-3xl font-extrabold text-slate-950 mt-1">{completedSessions.length}</div>
+            <div className="text-[11px] font-medium text-emerald-600 mt-1">Total executive onboardings</div>
+          </div>
+        </div>
+
+        {/* Coach Meet Link Quick Settings */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+          <div className="flex-1 min-w-[280px]">
+            <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Your Google Meet Room</div>
+            <div className="mt-1 flex items-center gap-2">
+              <input 
+                value={meetLinkInput} 
+                onChange={e => setMeetLinkInput(e.target.value)} 
+                placeholder="https://meet.google.com/xxx-yyyy-zzz" 
+                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
+              />
+              <button onClick={handleSaveMeetLink} disabled={busy}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-60">
+                Update Link
+              </button>
+            </div>
+          </div>
+          <a href={coach.google_meet_link} target="_blank" rel="noopener noreferrer"
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1.5">
+            📹 Test Google Meet Room ↗
+          </a>
+        </div>
+
+        {msg && <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-900">{msg}</p>}
+
+        {/* Session Tabs */}
+        <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+          <button onClick={() => setTab("today")}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition ${tab==="today" ? "bg-slate-950 text-white shadow-md" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
+            📅 Today's Calls ({todaySessions.length})
+          </button>
+          <button onClick={() => setTab("upcoming")}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition ${tab==="upcoming" ? "bg-slate-950 text-white shadow-md" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
+            🗓 Upcoming Schedule ({upcomingSessions.length})
+          </button>
+          <button onClick={() => setTab("completed")}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition ${tab==="completed" ? "bg-slate-950 text-white shadow-md" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
+            ✅ Completed History ({completedSessions.length})
+          </button>
+        </div>
+
+        {/* Sessions List */}
+        <div className="space-y-3">
+          {activeTabList.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center text-slate-400">
+              <span className="text-3xl block mb-2">📹</span>
+              <p className="text-xs font-bold">No sessions found in this category.</p>
+            </div>
+          )}
+
+          {activeTabList.map(s => {
+            const org = s.org || {};
+            return (
+              <div key={s.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-base text-slate-950">{org.name || "Founder Workspace"}</span>
+                      <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-0.5 text-[10px] font-bold text-blue-900">
+                        {s.scheduled_date} · {s.scheduled_slot}
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                        s.status === "completed" ? "bg-emerald-100 text-emerald-800" : s.status === "cancelled" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
+                      }`}>
+                        {s.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-600">
+                      <div><b>Focus:</b> {s.topic}</div>
+                      {org.phone && (
+                        <div>
+                          <b>WhatsApp:</b> <a href={`https://wa.me/${org.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold hover:underline">📱 {org.phone} ↗</a>
+                        </div>
+                      )}
+                      <div><b>Industry:</b> {org.industry || "Technology / SaaS"} ({org.team_size || "1-5"})</div>
+                    </div>
+
+                    {s.notes && (
+                      <p className="mt-2 text-xs text-slate-600 bg-slate-50 border border-slate-100 p-2.5 rounded-xl">
+                        <b>Founder Notes:</b> "{s.notes}"
+                      </p>
+                    )}
+
+                    {s.outcome_notes && (
+                      <p className="mt-2 text-xs text-emerald-950 bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
+                        <b>Coaching Outcome:</b> {s.outcome_notes}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <a href={s.meet_link} target="_blank" rel="noopener noreferrer"
+                      className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-xs inline-flex items-center gap-1.5">
+                      <span>📹 Join Google Meet</span>
+                      <span>↗</span>
+                    </a>
+
+                    {s.status === "scheduled" && (
+                      <>
+                        <button onClick={() => { setSelectedSession(s); setOutcomeNotes(""); }}
+                          className="rounded-xl bg-slate-950 px-3.5 py-2 text-xs font-bold text-white hover:bg-slate-800 transition shadow-xs">
+                          ✓ Complete Session
+                        </button>
+                        <button onClick={() => handleUpdateStatus(s.id, "no_show")}
+                          className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 transition">
+                          No Show
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Modal for Recording Session Outcome */}
+        {selectedSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-extrabold text-base text-slate-950">Record Coaching Session Outcome</h3>
+                <button onClick={() => setSelectedSession(null)} className="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+              </div>
+
+              <p className="text-xs text-slate-600 font-medium">
+                Summarize the strategy outcomes for <b>{selectedSession.org?.name}</b> (e.g. KRAs configured, delegation threshold set, action items).
+              </p>
+
+              <textarea 
+                rows={4}
+                value={outcomeNotes}
+                onChange={e => setOutcomeNotes(e.target.value)}
+                placeholder="E.g. Configured 3 KRAs for leadership, dialed in Owner Hour Value at ₹8,000/hr, delegated bookkeeping and machine audits to team lead."
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-900 outline-none focus:border-blue-600 focus:bg-white resize-none"
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button onClick={() => setSelectedSession(null)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                  Cancel
+                </button>
+                <button onClick={() => handleUpdateStatus(selectedSession.id, "completed", outcomeNotes)} disabled={busy}
+                  className="rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-60 shadow-xs">
+                  {busy ? "Saving..." : "Save Outcome & Mark Complete ✓"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
 function Root(){
   const path = usePath();
   const [session, setSession] = useState(null);
@@ -1063,6 +1582,9 @@ function Root(){
   if (path === "/refund" || path === "/refund-policy") return <RefundPage session={session} />;
   if (path === "/admin" || path === "/admin-login" || path === "/admin-desk") {
     return <AdminPortalDesk session={session} onBack={() => navigate("/")} />;
+  }
+  if (path === "/coach" || path === "/training-desk" || path === "/coach-desk") {
+    return <CoachPortalDesk session={session} onBack={() => navigate("/")} />;
   }
   if (path === "/home" || path === "/landing") {
     return (
@@ -2467,12 +2989,29 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
   // Training Slot State
   const isBooked = org?.training_status === "booked";
   const [preferredDate, setPreferredDate] = useState("");
-  const [preferredTime, setPreferredTime] = useState("11:00 AM");
+  const [preferredTime, setPreferredTime] = useState("11:30 AM - 12:00 PM (IST)");
+  const [availableSlots, setAvailableSlots] = useState([
+    "10:00 AM - 10:30 AM (IST)",
+    "11:30 AM - 12:00 PM (IST)",
+    "02:00 PM - 02:30 PM (IST)",
+    "03:30 PM - 04:00 PM (IST)",
+    "05:00 PM - 05:30 PM (IST)",
+    "06:30 PM - 07:00 PM (IST)"
+  ]);
   const [topic, setTopic] = useState(profile?.primary_goal || "Owner Hour Value & Delegation Setup");
   const [notes, setNotes] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    loadTrainingConfig().then(cfg => {
+      if (cfg && cfg.slots && cfg.slots.length) {
+        setAvailableSlots(cfg.slots);
+        setPreferredTime(cfg.slots[0]);
+      }
+    }).catch(() => {});
+  }, []);
 
   // Sync topic with primary goal
   useEffect(() => {
@@ -2612,25 +3151,24 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
     }
     setBusy(true); setMsg("");
     try {
-      const scheduledTimeStr = `${preferredDate} at ${preferredTime} (IST)`;
-      const meetLink = "https://meet.google.com/new";
-      await updateOrgTraining(org.id, {
-        training_status: "booked",
-        training_booked_at: new Date().toISOString(),
-        training_notes: `Scheduled for: ${scheduledTimeStr} | Topic: ${topic} ${notes ? `| Notes: ${notes}` : ""}`,
-        training_meet_link: meetLink
-      });
-
-      // Dispatch confirmation email via Resend
-      sendTransactionalEmail("training_booked", session.user.email, {
-        scheduled_time: scheduledTimeStr,
-        topic,
-        notes,
-        meet_link: meetLink
+      const bookRes = await bookTrainingSession({
+        orgId: org.id,
+        userId: session.user.id,
+        dateStr: preferredDate,
+        timeSlot: preferredTime,
+        topic: topic,
+        notes: notes,
+        founderName: fullName || profile?.full_name || org.name,
+        founderEmail: currentEmail || session.user.email,
+        founderPhone: phone,
+        companyName: org.name,
+        industry: industry,
+        teamSize: teamSize
       });
 
       if (onUpdated) onUpdated();
-      setMsg("Training session confirmed! We have reserved your Google Meet slot and sent confirmation to your email.");
+      const coachInfo = bookRes.coach ? ` (Assigned Onboarding Coach: ${bookRes.coach.name})` : "";
+      setMsg(`Training session confirmed${coachInfo}! We have reserved your slot and dispatched instant confirmation emails.`);
       setStep("booked");
     } catch (e) {
       setMsg(e.message || "Couldn't save booking.");
@@ -2951,12 +3489,9 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
                     onChange={e => setPreferredTime(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
                   >
-                    <option value="10:00 AM">10:00 AM – 10:30 AM</option>
-                    <option value="11:30 AM">11:30 AM – 12:00 PM</option>
-                    <option value="02:00 PM">02:00 PM – 02:30 PM</option>
-                    <option value="04:00 PM">04:00 PM – 04:30 PM</option>
-                    <option value="05:30 PM">05:30 PM – 06:00 PM</option>
-                    <option value="07:00 PM">07:00 PM – 07:30 PM</option>
+                    {availableSlots.map(slot => (
+                      <option key={slot} value={slot}>{slot}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -3148,6 +3683,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const [syncError, setSyncError] = useState(false);
   const [dailyDate, setDailyDate] = useState(todayKey());
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isCoach, setIsCoach] = useState(false);
   const notifiedRef = useRef(false);
 
   const [sub, setSub] = useState(null);
@@ -3157,6 +3693,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
   useEffect(() => { loadState(userId).then(setData).catch(()=>setData(structuredClone(SEED))); }, [userId]);
   useEffect(() => { amPlatformAdmin(userId).then(setIsAdmin); }, [userId]);
+  useEffect(() => { amTrainingCoach(userId, session?.user?.email).then(setIsCoach); }, [userId, session?.user?.email]);
 
   useEffect(() => {
     if (!orgCtx || !orgCtx.membership) {
@@ -3300,6 +3837,17 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               >
                 <span>🔐</span>
                 <span>Admin Console</span>
+              </button>
+            )}
+
+            {/* Coach Operations Desk Direct Link Button */}
+            {isCoach && (
+              <button 
+                onClick={() => navigate("/coach")}
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-950 border border-emerald-800 px-3 py-1.5 text-xs font-bold text-emerald-400 hover:bg-emerald-900 transition shadow-xs"
+              >
+                <span>📹</span>
+                <span>Coach Desk</span>
               </button>
             )}
 
@@ -5780,6 +6328,7 @@ function AdminView({ meId }){
           <TabBtn id="overview">📊 Overview & Revenue</TabBtn>
           <TabBtn id="companies">🏢 Companies ({d.companies.length})</TabBtn>
           <TabBtn id="users">👥 Users ({(d.profiles||[]).length})</TabBtn>
+          <TabBtn id="training">📹 Training & Coaches</TabBtn>
           <TabBtn id="requests">📩 Plan Requests{pending.length ? ` (${pending.length})` : ""}</TabBtn>
           <TabBtn id="plans">💳 Pricing Plans ({d.plans.length})</TabBtn>
         </div>
@@ -5960,7 +6509,466 @@ function AdminView({ meId }){
         </div>
       )}
 
+      {tab === "training" && <AdminTrainingOperations onNotice={(t)=>{say(t); refresh();}} />}
+
       {tab === "plans" && <AdminPlans plans={d.plans} onSaved={(t)=>{say(t); refresh();}} />}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Admin Training Operations & Schedule Control Center                */
+/* ================================================================== */
+function AdminTrainingOperations({ onNotice }){
+  const [subTab, setSubTab] = useState("coaches"); // coaches | sessions | config
+  const [coaches, setCoaches] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [config, setConfig] = useState({ slots: [], days: [], default_meet_link: "" });
+  const [loading, setLoading] = useState(true);
+  const [draftCoach, setDraftCoach] = useState(null); // coach being added/edited
+  const [newSlotInput, setNewSlotInput] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [coachFilter, setCoachFilter] = useState("all");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const [cList, sList, cfg] = await Promise.all([
+        loadCoaches(),
+        loadTrainingSessions(),
+        loadTrainingConfig()
+      ]);
+      setCoaches(cList);
+      setSessions(sList);
+      setConfig(cfg);
+    } catch (e) {
+      if (onNotice) onNotice("Failed to load training operations: " + (e.message || ""));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const handleSaveCoach = async () => {
+    if (!draftCoach.name.trim() || !draftCoach.email.trim() || !draftCoach.google_meet_link.trim()) {
+      return alert("Name, Email, and Google Meet link are required.");
+    }
+    setBusy(true);
+    try {
+      await saveCoach({
+        id: draftCoach.id || undefined,
+        name: draftCoach.name.trim(),
+        email: draftCoach.email.trim().toLowerCase(),
+        phone: draftCoach.phone || null,
+        google_meet_link: draftCoach.google_meet_link.trim(),
+        max_daily_sessions: Number(draftCoach.max_daily_sessions) || 6,
+        is_active: draftCoach.is_active ?? true
+      });
+      if (onNotice) onNotice(`Saved coach ${draftCoach.name}.`);
+      setDraftCoach(null);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Couldn't save coach: " + (e.message || ""));
+    }
+    setBusy(false);
+  };
+
+  const handleToggleCoachActive = async (c) => {
+    try {
+      await saveCoach({ id: c.id, is_active: !c.is_active });
+      if (onNotice) onNotice(`${c.name} is now ${!c.is_active ? "Active (Auto-Assign ON)" : "Paused"}.`);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Failed: " + e.message);
+    }
+  };
+
+  const handleDeleteCoach = async (c) => {
+    if (!confirm(`Delete coach ${c.name}? Their previous sessions will be preserved.`)) return;
+    try {
+      await deleteCoach(c.id);
+      if (onNotice) onNotice(`Deleted coach ${c.name}.`);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Couldn't delete coach: " + e.message);
+    }
+  };
+
+  const handleReassignSession = async (sessionId, newCoachId) => {
+    const targetCoach = coaches.find(c => c.id === newCoachId);
+    try {
+      await updateTrainingSession(sessionId, {
+        coach_id: newCoachId || null,
+        meet_link: targetCoach ? targetCoach.google_meet_link : "https://meet.google.com/new"
+      });
+      if (onNotice) onNotice(`Session reassigned to ${targetCoach ? targetCoach.name : "Unassigned"}.`);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Couldn't reassign session: " + e.message);
+    }
+  };
+
+  const handleUpdateSessionStatus = async (sessionId, status) => {
+    try {
+      await updateTrainingSession(sessionId, { status });
+      if (onNotice) onNotice(`Session marked as ${status}.`);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Failed: " + e.message);
+    }
+  };
+
+  const handleAddSlot = async () => {
+    if (!newSlotInput.trim()) return;
+    const updatedSlots = [...(config.slots || []), newSlotInput.trim()];
+    const newConfig = { ...config, slots: updatedSlots };
+    setConfig(newConfig);
+    setNewSlotInput("");
+    await saveTrainingConfig(newConfig);
+    if (onNotice) onNotice("New time slot added!");
+  };
+
+  const handleRemoveSlot = async (idx) => {
+    const updatedSlots = config.slots.filter((_, i) => i !== idx);
+    const newConfig = { ...config, slots: updatedSlots };
+    setConfig(newConfig);
+    await saveTrainingConfig(newConfig);
+    if (onNotice) onNotice("Time slot removed.");
+  };
+
+  const handleToggleDay = async (day) => {
+    const currentDays = config.days || [];
+    const updatedDays = currentDays.includes(day)
+      ? currentDays.filter(d => d !== day)
+      : [...currentDays, day];
+    const newConfig = { ...config, days: updatedDays };
+    setConfig(newConfig);
+    await saveTrainingConfig(newConfig);
+    if (onNotice) onNotice("Working days updated.");
+  };
+
+  if (loading) return <Ghost>Loading training operations data...</Ghost>;
+
+  const filteredSessions = sessions.filter(s => {
+    if (statusFilter !== "all" && s.status !== statusFilter) return false;
+    if (coachFilter !== "all" && s.coach_id !== coachFilter) return false;
+    return true;
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Sub tabs */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setSubTab("coaches")}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition ${subTab==="coaches" ? "bg-slate-950 text-white shadow-xs" : "border border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
+            👥 Coaches Roster ({coaches.length})
+          </button>
+          <button onClick={() => setSubTab("sessions")}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition ${subTab==="sessions" ? "bg-slate-950 text-white shadow-xs" : "border border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
+            📋 Scheduled Sessions Ledger ({sessions.length})
+          </button>
+          <button onClick={() => setSubTab("config")}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition ${subTab==="config" ? "bg-slate-950 text-white shadow-xs" : "border border-slate-200 text-slate-700 hover:bg-slate-50"}`}>
+            ⚙️ Time Slots & Schedule Availability
+          </button>
+        </div>
+
+        {subTab === "coaches" && (
+          <button 
+            onClick={() => setDraftCoach({ name: "", email: "", phone: "", google_meet_link: "https://meet.google.com/new", max_daily_sessions: 6, is_active: true })}
+            className="rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-300 transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>+ Add New Coach</span>
+          </button>
+        )}
+      </div>
+
+      {/* 1. COACHES ROSTER */}
+      {subTab === "coaches" && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {coaches.map(c => {
+              const coachSessions = sessions.filter(s => s.coach_id === c.id);
+              const completedCount = coachSessions.filter(s => s.status === "completed").length;
+              const pendingCount = coachSessions.filter(s => s.status === "scheduled").length;
+
+              return (
+                <div key={c.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-base text-slate-950">{c.name}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          c.is_active ? "bg-emerald-100 text-emerald-900 border border-emerald-300" : "bg-slate-100 text-slate-600 border border-slate-200"
+                        }`}>
+                          {c.is_active ? "Active (Auto-Assign ON)" : "Inactive / Paused"}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        <b>Email:</b> {c.email} {c.phone ? `· 📱 ${c.phone}` : ""}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => handleToggleCoachActive(c)}
+                        className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100">
+                        {c.is_active ? "Pause" : "Activate"}
+                      </button>
+                      <button onClick={() => setDraftCoach(c)}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 hover:bg-slate-50">
+                        Edit
+                      </button>
+                      <button onClick={() => handleDeleteCoach(c)}
+                        className="rounded-lg border border-rose-200 bg-white px-2 py-1 text-xs font-bold text-rose-700 hover:bg-rose-50">
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-xl text-center text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Daily Capacity</span>
+                      <span className="font-extrabold text-slate-950">{c.max_daily_sessions || 6} / day</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Pending</span>
+                      <span className="font-extrabold text-blue-700">{pendingCount} Calls</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Completed</span>
+                      <span className="font-extrabold text-emerald-700">{completedCount} Calls</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <span className="text-slate-500 font-mono truncate max-w-[260px]">{c.google_meet_link}</span>
+                    <a href={c.google_meet_link} target="_blank" rel="noopener noreferrer"
+                      className="font-bold text-emerald-700 hover:underline inline-flex items-center gap-1">
+                      📹 Join Room ↗
+                    </a>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Add / Edit Coach Modal */}
+          {draftCoach && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+              <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-base text-slate-950">{draftCoach.id ? "Edit Coach Details" : "Add Training Coach / Agent"}</h3>
+                  <button onClick={() => setDraftCoach(null)} className="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Full Name</label>
+                    <input value={draftCoach.name} onChange={e=>setDraftCoach({...draftCoach, name: e.target.value})} placeholder="E.g. Vikram Sharma (Executive Coach)"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Coach Login Email</label>
+                    <input type="email" value={draftCoach.email} onChange={e=>setDraftCoach({...draftCoach, email: e.target.value})} placeholder="coach@flowdirector.co"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Phone / WhatsApp</label>
+                      <input value={draftCoach.phone||""} onChange={e=>setDraftCoach({...draftCoach, phone: e.target.value})} placeholder="+91 98765 43210"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Max Daily Load (Calls/Day)</label>
+                      <input type="number" min="1" max="20" value={draftCoach.max_daily_sessions||6} onChange={e=>setDraftCoach({...draftCoach, max_daily_sessions: e.target.value})}
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1 uppercase">Dedicated Google Meet Link</label>
+                    <input value={draftCoach.google_meet_link} onChange={e=>setDraftCoach({...draftCoach, google_meet_link: e.target.value})} placeholder="https://meet.google.com/xxx-yyyy-zzz"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-xs font-mono text-slate-900 outline-none focus:border-blue-600 focus:bg-white" />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button onClick={() => setDraftCoach(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
+                  <button onClick={handleSaveCoach} disabled={busy} className="rounded-xl bg-slate-950 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-60 shadow-xs">
+                    {busy ? "Saving..." : "Save Coach →"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 2. MASTER SESSIONS LEDGER */}
+      {subTab === "sessions" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200">
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                <span>Filter Status:</span>
+                <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-1.5 text-xs font-bold">
+                  <option value="all">All Statuses ({sessions.length})</option>
+                  <option value="scheduled">Scheduled ({sessions.filter(s=>s.status==="scheduled").length})</option>
+                  <option value="completed">Completed ({sessions.filter(s=>s.status==="completed").length})</option>
+                  <option value="cancelled">Cancelled ({sessions.filter(s=>s.status==="cancelled").length})</option>
+                  <option value="no_show">No Show ({sessions.filter(s=>s.status==="no_show").length})</option>
+                </select>
+              </label>
+
+              <label className="text-xs font-bold text-slate-600 flex items-center gap-1.5">
+                <span>Filter Coach:</span>
+                <select value={coachFilter} onChange={e=>setCoachFilter(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-slate-50 p-1.5 text-xs font-bold">
+                  <option value="all">All Coaches</option>
+                  {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {filteredSessions.length === 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-xs text-slate-400">
+                No sessions match the selected filters.
+              </div>
+            )}
+
+            {filteredSessions.map(s => {
+              const org = s.org || {};
+              const coach = s.coach || coaches.find(c => c.id === s.coach_id);
+
+              return (
+                <div key={s.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-sm text-slate-950">{org.name || "Company"}</span>
+                        <span className="rounded-full bg-blue-100 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900">
+                          {s.scheduled_date} · {s.scheduled_slot}
+                        </span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          s.status === "completed" ? "bg-emerald-100 text-emerald-800" : s.status === "cancelled" ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-800"
+                        }`}>
+                          {s.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-600">
+                        <span><b>Topic:</b> {s.topic}</span>
+                        {org.phone && <span>· 📱 <a href={`https://wa.me/${org.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="text-emerald-700 font-bold hover:underline">{org.phone} ↗</a></span>}
+                        {org.industry && <span>· 🏭 {org.industry}</span>}
+                      </div>
+
+                      {s.notes && <p className="mt-1 text-xs text-slate-500 italic">Founder Note: "{s.notes}"</p>}
+                      {s.outcome_notes && <p className="mt-1 text-xs text-emerald-950 bg-emerald-50 p-2 rounded-lg">Outcome: {s.outcome_notes}</p>}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-slate-500">Coach:</span>
+                        <select 
+                          value={s.coach_id || ""} 
+                          onChange={e => handleReassignSession(s.id, e.target.value)}
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-800"
+                        >
+                          <option value="">-- Unassigned --</option>
+                          {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      </div>
+
+                      <a href={s.meet_link} target="_blank" rel="noopener noreferrer"
+                        className="rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs inline-flex items-center gap-1">
+                        📹 Join ↗
+                      </a>
+
+                      <select 
+                        value={s.status} 
+                        onChange={e => handleUpdateSessionStatus(s.id, e.target.value)}
+                        className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-700"
+                      >
+                        <option value="scheduled">Scheduled</option>
+                        <option value="completed">Completed</option>
+                        <option value="no_show">No Show</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 3. TIME SLOTS & WORKING DAYS CONFIG */}
+      {subTab === "config" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Time Slots */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+            <h3 className="font-extrabold text-sm text-slate-950 uppercase tracking-wider">Available Daily Time Slots</h3>
+            <p className="text-xs text-slate-500">These slots are offered to founders when booking their 1:1 strategy call.</p>
+
+            <div className="flex items-center gap-2">
+              <input 
+                value={newSlotInput} 
+                onChange={e => setNewSlotInput(e.target.value)} 
+                placeholder="E.g. 08:00 PM - 08:30 PM (IST)" 
+                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
+              />
+              <button onClick={handleAddSlot} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800">
+                + Add Slot
+              </button>
+            </div>
+
+            <div className="space-y-2 pt-2">
+              {(config.slots || []).map((slot, idx) => (
+                <div key={idx} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-stone-50 text-xs font-bold text-slate-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400">⏰</span>
+                    <span>{slot}</span>
+                  </div>
+                  <button onClick={() => handleRemoveSlot(idx)} className="text-slate-400 hover:text-rose-600 text-xs font-bold">
+                    ✕ Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Working Days */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+            <h3 className="font-extrabold text-sm text-slate-950 uppercase tracking-wider">Active Booking Days</h3>
+            <p className="text-xs text-slate-500">Select the days of the week on which coaching calls can be booked.</p>
+
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(day => {
+                const isActive = (config.days || []).includes(day);
+                return (
+                  <button 
+                    key={day}
+                    onClick={() => handleToggleDay(day)}
+                    className={`p-3 rounded-xl text-xs font-bold border transition flex items-center justify-between ${
+                      isActive 
+                        ? "bg-slate-950 text-white border-slate-950 shadow-xs" 
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span>{day}</span>
+                    <span>{isActive ? "✓" : "+"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
