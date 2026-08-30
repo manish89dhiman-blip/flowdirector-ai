@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     const { data: { user }, error: userErr } = await asUser.auth.getUser();
     if (userErr || !user) return json({ error: "Not signed in" }, 401);
 
-    const { plan_code } = await req.json().catch(() => ({}));
+    const { plan_code, interval = "monthly" } = await req.json().catch(() => ({}));
     if (!plan_code) return json({ error: "plan_code is required" }, 400);
 
     // --- may this person buy for this company? ------------------------------
@@ -90,12 +90,16 @@ Deno.serve(async (req) => {
     );
 
     const { data: plan } = await admin
-      .from("plans").select("code, name, seat_limit, razorpay_plan_id, trial_days")
+      .from("plans").select("code, name, seat_limit, razorpay_plan_id, razorpay_plan_id_yearly, trial_days")
       .eq("code", plan_code).maybeSingle();
 
     if (!plan) return json({ error: "Unknown plan" }, 400);
-    if (!plan.razorpay_plan_id)
-      return json({ error: `Plan "${plan.name}" has no Razorpay plan ID set yet` }, 400);
+
+    const isYearly = interval === "yearly";
+    const selectedPlanId = isYearly && plan.razorpay_plan_id_yearly ? plan.razorpay_plan_id_yearly : plan.razorpay_plan_id;
+
+    if (!selectedPlanId)
+      return json({ error: `Plan "${plan.name}" has no ${interval} Razorpay plan ID configured yet` }, 400);
 
     // --- seats to bill for --------------------------------------------------
     // Flat plan tier pricing: quantity is always 1 for the whole company seat quota.
@@ -130,11 +134,14 @@ Deno.serve(async (req) => {
     const startAt = trialDays > 0 ? Math.floor(Date.now() / 1000) + (trialDays * 86400) : undefined;
 
     // --- create the subscription -------------------------------------------
-    // total_count is REQUIRED by Razorpay — there is no "until cancelled".
-    // 120 monthly cycles = 10 years, which is the usual stand-in for it.
+    // total_count: 120 cycles for monthly (10 yrs), 10 cycles for yearly (10 yrs).
+    const totalCount = isYearly 
+      ? Number(Deno.env.get("RAZORPAY_YEARLY_TOTAL_COUNT") ?? 10) 
+      : Number(Deno.env.get("RAZORPAY_TOTAL_COUNT") ?? 120);
+
     const subPayload: Record<string, any> = {
-      plan_id: plan.razorpay_plan_id,
-      total_count: Number(Deno.env.get("RAZORPAY_TOTAL_COUNT") ?? 120),
+      plan_id: selectedPlanId,
+      total_count: totalCount,
       quantity,
       customer_notify: 1,
       ...(customerId ? { customer_id: customerId } : {}),
@@ -142,6 +149,7 @@ Deno.serve(async (req) => {
       notes: {
         org_id: membership.org_id,
         plan_code: plan.code,
+        interval: isYearly ? "yearly" : "monthly",
         trial_days: trialDays,
       },
     };
