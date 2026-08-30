@@ -1635,6 +1635,32 @@ function Root(){
   if (path === "/coach" || path === "/training-desk" || path === "/coach-desk") {
     return <CoachPortalDesk session={session} onBack={() => navigate("/")} />;
   }
+  if (path === "/calculator" || path === "/ohv-calculator") {
+    return (
+      <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans antialiased">
+        <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
+          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+            <Logo height={48} lightMode={true} onClick={() => navigate("/")} />
+            <div className="flex items-center gap-3">
+              <button onClick={() => navigate("/login")} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-xs">
+                Sign In
+              </button>
+              <button onClick={() => { setSelectedPlan("solo"); navigate("/signup"); }} className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md">
+                Start Free Trial
+              </button>
+            </div>
+          </div>
+        </header>
+        <main className="py-6">
+          <InteractiveOhvCalculator 
+            standalone={true}
+            onGetStarted={(calcOhv) => { setSelectedPlan("solo"); navigate("/signup"); }} 
+          />
+        </main>
+        <LegalFooter />
+      </div>
+    );
+  }
   if (path === "/home" || path === "/landing") {
     return (
       <LandingScreen 
@@ -1728,6 +1754,274 @@ function Logo({ height = 44, onClick, className = "", lightMode = false }){
 }
 
 /* ================================================================== */
+/*  Interactive Owner Hour Value (OHV) Calculator                     */
+/* ================================================================== */
+function InteractiveOhvCalculator({ onGetStarted, standalone = false }){
+  const [incomeMode, setIncomeMode] = useState("annual"); // annual | monthly
+  const [incomeAmount, setIncomeAmount] = useState(5000000); // ₹50 Lakhs default
+  const [daysPerWeek, setDaysPerWeek] = useState(6); // 1 - 7 days
+  const [hoursPerDay, setHoursPerDay] = useState(9); // 2 - 16 hrs
+  const [wastedPct, setWastedPct] = useState(45); // 10% - 80%
+
+  const annualIncome = incomeMode === "annual" ? (Number(incomeAmount) || 0) : ((Number(incomeAmount) || 0) * 12);
+  const weeklyHours = daysPerWeek * hoursPerDay;
+  const annualHours = weeklyHours * 50; // 50 working weeks per year
+  const ohv = Math.max(100, Math.round(annualIncome / (annualHours || 1)));
+
+  const wastedAnnualHours = Math.round(annualHours * (wastedPct / 100));
+  const wastedWeeklyHours = Math.round(weeklyHours * (wastedPct / 100));
+  const annualLeakage = Math.round(wastedAnnualHours * Math.max(0, ohv - 350));
+  const monthlyLeakage = Math.round(annualLeakage / 12);
+
+  const presets = incomeMode === "annual" ? [
+    { label: "₹25 Lakhs", val: 2500000 },
+    { label: "₹50 Lakhs", val: 5000000 },
+    { label: "₹1 Crore", val: 10000000 },
+    { label: "₹2.5 Crore", val: 25000000 },
+    { label: "₹5 Crore", val: 50000000 },
+  ] : [
+    { label: "₹2 Lakhs/mo", val: 200000 },
+    { label: "₹4 Lakhs/mo", val: 400000 },
+    { label: "₹8 Lakhs/mo", val: 800000 },
+    { label: "₹15 Lakhs/mo", val: 1500000 },
+    { label: "₹30 Lakhs/mo", val: 3000000 },
+  ];
+
+  const formatInr = (n) => {
+    if (n >= 10000000) return `₹${(n / 10000000).toFixed(2)} Cr`;
+    if (n >= 100000) return `₹${(n / 100000).toFixed(2)} Lakhs`;
+    return `₹${n.toLocaleString("en-IN")}`;
+  };
+
+  return (
+    <section id="calculator-section" className={`py-16 px-4 sm:px-6 max-w-7xl mx-auto ${standalone ? "" : "border-b border-slate-200/80"}`}>
+      <div className="text-center max-w-3xl mx-auto mb-12">
+        <div className="inline-flex items-center gap-2 rounded-full border border-amber-300 bg-amber-50 px-3.5 py-1 text-xs font-bold text-amber-900 shadow-xs mb-3">
+          <span>⚡ FREE EXECUTIVE TOOL</span>
+          <span>·</span>
+          <span>THE OHV RULE</span>
+        </div>
+        <h2 className="text-3xl font-extrabold text-slate-950 sm:text-5xl tracking-tight leading-tight">
+          What is Your True <span className="text-amber-600">Owner Hour Value?</span>
+        </h2>
+        <p className="mt-4 text-base text-slate-600 leading-relaxed">
+          If you are doing tasks worth <b>₹300/hour</b>, you are burning lakhs in high-leverage growth. Calculate your hourly worth threshold based on your actual working schedule and target income.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* Controls Card (Left / 7 cols) */}
+        <div className="lg:col-span-7 rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-xl space-y-6">
+          {/* Income Input */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                Target Founder Net Income / Profit
+              </label>
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-bold">
+                <button 
+                  onClick={() => { setIncomeMode("annual"); if (incomeMode==="monthly") setIncomeAmount(incomeAmount*12); }}
+                  className={`px-2.5 py-1 rounded-lg transition ${incomeMode==="annual" ? "bg-white text-slate-950 shadow-2xs" : "text-slate-500 hover:text-slate-900"}`}>
+                  Annual (₹/yr)
+                </button>
+                <button 
+                  onClick={() => { setIncomeMode("monthly"); if (incomeMode==="annual") setIncomeAmount(Math.round(incomeAmount/12)); }}
+                  className={`px-2.5 py-1 rounded-lg transition ${incomeMode==="monthly" ? "bg-white text-slate-950 shadow-2xs" : "text-slate-500 hover:text-slate-900"}`}>
+                  Monthly (₹/mo)
+                </button>
+              </div>
+            </div>
+
+            <div className="relative mb-3">
+              <span className="absolute left-4 top-1/2 -translate-y-1/2 text-base font-extrabold text-slate-400">₹</span>
+              <input 
+                type="number"
+                min="100000"
+                step="50000"
+                value={incomeAmount}
+                onChange={e => setIncomeAmount(Number(e.target.value) || 0)}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-3 text-base font-extrabold text-slate-950 outline-none focus:border-amber-500 focus:bg-white transition"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {presets.map((p, i) => (
+                <button
+                  key={i}
+                  onClick={() => setIncomeAmount(p.val)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                    incomeAmount === p.val
+                      ? "bg-slate-950 text-white border-slate-950 shadow-xs"
+                      : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <hr className="border-slate-100" />
+
+          {/* Working Days per Week (1 to 7) */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                Working Days Per Week (1 to 7 Days)
+              </label>
+              <span className="text-xs font-black text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full">
+                {daysPerWeek} Days / Week
+              </span>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+              {[1, 2, 3, 4, 5, 6, 7].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDaysPerWeek(d)}
+                  className={`py-3 rounded-2xl text-xs font-extrabold border transition flex flex-col items-center justify-center gap-1 ${
+                    daysPerWeek === d
+                      ? "bg-slate-950 text-white border-slate-950 shadow-md scale-105"
+                      : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  <span>{d}</span>
+                  <span className="text-[9px] uppercase font-bold opacity-70">
+                    {d === 1 ? "Day" : "Days"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Working Hours per Day (2 to 16) */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                Average Working Hours Per Day
+              </label>
+              <span className="text-xs font-black text-blue-700 bg-blue-100 px-2.5 py-0.5 rounded-full">
+                {hoursPerDay} Hours / Day
+              </span>
+            </div>
+
+            <input 
+              type="range"
+              min="2"
+              max="16"
+              step="1"
+              value={hoursPerDay}
+              onChange={e => setHoursPerDay(Number(e.target.value))}
+              className="w-full accent-blue-600 h-2 bg-slate-100 rounded-lg cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase mt-1">
+              <span>2 hrs (Part-Time)</span>
+              <span>8 hrs (Standard)</span>
+              <span>12 hrs (Founder Mode)</span>
+              <span>16 hrs</span>
+            </div>
+          </div>
+
+          <hr className="border-slate-100" />
+
+          {/* Percentage Spent in Low-Value / Firefighting Tasks */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                Estimated Time Lost in Low-Value Grind & Firefighting
+              </label>
+              <span className="text-xs font-black text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full">
+                {wastedPct}% of your week
+              </span>
+            </div>
+
+            <input 
+              type="range"
+              min="10"
+              max="80"
+              step="5"
+              value={wastedPct}
+              onChange={e => setWastedPct(Number(e.target.value))}
+              className="w-full accent-rose-600 h-2 bg-slate-100 rounded-lg cursor-pointer"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Includes answering basic customer queries, manual spreadsheet edits, endless follow-ups, and tasks that a ₹300/hr assistant could do.
+            </p>
+          </div>
+        </div>
+
+        {/* Results Card (Right / 5 cols) */}
+        <div className="lg:col-span-5 space-y-4">
+          {/* Main OHV Card */}
+          <div className="rounded-3xl border border-amber-300 bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 p-6 sm:p-8 text-white shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 blur-3xl rounded-full"></div>
+            
+            <div className="relative z-10 space-y-4">
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-[11px] font-extrabold tracking-wider uppercase backdrop-blur-xs">
+                <span>🎯 YOUR OWNER HOUR VALUE</span>
+              </div>
+
+              <div>
+                <div className="text-4xl sm:text-5xl font-black tracking-tight text-white">
+                  ₹{ohv.toLocaleString("en-IN")}
+                  <span className="text-xl sm:text-2xl font-bold opacity-90"> / hour</span>
+                </div>
+                <p className="text-xs text-amber-100 mt-1 font-medium leading-relaxed">
+                  Based on {annualHours.toLocaleString("en-IN")} total working hours/year ({daysPerWeek} days/wk × {hoursPerDay} hrs/day × 50 wks).
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-slate-950/40 p-4 backdrop-blur-md border border-white/10 space-y-2 text-xs">
+                <div className="font-extrabold text-amber-300 uppercase tracking-wide">
+                  ⚖️ The Golden Rule of Delegation:
+                </div>
+                <p className="text-slate-100 leading-relaxed font-medium">
+                  Any task that can be executed by someone for <b>less than ₹{ohv.toLocaleString("en-IN")}/hr</b> must be ruthlessly delegated or automated. Doing it yourself is costing you wealth.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Money Lost Diagnostic Card */}
+          <div className="rounded-3xl border border-rose-200 bg-white p-6 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-rose-700 uppercase tracking-wider">
+                💸 Annual Cost of Under-Delegating
+              </span>
+              <span className="text-xs font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                ~{wastedWeeklyHours} hrs / week lost
+              </span>
+            </div>
+
+            <div className="text-3xl font-black text-slate-950">
+              {formatInr(annualLeakage)}
+              <span className="text-xs font-bold text-slate-500"> / year</span>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              By spending <b>{wastedPct}% of your time</b> on low-value operational firefighting instead of high-leverage strategic growth, you are effectively burning <b>{formatInr(monthlyLeakage)}/month</b> in lost founder leverage.
+            </p>
+
+            <button
+              onClick={() => {
+                if (onGetStarted) onGetStarted(ohv);
+              }}
+              className="w-full mt-3 rounded-2xl bg-slate-950 py-4 px-5 text-sm font-extrabold text-white shadow-xl hover:bg-slate-800 transition flex items-center justify-center gap-2 group"
+            >
+              <span>🔥 Start 15-Day Free Trial & Reclaim Your Time</span>
+              <span className="group-hover:translate-x-1 transition">→</span>
+            </button>
+            <p className="text-center text-[10px] text-slate-400 font-bold">
+              No credit card required to begin • 1-on-1 Strategy Onboarding Included
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ================================================================== */
 /*  Landing Page & Trial Sign-Up                                       */
 /* ================================================================== */
 function LandingScreen({ onSignIn, onSignUp }){
@@ -1774,6 +2068,9 @@ function LandingScreen({ onSignIn, onSignUp }){
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <Logo height={48} lightMode={true} onClick={() => navigate("/")} />
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+            <button onClick={() => scrollToSection("calculator-section")} className="font-extrabold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1 rounded-xl hover:bg-amber-100 transition shadow-2xs">
+              🧮 OHV Calculator
+            </button>
             <button onClick={() => scrollToSection("features")} className="hover:text-slate-900 transition">Features</button>
             <button onClick={() => scrollToSection("benefits")} className="hover:text-slate-900 transition">Benefits</button>
             <button onClick={() => scrollToSection("how-it-works")} className="hover:text-slate-900 transition">How It Works</button>
@@ -1814,12 +2111,16 @@ function LandingScreen({ onSignIn, onSignUp }){
                 Start Your Mastery Trial
                 <span className="material-symbols-outlined text-lg">arrow_forward</span>
               </button>
-              <button onClick={() => scrollToSection("features")} className="w-full sm:w-auto rounded-xl border border-slate-300 bg-white px-8 py-4 text-sm font-semibold text-slate-800 hover:bg-slate-50 transition shadow-xs">
-                View Methodology
+              <button onClick={() => scrollToSection("calculator-section")} className="w-full sm:w-auto rounded-xl border border-amber-300 bg-amber-50 px-8 py-4 text-sm font-bold text-amber-900 hover:bg-amber-100 transition shadow-xs flex items-center justify-center gap-2">
+                <span>🧮</span>
+                <span>Calculate Your OHV</span>
               </button>
             </div>
           </div>
         </section>
+
+        {/* Interactive Owner Hour Value (OHV) Calculator Section */}
+        <InteractiveOhvCalculator onGetStarted={(calcOhv) => onSignUp("solo")} />
 
         {/* Feature 1: Owner Hour Value */}
         <section id="features" className="py-20 px-4 sm:px-6 max-w-7xl mx-auto border-b border-slate-200/80">
@@ -7611,15 +7912,80 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 font-semibold text-slate-700">Owner Hour Value</h3>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className="text-sm"><span className="mb-1 block text-xs text-slate-500">Monthly income / value (₹)</span>
-            <Field type="number" value={data.settings.income} onChange={e=>patch(d=>{d.settings.income=Number(e.target.value);})} /></label>
-          <label className="text-sm"><span className="mb-1 block text-xs text-slate-500">Working hours per month</span>
-            <Field type="number" value={data.settings.hours} onChange={e=>patch(d=>{d.settings.hours=Number(e.target.value);})} /></label>
-          <div className="text-sm"><span className="mb-1 block text-xs text-slate-500">Your hour value</span>
-            <div className="rounded-md bg-slate-900 px-3 py-2 mono text-lg font-bold text-amber-400">₹{ohv.toLocaleString("en-IN")}<span className="text-xs text-slate-400"> /hr</span></div></div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-xs">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-extrabold text-sm text-slate-950">Owner Hour Value (OHV) Threshold</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Tasks priced below this hourly rate will be flagged for aggressive delegation or elimination.</p>
+          </div>
+          <div className="rounded-xl bg-slate-950 px-4 py-2 text-right shadow-xs">
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Calculated OHV</span>
+            <span className="text-lg font-black text-amber-400">₹{ohv.toLocaleString("en-IN")}<span className="text-xs text-slate-300 font-medium"> /hr</span></span>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-3 pt-1">
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Target Monthly Net Income (₹)</label>
+            <Field 
+              type="number" 
+              value={data.settings.income || 400000} 
+              onChange={e => patch(d => { d.settings.income = Number(e.target.value) || 0; })} 
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Working Days / Week (1 - 7)</label>
+            <div className="flex items-center gap-1 pt-0.5">
+              {[1, 2, 3, 4, 5, 6, 7].map(d => {
+                const currentDays = data.settings.daysPerWeek || Math.min(7, Math.max(1, Math.round((data.settings.hours || 180) / (4.33 * 8)))) || 6;
+                const isSelected = currentDays === d;
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => patch(x => {
+                      x.settings.daysPerWeek = d;
+                      const hrsPerDay = x.settings.hoursPerDay || 8;
+                      x.settings.hours = Math.round(d * hrsPerDay * 4.33);
+                    })}
+                    className={`flex-1 py-2 rounded-xl text-xs font-black border transition ${
+                      isSelected 
+                        ? "bg-slate-950 text-white border-slate-950 shadow-xs" 
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">
+              Hours / Day ({data.settings.hoursPerDay || 8} hrs/day)
+            </label>
+            <input 
+              type="range"
+              min="2"
+              max="16"
+              step="1"
+              value={data.settings.hoursPerDay || 8}
+              onChange={e => {
+                const hpd = Number(e.target.value);
+                patch(x => {
+                  x.settings.hoursPerDay = hpd;
+                  const dpw = x.settings.daysPerWeek || 6;
+                  x.settings.hours = Math.round(dpw * hpd * 4.33);
+                });
+              }}
+              className="w-full accent-amber-500 h-2 bg-slate-100 rounded-lg cursor-pointer mt-2"
+            />
+            <span className="text-[10px] text-slate-400 font-bold block mt-1">
+              ~{data.settings.hours || 180} working hours per month
+            </span>
+          </div>
         </div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-white p-4">
