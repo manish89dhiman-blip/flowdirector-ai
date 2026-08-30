@@ -2094,7 +2094,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
           </div>
 
           <div className="mt-6 space-y-3">
-            <button onClick={() => startCheckout("team", "razorpay").catch(e => alert(e.message || "Couldn't start checkout."))}
+            <button onClick={() => startCheckout(sub?.plan_code || "solo", "razorpay").catch(e => alert(e.message || "Couldn't start checkout."))}
               className="w-full rounded-xl bg-amber-400 py-3 text-xs font-bold text-slate-950 shadow-md shadow-amber-400/20 transition hover:bg-amber-300">
               Authorize via Razorpay →
             </button>
