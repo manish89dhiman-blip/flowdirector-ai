@@ -4514,8 +4514,36 @@ function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
 /* ================================================================== */
 function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const userId = session.user.id;
+  const path = usePath();
+
+  const parsePlannerRoute = (p) => {
+    const clean = (p || "").replace(/^\//, "");
+    const parts = clean.split("/");
+    const mainTab = parts[0] || "capture";
+    const subTab = parts[1] || "";
+    const validTabs = ["capture", "followup", "standup", "daily", "weekly", "monthly", "ideas", "maybe", "reference", "goals", "people", "team", "manual", "settings"];
+    let t = "capture";
+    if (validTabs.includes(mainTab)) t = mainTab;
+    else if (mainTab === "guide" || mainTab === "docs" || mainTab === "help") t = "manual";
+    return { tab: t, subTab };
+  };
+
+  const initialRoute = parsePlannerRoute(path);
+  const [tab, setTabState] = useState(initialRoute.tab);
+  const [settingsSubTab, setSettingsSubTab] = useState(initialRoute.subTab || "general");
+
+  useEffect(() => {
+    const { tab: newTab, subTab: newSubTab } = parsePlannerRoute(path);
+    if (newTab !== tab) setTabState(newTab);
+    if (newSubTab && newSubTab !== settingsSubTab) setSettingsSubTab(newSubTab);
+  }, [path]);
+
+  const setTab = (newTab) => {
+    setTabState(newTab);
+    navigate("/" + newTab);
+  };
+
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState("capture");
   const [saving, setSaving] = useState(false);
   const [syncError, setSyncError] = useState(false);
   const [dailyDate, setDailyDate] = useState(todayKey());
@@ -4778,7 +4806,8 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                                orgCtx={orgCtx} orgError={orgError}
                                onLeftOrg={onLeftOrg} onStartCompany={onStartCompany}
                                onOpenTraining={() => setShowTrainingModal(true)}
-                               isAdmin={isAdmin} />}
+                               isAdmin={isAdmin}
+                               initialSubTab={settingsSubTab} />}
       </main>
 
       {showTrainingModal && (
@@ -10361,7 +10390,29 @@ function CalendarIntegrationSection({ data, userId }){
   );
 }
 
-function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany, onOpenTraining, isAdmin }){
+const SETTINGS_TABS = [
+  { id: "general", label: "General & Hours", icon: "⚙️" },
+  { id: "calendar", label: "Calendar & Tax", icon: "🗓️" },
+  { id: "company", label: "Company & Team", icon: "🏢" },
+  { id: "labels", label: "Categories & Labels", icon: "🏷️" },
+  { id: "billing", label: "Billing & Invoices", icon: "💳" },
+  { id: "account", label: "Account & Data", icon: "👤" },
+];
+
+function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany, onOpenTraining, isAdmin, initialSubTab = "general" }){
+  const [subTab, setSubTabState] = useState(initialSubTab);
+
+  useEffect(() => {
+    if (initialSubTab && initialSubTab !== subTab) {
+      setSubTabState(initialSubTab);
+    }
+  }, [initialSubTab]);
+
+  const setSubTab = (st) => {
+    setSubTabState(st);
+    navigate(`/settings/${st}`);
+  };
+
   const ohv=Math.round((data.settings.income||0)/(data.settings.hours||1));
   const fileInputRef = useRef(null);
   const [clearing, setClearing] = useState(false);
@@ -10395,292 +10446,354 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
     reader.readAsText(file);
     e.target.value = "";
   };
+
   return (
     <div className="space-y-6">
-      <Callout>Any task below your Owner Hour Value should not be in your hands. Set it, then delegate ruthlessly.</Callout>
-
-      {orgCtx?.org && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-lg">📹</span>
-                <h3 className="text-sm font-bold text-slate-900">1-on-1 Executive Strategy & Onboarding Call</h3>
-              </div>
-              <p className="text-xs text-slate-500 mt-1">Complimentary 20-minute Google Meet coaching session to configure your KRAs and calculate delegation velocity.</p>
-            </div>
-            <button 
-              onClick={onOpenTraining}
-              className={`rounded-xl px-4 py-2 text-xs font-bold transition shadow-xs flex items-center gap-1.5 ${
-                orgCtx.org.training_status === "booked"
-                  ? "bg-emerald-100 text-emerald-950 border border-emerald-300 hover:bg-emerald-200"
-                  : "bg-slate-950 text-white hover:bg-slate-800"
-              }`}
-            >
-              <span>{orgCtx.org.training_status === "booked" ? "📅 View / Reschedule Session" : "📹 Book Google Meet Session"}</span>
-            </button>
-          </div>
-          {orgCtx.org.training_status === "booked" && (
-            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs text-emerald-950 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <b>Scheduled:</b> {orgCtx.org.training_notes || "1-on-1 Strategy Call"}
-              </div>
-              <a 
-                href={orgCtx.org.training_meet_link || "https://meet.google.com"} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="font-bold underline hover:no-underline text-emerald-800"
+      {/* Submenu Tabs Navigation Strip */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {SETTINGS_TABS.map(st => {
+            const active = subTab === st.id;
+            return (
+              <button
+                key={st.id}
+                onClick={() => setSubTab(st.id)}
+                className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all ${
+                  active
+                    ? "bg-slate-950 text-white shadow-md shadow-slate-950/10 scale-[1.02]"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                }`}
               >
-                Join Google Meet Room ↗
-              </a>
+                <span className="text-sm">{st.icon}</span>
+                <span>{st.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Sub-tab 1: General & Working Hours */}
+      {subTab === "general" && (
+        <div className="space-y-6">
+          <Callout>Any task below your Owner Hour Value should not be in your hands. Set it, then delegate ruthlessly.</Callout>
+
+          {orgCtx?.org && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📹</span>
+                    <h3 className="text-sm font-bold text-slate-900">1-on-1 Executive Strategy & Onboarding Call</h3>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Complimentary 20-minute Google Meet coaching session to configure your KRAs and calculate delegation velocity.</p>
+                </div>
+                <button 
+                  onClick={onOpenTraining}
+                  className={`rounded-xl px-4 py-2 text-xs font-bold transition shadow-xs flex items-center gap-1.5 ${
+                    orgCtx.org.training_status === "booked"
+                      ? "bg-emerald-100 text-emerald-950 border border-emerald-300 hover:bg-emerald-200"
+                      : "bg-slate-950 text-white hover:bg-slate-800"
+                  }`}
+                >
+                  <span>{orgCtx.org.training_status === "booked" ? "📅 View / Reschedule Session" : "📹 Book Google Meet Session"}</span>
+                </button>
+              </div>
+              {orgCtx.org.training_status === "booked" && (
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs text-emerald-950 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <b>Scheduled:</b> {orgCtx.org.training_notes || "1-on-1 Strategy Call"}
+                  </div>
+                  <a 
+                    href={orgCtx.org.training_meet_link || "https://meet.google.com"} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="font-bold underline hover:no-underline text-emerald-800"
+                  >
+                    Join Google Meet Room ↗
+                  </a>
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
 
-      {isAdmin && (
-        <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 text-white shadow-xl space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-lg">🔐</span>
-              <div>
-                <h3 className="font-bold text-sm text-white">Platform Administrator Console</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Standalone control panel to manage platform companies, pricing plans, and real revenue metrics.</p>
+          {isAdmin && (
+            <div className="rounded-2xl border border-slate-900 bg-slate-950 p-6 text-white shadow-xl space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-800 text-lg">🔐</span>
+                  <div>
+                    <h3 className="font-bold text-sm text-white">Platform Administrator Console</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">Standalone control panel to manage platform companies, pricing plans, and real revenue metrics.</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => navigate("/admin")}
+                  className="rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-amber-300 transition shadow-md"
+                >
+                  Launch Admin Console →
+                </button>
               </div>
             </div>
-            <button 
-              onClick={() => navigate("/admin")}
-              className="rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-amber-300 transition shadow-md"
-            >
-              Launch Admin Console →
-            </button>
+          )}
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-xs">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-950">Owner Hour Value (OHV) Threshold</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Tasks priced below this hourly rate will be flagged for aggressive delegation or elimination.</p>
+              </div>
+              <div className="rounded-xl bg-slate-950 px-4 py-2 text-right shadow-xs">
+                <span className="text-[10px] uppercase font-bold text-slate-400 block">Calculated OHV</span>
+                <span className="text-lg font-black text-amber-400">₹{ohv.toLocaleString("en-IN")}<span className="text-xs text-slate-300 font-medium"> /hr</span></span>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-3 pt-1">
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Target Monthly Net Income (₹)</label>
+                <Field 
+                  type="number" 
+                  value={data.settings.income || 400000} 
+                  onChange={e => patch(d => { d.settings.income = Number(e.target.value) || 0; })} 
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Working Days / Week (1 - 7)</label>
+                <div className="flex items-center gap-1 pt-0.5">
+                  {[1, 2, 3, 4, 5, 6, 7].map(d => {
+                    const currentDays = data.settings.daysPerWeek || Math.min(7, Math.max(1, Math.round((data.settings.hours || 180) / (4.33 * 8)))) || 6;
+                    const isSelected = currentDays === d;
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => patch(x => {
+                          x.settings.daysPerWeek = d;
+                          const hrsPerDay = x.settings.hoursPerDay || 8;
+                          x.settings.hours = Math.round(d * hrsPerDay * 4.33);
+                        })}
+                        className={`flex-1 py-2 rounded-xl text-xs font-black border transition ${
+                          isSelected 
+                            ? "bg-slate-950 text-white border-slate-950 shadow-xs" 
+                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">
+                  Hours / Day ({data.settings.hoursPerDay || 8} hrs/day)
+                </label>
+                <input 
+                  type="range"
+                  min="2"
+                  max="16"
+                  step="1"
+                  value={data.settings.hoursPerDay || 8}
+                  onChange={e => {
+                    const hpd = Number(e.target.value);
+                    patch(x => {
+                      x.settings.hoursPerDay = hpd;
+                      const dpw = x.settings.daysPerWeek || 6;
+                      x.settings.hours = Math.round(dpw * hpd * 4.33);
+                    });
+                  }}
+                  className="w-full accent-amber-500 h-2 bg-slate-100 rounded-lg cursor-pointer mt-2"
+                />
+                <span className="text-[10px] text-slate-400 font-bold block mt-1">
+                  ~{data.settings.hours || 180} working hours per month
+                </span>
+              </div>
+            </div>
+
+            {/* Timezone Selector */}
+            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <label className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+                  <span>🕒</span>
+                  <span>Default Timezone &amp; Regional Clock</span>
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Current local time in selected timezone: <b className="text-slate-800">{new Intl.DateTimeFormat("en-IN", { timeZone: data.settings.timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" }).format(new Date())}</b>
+                </p>
+              </div>
+              <select
+                value={data.settings.timezone || "Asia/Kolkata"}
+                onChange={e => patch(x => { x.settings.timezone = e.target.value; })}
+                className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:bg-white transition"
+              >
+                {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 font-semibold text-slate-700">Day themes</h3>
+            <p className="mb-3 text-xs text-slate-400">These headline every week. Edit freely — e.g. Monday for employee meetings, Tuesday for accounts.</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {DAY_KEYS.map(d=>(
+                <label key={d} className="flex items-center gap-2 text-sm">
+                  <span className="w-10 mono text-xs text-slate-500">{DAY_LABEL[d]}</span>
+                  <Field value={data.dayThemes[d]||""} onChange={e=>patch(x=>{x.dayThemes[d]=e.target.value;})} />
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <NotificationSection />
+        </div>
+      )}
+
+      {/* Sub-tab 2: Calendar & Tax Compliance */}
+      {subTab === "calendar" && (
+        <div className="space-y-6">
+          <CalendarIntegrationSection data={data} userId={userId} />
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🏛️</span>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">Statutory Tax, GST &amp; Holiday Calendars</h3>
+                  <p className="text-xs text-slate-500">Optional 1-click import of gazetted holidays and statutory business compliance deadlines</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              {/* Card 1: Indian Festivals */}
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-2 flex flex-col justify-between">
+                <div className="space-y-1">
+                  <span className="text-xs font-black uppercase text-amber-900 block">
+                    🎆 Indian Festivals &amp; Gazetted Holidays (2026–2027)
+                  </span>
+                  <p className="text-xs text-slate-600">
+                    Diwali, Holi, Independence Day, Republic Day, Eid, Gandhi Jayanti, Dussehra, Christmas &amp; more.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    let added = 0;
+                    patch(d => {
+                      d.dailyBackup = d.dailyBackup || [];
+                      INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
+                        if (!d.dailyBackup.some(b => b.text === hol.text && b.due === hol.due)) {
+                          d.dailyBackup.push({
+                            id: uid(),
+                            text: hol.text,
+                            due: hol.due,
+                            time: "",
+                            tag: "Holiday",
+                            taskType: "DAILY",
+                            done: false
+                          });
+                          added++;
+                        }
+                      });
+                    });
+                    alert(`✓ Successfully imported ${added} Indian holidays into your calendar!`);
+                  }}
+                  className="w-full rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+                >
+                  <span>📥</span>
+                  <span>Import Holidays ({INDIAN_HOLIDAYS_CATALOG.length})</span>
+                </button>
+              </div>
+
+              {/* Card 2: Business Tax Deadlines */}
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 space-y-2 flex flex-col justify-between">
+                <div className="space-y-1">
+                  <span className="text-xs font-black uppercase text-blue-900 block">
+                    📊 Business Tax, TDS, GST &amp; Filing Deadlines
+                  </span>
+                  <p className="text-xs text-slate-600">
+                    Monthly TDS (7th), GSTR-1 (11th), PF/ESIC (15th), GSTR-3B (20th) + Advance Tax &amp; Annual Return dates.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    let recCount = 0;
+                    let deadCount = 0;
+                    patch(d => {
+                      d.recurringMonthly = d.recurringMonthly || [];
+                      d.dailyBackup = d.dailyBackup || [];
+                      TAX_COMPLIANCE_CATALOG.recurring.forEach(item => {
+                        if (!d.recurringMonthly.some(r => r.text === item.text)) {
+                          d.recurringMonthly.push({ id: uid(), day: item.day, text: item.text, tag: item.tag, time: "" });
+                          recCount++;
+                        }
+                      });
+                      TAX_COMPLIANCE_CATALOG.quarterlyAnnual.forEach(item => {
+                        if (!d.dailyBackup.some(b => b.text === item.text && b.due === item.due)) {
+                          d.dailyBackup.push({ id: uid(), text: item.text, due: item.due, time: "", tag: item.tag, taskType: item.taskType, done: false });
+                          deadCount++;
+                        }
+                      });
+                    });
+                    alert(`✓ Imported ${recCount} monthly tax rules and ${deadCount} annual compliance deadlines!`);
+                  }}
+                  className="w-full rounded-xl bg-blue-900 hover:bg-blue-950 text-white py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+                >
+                  <span>📥</span>
+                  <span>Import Tax &amp; GST Deadlines</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-extrabold text-sm text-slate-950">Owner Hour Value (OHV) Threshold</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Tasks priced below this hourly rate will be flagged for aggressive delegation or elimination.</p>
-          </div>
-          <div className="rounded-xl bg-slate-950 px-4 py-2 text-right shadow-xs">
-            <span className="text-[10px] uppercase font-bold text-slate-400 block">Calculated OHV</span>
-            <span className="text-lg font-black text-amber-400">₹{ohv.toLocaleString("en-IN")}<span className="text-xs text-slate-300 font-medium"> /hr</span></span>
-          </div>
+      {/* Sub-tab 3: Company & Team */}
+      {subTab === "company" && (
+        <div className="space-y-6">
+          <CompanySection orgCtx={orgCtx} orgError={orgError} userId={userId} onLeftOrg={onLeftOrg} onStartCompany={onStartCompany} />
+          <TeamSection data={data} patch={patch} inCompany={!!(orgCtx && orgCtx.membership)} />
         </div>
+      )}
 
-        <div className="grid gap-4 sm:grid-cols-3 pt-1">
-          <div>
-            <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Target Monthly Net Income (₹)</label>
-            <Field 
-              type="number" 
-              value={data.settings.income || 400000} 
-              onChange={e => patch(d => { d.settings.income = Number(e.target.value) || 0; })} 
-            />
-          </div>
+      {/* Sub-tab 4: Categories & Task Labels */}
+      {subTab === "labels" && (
+        <div className="space-y-6">
+          <CategoriesSection data={data} patch={patch} />
+          <TaskTypeLabelsSection data={data} patch={patch} />
+        </div>
+      )}
 
-          <div>
-            <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Working Days / Week (1 - 7)</label>
-            <div className="flex items-center gap-1 pt-0.5">
-              {[1, 2, 3, 4, 5, 6, 7].map(d => {
-                const currentDays = data.settings.daysPerWeek || Math.min(7, Math.max(1, Math.round((data.settings.hours || 180) / (4.33 * 8)))) || 6;
-                const isSelected = currentDays === d;
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => patch(x => {
-                      x.settings.daysPerWeek = d;
-                      const hrsPerDay = x.settings.hoursPerDay || 8;
-                      x.settings.hours = Math.round(d * hrsPerDay * 4.33);
-                    })}
-                    className={`flex-1 py-2 rounded-xl text-xs font-black border transition ${
-                      isSelected 
-                        ? "bg-slate-950 text-white border-slate-950 shadow-xs" 
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    {d}
-                  </button>
-                );
-              })}
+      {/* Sub-tab 5: Billing & Invoices */}
+      {subTab === "billing" && (
+        <div className="space-y-6">
+          <BillingSection orgCtx={orgCtx} userId={userId} />
+        </div>
+      )}
+
+      {/* Sub-tab 6: Account & Data Backup */}
+      {subTab === "account" && (
+        <div className="space-y-6">
+          <AccountSection userId={userId} />
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 font-semibold text-slate-700">Data</h3>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={exportData} className="flex items-center gap-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"><Ic n="download"/> Export backup (JSON)</button>
+              <input ref={fileInputRef} type="file" accept="application/json" onChange={importData} className="hidden" />
+              <button onClick={()=>fileInputRef.current.click()} className="flex items-center gap-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"><Ic n="download"/> Import backup (JSON)</button>
             </div>
+            <p className="mt-2 text-xs text-slate-400">Everything syncs to your account and is visible only to you. Sign in from any device to pick up where you left off.</p>
           </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">
-              Hours / Day ({data.settings.hoursPerDay || 8} hrs/day)
-            </label>
-            <input 
-              type="range"
-              min="2"
-              max="16"
-              step="1"
-              value={data.settings.hoursPerDay || 8}
-              onChange={e => {
-                const hpd = Number(e.target.value);
-                patch(x => {
-                  x.settings.hoursPerDay = hpd;
-                  const dpw = x.settings.daysPerWeek || 6;
-                  x.settings.hours = Math.round(dpw * hpd * 4.33);
-                });
-              }}
-              className="w-full accent-amber-500 h-2 bg-slate-100 rounded-lg cursor-pointer mt-2"
-            />
-            <span className="text-[10px] text-slate-400 font-bold block mt-1">
-              ~{data.settings.hours || 180} working hours per month
-            </span>
-          </div>
-        </div>
-
-        {/* Timezone Selector */}
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-0.5">
-            <label className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
-              <span>🕒</span>
-              <span>Default Timezone &amp; Regional Clock</span>
-            </label>
-            <p className="text-[11px] text-slate-500">
-              Current local time in selected timezone: <b className="text-slate-800">{new Intl.DateTimeFormat("en-IN", { timeZone: data.settings.timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" }).format(new Date())}</b>
-            </p>
-          </div>
-          <select
-            value={data.settings.timezone || "Asia/Kolkata"}
-            onChange={e => patch(x => { x.settings.timezone = e.target.value; })}
-            className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:bg-white transition"
-          >
-            {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
-          </select>
-        </div>
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 font-semibold text-slate-700">Day themes</h3>
-        <p className="mb-3 text-xs text-slate-400">These headline every week. Edit freely — e.g. Monday for employee meetings, Tuesday for accounts.</p>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {DAY_KEYS.map(d=>(
-            <label key={d} className="flex items-center gap-2 text-sm">
-              <span className="w-10 mono text-xs text-slate-500">{DAY_LABEL[d]}</span>
-              <Field value={data.dayThemes[d]||""} onChange={e=>patch(x=>{x.dayThemes[d]=e.target.value;})} />
-            </label>
-          ))}
-        </div>
-      </div>
-      <AccountSection userId={userId} />
-      <CompanySection orgCtx={orgCtx} orgError={orgError} userId={userId} onLeftOrg={onLeftOrg} onStartCompany={onStartCompany} />
-      <BillingSection orgCtx={orgCtx} userId={userId} />
-      <CategoriesSection data={data} patch={patch} />
-      <TaskTypeLabelsSection data={data} patch={patch} />
-      <TeamSection data={data} patch={patch} inCompany={!!(orgCtx && orgCtx.membership)} />
-      <NotificationSection />
-      <CalendarIntegrationSection data={data} userId={userId} />
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl">🏛️</span>
-            <div>
-              <h3 className="font-bold text-sm text-slate-900">Statutory Tax, GST &amp; Holiday Calendars</h3>
-              <p className="text-xs text-slate-500">Optional 1-click import of gazetted holidays and statutory business compliance deadlines</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          {/* Card 1: Indian Festivals */}
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-2 flex flex-col justify-between">
-            <div className="space-y-1">
-              <span className="text-xs font-black uppercase text-amber-900 block">
-                🎆 Indian Festivals &amp; Gazetted Holidays (2026–2027)
-              </span>
-              <p className="text-xs text-slate-600">
-                Diwali, Holi, Independence Day, Republic Day, Eid, Gandhi Jayanti, Dussehra, Christmas &amp; more.
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                let added = 0;
-                patch(d => {
-                  d.dailyBackup = d.dailyBackup || [];
-                  INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
-                    if (!d.dailyBackup.some(b => b.text === hol.text && b.due === hol.due)) {
-                      d.dailyBackup.push({
-                        id: uid(),
-                        text: hol.text,
-                        due: hol.due,
-                        time: "",
-                        tag: "Holiday",
-                        taskType: "DAILY",
-                        done: false
-                      });
-                      added++;
-                    }
-                  });
-                });
-                alert(`✓ Successfully imported ${added} Indian holidays into your calendar!`);
-              }}
-              className="w-full rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
-            >
-              <span>📥</span>
-              <span>Import Holidays ({INDIAN_HOLIDAYS_CATALOG.length})</span>
+          <div className="rounded-lg border border-rose-200 bg-white p-4">
+            <h3 className="mb-3 font-semibold text-rose-600">Danger zone</h3>
+            <button onClick={clearAllData} disabled={clearing} className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-60">
+              <Ic n="trash"/> {clearing ? "Clearing…" : "Clear all my data"}
             </button>
-          </div>
-
-          {/* Card 2: Business Tax Deadlines */}
-          <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 space-y-2 flex flex-col justify-between">
-            <div className="space-y-1">
-              <span className="text-xs font-black uppercase text-blue-900 block">
-                📊 Business Tax, TDS, GST &amp; Filing Deadlines
-              </span>
-              <p className="text-xs text-slate-600">
-                Monthly TDS (7th), GSTR-1 (11th), PF/ESIC (15th), GSTR-3B (20th) + Advance Tax &amp; Annual Return dates.
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                let recCount = 0;
-                let deadCount = 0;
-                patch(d => {
-                  d.recurringMonthly = d.recurringMonthly || [];
-                  d.dailyBackup = d.dailyBackup || [];
-                  TAX_COMPLIANCE_CATALOG.recurring.forEach(item => {
-                    if (!d.recurringMonthly.some(r => r.text === item.text)) {
-                      d.recurringMonthly.push({ id: uid(), day: item.day, text: item.text, tag: item.tag, time: "" });
-                      recCount++;
-                    }
-                  });
-                  TAX_COMPLIANCE_CATALOG.quarterlyAnnual.forEach(item => {
-                    if (!d.dailyBackup.some(b => b.text === item.text && b.due === item.due)) {
-                      d.dailyBackup.push({ id: uid(), text: item.text, due: item.due, time: "", tag: item.tag, taskType: item.taskType, done: false });
-                      deadCount++;
-                    }
-                  });
-                });
-                alert(`✓ Imported ${recCount} monthly tax rules and ${deadCount} annual compliance deadlines!`);
-              }}
-              className="w-full rounded-xl bg-blue-900 hover:bg-blue-950 text-white py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
-            >
-              <span>📥</span>
-              <span>Import Tax &amp; GST Deadlines</span>
-            </button>
+            <p className="mt-2 text-xs text-slate-400">Wipes everything in your account and starts you over with a blank planner. Export a backup first if you might want any of this later.</p>
           </div>
         </div>
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 font-semibold text-slate-700">Data</h3>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={exportData} className="flex items-center gap-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"><Ic n="download"/> Export backup (JSON)</button>
-          <input ref={fileInputRef} type="file" accept="application/json" onChange={importData} className="hidden" />
-          <button onClick={()=>fileInputRef.current.click()} className="flex items-center gap-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"><Ic n="download"/> Import backup (JSON)</button>
-        </div>
-        <p className="mt-2 text-xs text-slate-400">Everything syncs to your account and is visible only to you. Sign in from any device to pick up where you left off.</p>
-      </div>
-      <div className="rounded-lg border border-rose-200 bg-white p-4">
-        <h3 className="mb-3 font-semibold text-rose-600">Danger zone</h3>
-        <button onClick={clearAllData} disabled={clearing} className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-60">
-          <Ic n="trash"/> {clearing ? "Clearing…" : "Clear all my data"}
-        </button>
-        <p className="mt-2 text-xs text-slate-400">Wipes everything in your account and starts you over with a blank planner. Export a backup first if you might want any of this later.</p>
-      </div>
+      )}
     </div>
   );
 }
