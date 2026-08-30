@@ -1794,21 +1794,31 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
         
         window.__FD_CREATING_ORG = true;
         writeSolo(false);
-        const { data, error } = await sb.auth.signUp({ email, password: pw });
-        if (error) {
+        let { data, error } = await sb.auth.signUp({ email, password: pw });
+
+        // If user is already registered (e.g. from an earlier interrupted step), sign in directly
+        if ((error && /already registered|already exists/i.test(error.message)) || 
+            (data && data.user && data.user.identities && data.user.identities.length === 0)) {
+          const signInRes = await sb.auth.signInWithPassword({ email, password: pw });
+          if (signInRes.error) {
+            window.__FD_CREATING_ORG = false;
+            throw new Error("This email is already registered with a different password. Please click 'Sign in' below.");
+          }
+          data = signInRes.data;
+          error = null;
+        } else if (error) {
           window.__FD_CREATING_ORG = false;
           throw error;
         }
 
-        if (data && data.user && data.user.identities && data.user.identities.length === 0) {
-          window.__FD_CREATING_ORG = false;
-          throw new Error("Account already exists with this email! Please click 'Already have an account? Sign in' below to sign in.");
-        }
-
         if (data && data.session) {
-          setMsg("Account created! Setting up workspace...");
-          await createOrg(wn, data.session.user.id);
-          setMsg("Workspace created! Launching Razorpay payment mandate authorization...");
+          setMsg("Account verified! Setting up workspace...");
+          // Check if membership already exists, else create
+          const { data: mem } = await sb.from("memberships").select("org_id").eq("user_id", data.session.user.id).maybeSingle();
+          if (!mem) {
+            await createOrg(wn, data.session.user.id);
+          }
+          setMsg("Workspace ready! Launching Razorpay payment mandate authorization...");
           await startCheckout(planCode, "razorpay", billingCycle);
         } else {
           window.__FD_CREATING_ORG = false;
