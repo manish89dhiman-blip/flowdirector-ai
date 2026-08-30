@@ -1769,13 +1769,20 @@ function AuthScreen({ initialMode = "in", onBack }){
         }
         // Verification success! Proceed to create auth session & workspace mandate
         const { data, error } = await sb.auth.signUp({ email, password: pw });
-        if (error || !data.session) {
+        if (error) {
           const { error: inErr } = await sb.auth.signInWithPassword({ email, password: pw });
           if (inErr) {
-            if (/invalid login credentials/i.test(inErr.message)) {
+            throw new Error("Account already exists with a different password! Please click 'Already have an account? Sign in' below to sign in.");
+          }
+        } else if (data && !data.session) {
+          const isExistingUser = data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0;
+          const { error: inErr } = await sb.auth.signInWithPassword({ email, password: pw });
+          if (inErr) {
+            if (isExistingUser) {
               throw new Error("Account already exists with a different password! Please click 'Already have an account? Sign in' below to sign in.");
             }
-            throw inErr;
+            setMode("confirm_sent");
+            return;
           }
         }
         setMsg("Email verified! Opening workspace setup and Razorpay mandate authorization...");
