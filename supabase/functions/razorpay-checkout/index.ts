@@ -168,10 +168,12 @@ Deno.serve(async (req) => {
       updated_at: new Date().toISOString(),
     }).eq("org_id", membership.org_id);
 
-    // NOTE: no plan/status change here. The company is upgraded only when
-    // Razorpay confirms the mandate via webhook — otherwise opening the
-    // checkout page would be enough to get a free upgrade.
-    return json({ url: subscription.short_url });
+    // Return both the hosted short_url and the subscription details for Razorpay checkout.js popup
+    return json({ 
+      url: subscription.short_url, 
+      subscription_id: subscription.id, 
+      key_id: keyId 
+    });
   } catch (e) {
     console.error("razorpay-checkout failed:", e);
     return json({ error: (e as Error).message ?? "Checkout failed" }, 500);

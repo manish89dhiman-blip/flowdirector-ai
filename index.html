@@ -449,8 +449,38 @@ async function startCheckout(planCode, provider, interval = "monthly"){
     body: JSON.stringify({ plan_code: planCode, interval }),
   });
   const body = await res.json().catch(()=>({}));
-  if (!res.ok || !body.url) throw new Error(body.error || "Couldn't start checkout.");
-  window.location.href = body.url;
+  if (!res.ok || (!body.url && !body.subscription_id)) throw new Error(body.error || "Couldn't start checkout.");
+
+  if (provider === "razorpay" && body.subscription_id && body.key_id && window.Razorpay) {
+    const rzp = new window.Razorpay({
+      key: body.key_id,
+      subscription_id: body.subscription_id,
+      name: "FlowDirector",
+      description: "15-Day Free Trial Mandate Authorization",
+      prefill: {
+        email: session.user.email,
+      },
+      theme: {
+        color: "#0f172a"
+      },
+      handler: function (response) {
+        window.__FD_CREATING_ORG = false;
+        window.location.href = "/";
+      },
+      modal: {
+        ondismiss: function () {
+          window.__FD_CREATING_ORG = false;
+          window.location.reload();
+        }
+      }
+    });
+    rzp.open();
+    return;
+  }
+
+  if (body.url) {
+    window.location.href = body.url;
+  }
 }
 
 /* ================================================================== */
