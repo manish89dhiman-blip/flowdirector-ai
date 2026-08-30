@@ -4564,8 +4564,13 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       let dirty = false;
       if (Array.isArray(d.dailyBackup)) {
         d.dailyBackup.forEach(b => {
-          if (isHolidayItem(b) && !b.done) {
+          if (isHolidayItem(b)) {
+            b.taskType = "HOLIDAY";
             b.done = true;
+            dirty = true;
+          }
+          if (b.due && b.taskType === "DAILY") {
+            b.taskType = "DELEGATE";
             dirty = true;
           }
           if (b.tag === "Finance" && b.due && b.due < t && (b.text?.includes("Advance Tax") || b.text?.includes("TDS Return") || b.text?.includes("ITR") || b.text?.includes("Tax Audit")) && !b.done) {
@@ -5409,26 +5414,26 @@ const TIMEZONES = [
 ];
 
 const INDIAN_HOLIDAYS_CATALOG = [
-  { id: "hol-1", text: "🎆 Republic Day (National Holiday)", due: "2026-01-26", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-2", text: "🎆 Maha Shivratri", due: "2026-02-15", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-3", text: "🎆 Holi (Festival of Colors)", due: "2026-03-04", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-4", text: "🎆 Eid-ul-Fitr (Ramzan Eid)", due: "2026-03-20", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-5", text: "🎆 Mahavir Jayanti", due: "2026-03-31", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-6", text: "🎆 Good Friday", due: "2026-04-03", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-7", text: "🎆 Buddha Purnima", due: "2026-05-01", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-8", text: "🎆 Bakrid / Eid-ul-Adha", due: "2026-05-27", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-9", text: "🎆 Muharram", due: "2026-06-26", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-10", text: "🎆 Independence Day (National Holiday)", due: "2026-08-15", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-11", text: "🎆 Janmashtami", due: "2026-09-04", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-12", text: "🎆 Milad-un-Nabi (Id-e-Milad)", due: "2026-09-25", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-13", text: "🎆 Mahatma Gandhi Jayanti", due: "2026-10-02", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-14", text: "🎆 Dussehra / Vijayadashami", due: "2026-10-20", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-15", text: "🎆 Diwali / Deepawali (Lakshmi Puja)", due: "2026-11-08", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-16", text: "🎆 Govardhan Puja & Bhai Dooj", due: "2026-11-10", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-17", text: "🎆 Guru Nanak Jayanti", due: "2026-11-24", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-18", text: "🎆 Christmas Day", due: "2026-12-25", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-19", text: "🎆 New Year's Day 2027", due: "2027-01-01", tag: "Holiday", taskType: "DAILY" },
-  { id: "hol-20", text: "🎆 Republic Day 2027", due: "2027-01-26", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-1", text: "🎆 Republic Day (National Holiday)", due: "2026-01-26", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-2", text: "🎆 Maha Shivratri", due: "2026-02-15", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-3", text: "🎆 Holi (Festival of Colors)", due: "2026-03-04", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-4", text: "🎆 Eid-ul-Fitr (Ramzan Eid)", due: "2026-03-20", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-5", text: "🎆 Mahavir Jayanti", due: "2026-03-31", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-6", text: "🎆 Good Friday", due: "2026-04-03", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-7", text: "🎆 Buddha Purnima", due: "2026-05-01", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-8", text: "🎆 Bakrid / Eid-ul-Adha", due: "2026-05-27", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-9", text: "🎆 Muharram", due: "2026-06-26", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-10", text: "🎆 Independence Day (National Holiday)", due: "2026-08-15", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-11", text: "🎆 Janmashtami", due: "2026-09-04", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-12", text: "🎆 Milad-un-Nabi (Id-e-Milad)", due: "2026-09-25", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-13", text: "🎆 Mahatma Gandhi Jayanti", due: "2026-10-02", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-14", text: "🎆 Dussehra / Vijayadashami", due: "2026-10-20", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-15", text: "🎆 Diwali / Deepawali (Lakshmi Puja)", due: "2026-11-08", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-16", text: "🎆 Govardhan Puja & Bhai Dooj", due: "2026-11-10", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-17", text: "🎆 Guru Nanak Jayanti", due: "2026-11-24", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-18", text: "🎆 Christmas Day", due: "2026-12-25", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-19", text: "🎆 New Year's Day 2027", due: "2027-01-01", tag: "Holiday", taskType: "HOLIDAY" },
+  { id: "hol-20", text: "🎆 Republic Day 2027", due: "2027-01-26", tag: "Holiday", taskType: "HOLIDAY" },
 ];
 
 const TAX_COMPLIANCE_CATALOG = {
@@ -5453,7 +5458,7 @@ const TAX_COMPLIANCE_CATALOG = {
     { id: "tax-qa-10", text: "📑 Annual GST Return GSTR-9 & Reconciliation GSTR-9C", due: "2026-12-31", tag: "Finance", taskType: "DELEGATE" },
     { id: "tax-qa-11", text: "📑 Q3 Quarterly TDS Return Filing (Form 24Q / 26Q)", due: "2027-01-31", tag: "Finance", taskType: "DELEGATE" },
     { id: "tax-qa-12", text: "💰 4th Installment Advance Tax Payment (100% Final)", due: "2027-03-15", tag: "Finance", taskType: "DELEGATE" },
-    { id: "tax-qa-13", text: "📊 Financial Year-End Books Closing & Inventory Review", due: "2027-03-31", tag: "Finance", taskType: "DAILY" },
+    { id: "tax-qa-13", text: "📊 Financial Year-End Books Closing & Inventory Review", due: "2027-03-31", tag: "Finance", taskType: "DELEGATE" },
   ]
 };
 
@@ -6526,7 +6531,7 @@ function DailyView({ data, patch, dk, setDk, userId }){
   const SLOT_ARRAY = SOURCE_ARRAY;
   const updateSlotItem=(source,id,field,value)=>updateSourceItem(patch,source,id,field,value);
   const removeSlotItem=(source,id)=>removeSourceItem(patch,source,id);
-  const routine = data.dailyBackup.filter(b=>b.taskType==="DAILY");
+  const routine = data.dailyBackup.filter(b=>b.taskType==="DAILY" && !b.due && !isHolidayItem(b));
   // Items with a specific due date + time are already scheduled — they show in
   // "Due today" and the matching Plan slot instead of cluttering the flexible
   // backup pool, which is for work that doesn't have a fixed time yet.
