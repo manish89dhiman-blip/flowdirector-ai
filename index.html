@@ -5340,18 +5340,92 @@ function IdeasAndReferenceView({ data, patch }){
 }
 
 /* ================================================================== */
+/*  2 · TIMEZONES & COMPLIANCE CATALOGS                                */
+/* ================================================================== */
+const TIMEZONES = [
+  { value: "Asia/Kolkata", label: "🇮🇳 Asia/Kolkata (IST · UTC+05:30) — Default" },
+  { value: "Asia/Dubai", label: "🇦🇪 Asia/Dubai (GST · UTC+04:00)" },
+  { value: "Asia/Singapore", label: "🇸🇬 Asia/Singapore (SGT · UTC+08:00)" },
+  { value: "Europe/London", label: "🇬🇧 Europe/London (GMT/BST · UTC+00:00 / +01:00)" },
+  { value: "Europe/Berlin", label: "🇩🇪 Europe/Berlin (CET · UTC+01:00 / +02:00)" },
+  { value: "America/New_York", label: "🇺🇸 America/New_York (EST/EDT · UTC-05:00 / -04:00)" },
+  { value: "America/Chicago", label: "🇺🇸 America/Chicago (CST/CDT · UTC-06:00 / -05:00)" },
+  { value: "America/Los_Angeles", label: "🇺🇸 America/Los_Angeles (PST/PDT · UTC-08:00 / -07:00)" },
+  { value: "Asia/Tokyo", label: "🇯🇵 Asia/Tokyo (JST · UTC+09:00)" },
+  { value: "Australia/Sydney", label: "🇦🇺 Australia/Sydney (AEST · UTC+10:00 / +11:00)" },
+  { value: "UTC", label: "🌐 Coordinated Universal Time (UTC)" },
+];
+
+const INDIAN_HOLIDAYS_CATALOG = [
+  { id: "hol-1", text: "🎆 Republic Day (National Holiday)", due: "2026-01-26", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-2", text: "🎆 Maha Shivratri", due: "2026-02-15", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-3", text: "🎆 Holi (Festival of Colors)", due: "2026-03-04", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-4", text: "🎆 Eid-ul-Fitr (Ramzan Eid)", due: "2026-03-20", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-5", text: "🎆 Mahavir Jayanti", due: "2026-03-31", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-6", text: "🎆 Good Friday", due: "2026-04-03", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-7", text: "🎆 Buddha Purnima", due: "2026-05-01", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-8", text: "🎆 Bakrid / Eid-ul-Adha", due: "2026-05-27", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-9", text: "🎆 Muharram", due: "2026-06-26", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-10", text: "🎆 Independence Day (National Holiday)", due: "2026-08-15", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-11", text: "🎆 Janmashtami", due: "2026-09-04", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-12", text: "🎆 Milad-un-Nabi (Id-e-Milad)", due: "2026-09-25", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-13", text: "🎆 Mahatma Gandhi Jayanti", due: "2026-10-02", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-14", text: "🎆 Dussehra / Vijayadashami", due: "2026-10-20", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-15", text: "🎆 Diwali / Deepawali (Lakshmi Puja)", due: "2026-11-08", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-16", text: "🎆 Govardhan Puja & Bhai Dooj", due: "2026-11-10", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-17", text: "🎆 Guru Nanak Jayanti", due: "2026-11-24", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-18", text: "🎆 Christmas Day", due: "2026-12-25", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-19", text: "🎆 New Year's Day 2027", due: "2027-01-01", tag: "Holiday", taskType: "DAILY" },
+  { id: "hol-20", text: "🎆 Republic Day 2027", due: "2027-01-26", tag: "Holiday", taskType: "DAILY" },
+];
+
+const TAX_COMPLIANCE_CATALOG = {
+  recurring: [
+    { id: "tax-rec-1", day: 7, text: "💸 TDS / TCS Challan 281 Deposit (Monthly)", tag: "Finance" },
+    { id: "tax-rec-2", day: 11, text: "📑 GST GSTR-1 Outward Supplies Return Filing", tag: "Finance" },
+    { id: "tax-rec-3", day: 15, text: "👥 PF & ESIC Monthly Contribution Deposit", tag: "Team" },
+    { id: "tax-rec-4", day: 20, text: "🧾 GST GSTR-3B Monthly Summary Return & Tax Payment", tag: "Finance" },
+    { id: "tax-rec-5", day: 25, text: "💳 GST PMT-06 Challan Payment (QRMP Filers)", tag: "Finance" },
+    { id: "tax-rec-6", day: 30, text: "💼 State Professional Tax (PT) Monthly Filing", tag: "Finance" },
+  ],
+  quarterlyAnnual: [
+    { id: "tax-qa-1", text: "💰 1st Installment Advance Tax Payment (15%)", due: "2026-06-15", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-2", text: "📑 Q1 Quarterly TDS Return Filing (Form 24Q / 26Q)", due: "2026-07-31", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-3", text: "📋 Income Tax Return (ITR) Filing (Non-Audit)", due: "2026-07-31", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-4", text: "💰 2nd Installment Advance Tax Payment (45%)", due: "2026-09-15", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-5", text: "🆔 DIR-3 KYC Annual Filing for Company Directors", due: "2026-09-30", tag: "Admin", taskType: "DELEGATE" },
+    { id: "tax-qa-6", text: "📑 Tax Audit Report Filing (Form 3CA / 3CD)", due: "2026-10-31", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-7", text: "📑 Q2 Quarterly TDS Return Filing (Form 24Q / 26Q)", due: "2026-10-31", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-8", text: "🏢 Corporate Income Tax Return (ITR-6 Audited)", due: "2026-11-30", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-9", text: "💰 3rd Installment Advance Tax Payment (75%)", due: "2026-12-15", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-10", text: "📑 Annual GST Return GSTR-9 & Reconciliation GSTR-9C", due: "2026-12-31", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-11", text: "📑 Q3 Quarterly TDS Return Filing (Form 24Q / 26Q)", due: "2027-01-31", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-12", text: "💰 4th Installment Advance Tax Payment (100% Final)", due: "2027-03-15", tag: "Finance", taskType: "DELEGATE" },
+    { id: "tax-qa-13", text: "📊 Financial Year-End Books Closing & Inventory Review", due: "2027-03-31", tag: "Finance", taskType: "DAILY" },
+  ]
+};
+
+/* ================================================================== */
 /*  2 · DAILY                                                          */
 /* ================================================================== */
 const pad2 = (n) => String(n).padStart(2,"0");
 const dateKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-const todayKey = () => dateKey(new Date());
+const todayKey = (tz = "Asia/Kolkata") => {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" });
+    return formatter.format(new Date());
+  } catch (e) {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+  }
+};
 const shiftDay = (k,n)=>{const d=new Date(k+"T00:00:00");d.setDate(d.getDate()+n);return dateKey(d);};
 const prettyDate = (k)=>new Date(k+"T00:00:00").toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"});
 const PMARKS=[{v:"",label:"○",cls:"text-slate-400"},{v:"done",label:"✓",cls:"text-emerald-600"},{v:"moved",label:"→",cls:"text-amber-600"},{v:"delegated",label:"o",cls:"text-sky-600"},{v:"dropped",label:"✗",cls:"text-rose-500"}];
 
-const dueStatus = (dateStr) => {
+const dueStatus = (dateStr, tz = "Asia/Kolkata") => {
   if (!dateStr) return null;
-  const t = todayKey();
+  const t = todayKey(tz);
   if (dateStr < t) return "overdue";
   if (dateStr === t) return "today";
   return null;
@@ -6607,12 +6681,208 @@ function WeeklyView({ data, patch }){
 }
 
 /* ================================================================== */
+/*  4 · STATUTORY COMPLIANCE & HOLIDAY TEMPLATES MODAL                 */
+/* ================================================================== */
+function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
+  const [activeTab, setActiveTab] = useState("holidays"); // "holidays" | "tax"
+
+  const importHolidays = () => {
+    let added = 0;
+    patch(d => {
+      d.dailyBackup = d.dailyBackup || [];
+      INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
+        if (!d.dailyBackup.some(b => b.text === hol.text && b.due === hol.due)) {
+          d.dailyBackup.push({
+            id: uid(),
+            text: hol.text,
+            due: hol.due,
+            time: "",
+            tag: "Holiday",
+            taskType: "DAILY",
+            done: false
+          });
+          added++;
+        }
+      });
+    });
+    if (onNotice) onNotice(`✓ Successfully imported ${added} Indian festivals & holidays into your planner!`);
+  };
+
+  const importTaxDeadlines = () => {
+    let recAdded = 0;
+    let qaAdded = 0;
+    patch(d => {
+      d.recurringMonthly = d.recurringMonthly || [];
+      d.dailyBackup = d.dailyBackup || [];
+
+      TAX_COMPLIANCE_CATALOG.recurring.forEach(item => {
+        if (!d.recurringMonthly.some(r => r.text === item.text)) {
+          d.recurringMonthly.push({
+            id: uid(),
+            day: item.day,
+            text: item.text,
+            tag: item.tag,
+            time: ""
+          });
+          recAdded++;
+        }
+      });
+
+      TAX_COMPLIANCE_CATALOG.quarterlyAnnual.forEach(item => {
+        if (!d.dailyBackup.some(b => b.text === item.text && b.due === item.due)) {
+          d.dailyBackup.push({
+            id: uid(),
+            text: item.text,
+            due: item.due,
+            time: "",
+            tag: item.tag,
+            taskType: item.taskType,
+            done: false
+          });
+          qaAdded++;
+        }
+      });
+    });
+    if (onNotice) onNotice(`✓ Imported ${recAdded} monthly recurring tax rules & ${qaAdded} annual/advance tax deadlines!`);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl">🏛️</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">Statutory Tax &amp; Holiday Calendars</h3>
+              <p className="text-xs text-slate-500">Optional 1-click import of gazetted holidays and business compliance deadlines</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+        </div>
+
+        <div className="flex items-center gap-2 rounded-2xl bg-slate-100 p-1.5 border border-slate-200">
+          <button
+            onClick={() => setActiveTab("holidays")}
+            className={`flex-1 px-4 py-2 rounded-xl text-xs font-black transition ${
+              activeTab === "holidays" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600 hover:text-slate-950"
+            }`}
+          >
+            🎆 Indian Festivals &amp; Holidays ({INDIAN_HOLIDAYS_CATALOG.length})
+          </button>
+          <button
+            onClick={() => setActiveTab("tax")}
+            className={`flex-1 px-4 py-2 rounded-xl text-xs font-black transition ${
+              activeTab === "tax" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600 hover:text-slate-950"
+            }`}
+          >
+            📊 Business Tax &amp; GST Deadlines (Monthly &amp; Annual)
+          </button>
+        </div>
+
+        {activeTab === "holidays" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <span className="text-xs font-black uppercase text-amber-900 block">
+                  Gazetted Holidays &amp; Major Indian Festivals (2026–2027)
+                </span>
+                <p className="text-xs text-slate-600">
+                  Diwali, Holi, Independence Day, Republic Day, Eid, Christmas, Gandhi Jayanti &amp; more.
+                </p>
+              </div>
+              <button
+                onClick={importHolidays}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-black shadow-xs transition"
+              >
+                📥 Import All Holidays ({INDIAN_HOLIDAYS_CATALOG.length})
+              </button>
+            </div>
+
+            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              {INDIAN_HOLIDAYS_CATALOG.map((h, i) => (
+                <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                  <span className="font-bold text-slate-800">{h.text}</span>
+                  <span className="mono font-semibold text-slate-500 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                    📅 {h.due}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === "tax" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <span className="text-xs font-black uppercase text-blue-900 block">
+                  Indian Statutory Compliance Engine
+                </span>
+                <p className="text-xs text-slate-600">
+                  Monthly TDS (7th), GST GSTR-1 (11th), PF/ESIC (15th), GSTR-3B (20th) + Quarterly Advance Tax &amp; Annual Return Deadlines.
+                </p>
+              </div>
+              <button
+                onClick={importTaxDeadlines}
+                className="rounded-xl bg-blue-900 hover:bg-blue-950 text-white px-4 py-2 text-xs font-black shadow-xs transition"
+              >
+                📥 Import Tax &amp; GST Deadlines
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[11px] font-black uppercase text-slate-400 block tracking-wider">
+                1. Monthly Recurring Filings (Auto-fills on the day every month):
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {TAX_COMPLIANCE_CATALOG.recurring.map((t, i) => (
+                  <div key={i} className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                    <span className="font-extrabold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-md text-[10px]">
+                      {t.day}th of every month
+                    </span>
+                    <p className="font-bold text-slate-800">{t.text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <span className="text-[11px] font-black uppercase text-slate-400 block tracking-wider pt-2">
+                2. Key Advance Tax &amp; Annual Filings:
+              </span>
+              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                {TAX_COMPLIANCE_CATALOG.quarterlyAnnual.map((t, i) => (
+                  <div key={i} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+                    <span className="font-bold text-slate-800">{t.text}</span>
+                    <span className="mono font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                      📅 {t.due}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+          <button onClick={onClose} className="rounded-xl border border-slate-200 px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
 /*  4 · MONTHLY                                                        */
 /* ================================================================== */
 function MonthlyView({ data, patch, onGoToDay }){
   const now=new Date();
   const [y,setY]=useState(now.getFullYear());
   const [m,setM]=useState(now.getMonth()+1);
+  const [showComplianceModal, setShowComplianceModal] = useState(false);
+  const [notice, setNotice] = useState("");
+  const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 4500); };
+
   const mk=`${y}-${m}`;
   const month=data.monthly[mk]||{days:{},buffers:[]};
   const upd=(fn)=>patch(d=>{ if(!d.monthly[mk]) d.monthly[mk]={days:{},buffers:[]}; fn(d.monthly[mk]); });
@@ -6653,11 +6923,37 @@ function MonthlyView({ data, patch, onGoToDay }){
   return (
     <div>
       <Callout>Only what is FIXED — deliveries, GST, payments, family, health. Not goals. Mark exactly 2 buffer days (click the star).</Callout>
-      <div className="mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-        <button onClick={()=>nav(-1)} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
-        <div className="font-semibold text-slate-800">{MONTHS[m-1]} {y} <span className="ml-2 text-xs font-normal text-slate-400">buffers: {month.buffers.length}/2</span></div>
-        <button onClick={()=>nav(1)} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
+
+      {notice && (
+        <div className="mb-4 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-900 shadow-xs">
+          {notice}
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <div className="flex items-center gap-2">
+          <button onClick={()=>nav(-1)} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
+          <div className="font-semibold text-slate-800">{MONTHS[m-1]} {y} <span className="ml-2 text-xs font-normal text-slate-400">buffers: {month.buffers.length}/2</span></div>
+          <button onClick={()=>nav(1)} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
+        </div>
+
+        <button 
+          onClick={() => setShowComplianceModal(true)}
+          className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1.5"
+        >
+          <span>🏛️</span>
+          <span>Tax &amp; Holiday Calendars</span>
+        </button>
       </div>
+
+      {showComplianceModal && (
+        <ComplianceAndHolidaysModal 
+          data={data} 
+          patch={patch} 
+          onClose={() => setShowComplianceModal(false)} 
+          onNotice={say} 
+        />
+      )}
       {data.monthlyTray.length>0 && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">To place on a date</div>
@@ -10138,6 +10434,26 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
             </span>
           </div>
         </div>
+
+        {/* Timezone Selector */}
+        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <label className="text-xs font-bold text-slate-800 uppercase flex items-center gap-1.5">
+              <span>🕒</span>
+              <span>Default Timezone &amp; Regional Clock</span>
+            </label>
+            <p className="text-[11px] text-slate-500">
+              Current local time in selected timezone: <b className="text-slate-800">{new Intl.DateTimeFormat("en-IN", { timeZone: data.settings.timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" }).format(new Date())}</b>
+            </p>
+          </div>
+          <select
+            value={data.settings.timezone || "Asia/Kolkata"}
+            onChange={e => patch(x => { x.settings.timezone = e.target.value; })}
+            className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-800 outline-none focus:border-blue-600 focus:bg-white transition"
+          >
+            {TIMEZONES.map(tz => <option key={tz.value} value={tz.value}>{tz.label}</option>)}
+          </select>
+        </div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <h3 className="mb-3 font-semibold text-slate-700">Day themes</h3>
@@ -10169,12 +10485,12 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
         <div className="flex flex-wrap gap-2 pt-1">
           <button 
             onClick={() => {
-              const icsData = generateDayIcs(data, todayKey());
+              const icsData = generateDayIcs(data, todayKey(data.settings.timezone || "Asia/Kolkata"));
               const blob = new Blob([icsData], { type: "text/calendar;charset=utf-8" });
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url;
-              a.download = `flowdirector-focus-${todayKey()}.ics`;
+              a.download = `flowdirector-focus-${todayKey(data.settings.timezone || "Asia/Kolkata")}.ics`;
               document.body.appendChild(a);
               a.click();
               document.body.removeChild(a);
@@ -10185,6 +10501,97 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
             <span>📥</span>
             <span>Download Today's Focus Blocks (.ICS)</span>
           </button>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xl">🏛️</span>
+            <div>
+              <h3 className="font-bold text-sm text-slate-900">Statutory Tax, GST &amp; Holiday Calendars</h3>
+              <p className="text-xs text-slate-500">Optional 1-click import of gazetted holidays and statutory business compliance deadlines</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+          {/* Card 1: Indian Festivals */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-2 flex flex-col justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-black uppercase text-amber-900 block">
+                🎆 Indian Festivals &amp; Gazetted Holidays (2026–2027)
+              </span>
+              <p className="text-xs text-slate-600">
+                Diwali, Holi, Independence Day, Republic Day, Eid, Gandhi Jayanti, Dussehra, Christmas &amp; more.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                let added = 0;
+                patch(d => {
+                  d.dailyBackup = d.dailyBackup || [];
+                  INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
+                    if (!d.dailyBackup.some(b => b.text === hol.text && b.due === hol.due)) {
+                      d.dailyBackup.push({
+                        id: uid(),
+                        text: hol.text,
+                        due: hol.due,
+                        time: "",
+                        tag: "Holiday",
+                        taskType: "DAILY",
+                        done: false
+                      });
+                      added++;
+                    }
+                  });
+                });
+                alert(`✓ Successfully imported ${added} Indian holidays into your calendar!`);
+              }}
+              className="w-full rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+            >
+              <span>📥</span>
+              <span>Import Holidays ({INDIAN_HOLIDAYS_CATALOG.length})</span>
+            </button>
+          </div>
+
+          {/* Card 2: Business Tax Deadlines */}
+          <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 space-y-2 flex flex-col justify-between">
+            <div className="space-y-1">
+              <span className="text-xs font-black uppercase text-blue-900 block">
+                📊 Business Tax, TDS, GST &amp; Filing Deadlines
+              </span>
+              <p className="text-xs text-slate-600">
+                Monthly TDS (7th), GSTR-1 (11th), PF/ESIC (15th), GSTR-3B (20th) + Advance Tax &amp; Annual Return dates.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                let recCount = 0;
+                let deadCount = 0;
+                patch(d => {
+                  d.recurringMonthly = d.recurringMonthly || [];
+                  d.dailyBackup = d.dailyBackup || [];
+                  TAX_COMPLIANCE_CATALOG.recurring.forEach(item => {
+                    if (!d.recurringMonthly.some(r => r.text === item.text)) {
+                      d.recurringMonthly.push({ id: uid(), day: item.day, text: item.text, tag: item.tag, time: "" });
+                      recCount++;
+                    }
+                  });
+                  TAX_COMPLIANCE_CATALOG.quarterlyAnnual.forEach(item => {
+                    if (!d.dailyBackup.some(b => b.text === item.text && b.due === item.due)) {
+                      d.dailyBackup.push({ id: uid(), text: item.text, due: item.due, time: "", tag: item.tag, taskType: item.taskType, done: false });
+                      deadCount++;
+                    }
+                  });
+                });
+                alert(`✓ Imported ${recCount} monthly tax rules and ${deadCount} annual compliance deadlines!`);
+              }}
+              className="w-full rounded-xl bg-blue-900 hover:bg-blue-950 text-white py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+            >
+              <span>📥</span>
+              <span>Import Tax &amp; GST Deadlines</span>
+            </button>
+          </div>
         </div>
       </div>
       <div className="rounded-lg border border-slate-200 bg-white p-4">
