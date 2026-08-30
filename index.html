@@ -712,16 +712,30 @@ async function loadAllVisibleKpis(periods){
 /*  Router & Path Navigation                                           */
 /* ================================================================== */
 const navigate = (path) => {
-  window.history.pushState({}, "", path);
+  if (path.startsWith("#")) {
+    window.location.hash = path;
+  } else {
+    window.history.pushState({}, "", path);
+  }
   window.dispatchEvent(new Event("popstate"));
+  window.dispatchEvent(new Event("hashchange"));
 };
 
 function usePath() {
-  const [path, setPath] = useState(window.location.pathname);
+  const getNormalized = () => {
+    const h = (window.location.hash || "").replace(/^#/, "");
+    if (h) return "/" + h.replace(/^\//, "");
+    return window.location.pathname || "/";
+  };
+  const [path, setPath] = useState(getNormalized());
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname);
+    const onPop = () => setPath(getNormalized());
     window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    window.addEventListener("hashchange", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      window.removeEventListener("hashchange", onPop);
+    };
   }, []);
   return path;
 }
@@ -3130,7 +3144,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   if (isCompanyUser && subLoading) return <FullScreen>Verifying workspace subscription status…</FullScreen>;
   if (!data) return <FullScreen>Loading your system…</FullScreen>;
 
-  if (isCompanyUser && !isAuthorized) {
+  if (isCompanyUser && !isAuthorized && !isAdmin) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 text-center text-slate-900">
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl">
@@ -3205,6 +3219,17 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               >
                 <span>{trainingBooked ? "📅" : "📹"}</span>
                 <span>{trainingBooked ? "Google Meet Booked" : "Book 1:1 Training Call"}</span>
+              </button>
+            )}
+
+            {/* Platform Admin Console Direct Link Button */}
+            {isAdmin && (
+              <button 
+                onClick={() => navigate("/admin")}
+                className="flex items-center gap-1.5 rounded-xl bg-slate-950 border border-slate-800 px-3 py-1.5 text-xs font-bold text-amber-400 hover:bg-slate-800 transition shadow-xs"
+              >
+                <span>🔐</span>
+                <span>Admin Console</span>
               </button>
             )}
 
