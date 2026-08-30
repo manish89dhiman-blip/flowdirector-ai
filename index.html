@@ -644,6 +644,25 @@ const SAMPLE_EXECUTIVE_BLUEPRINT = {
   ]
 };
 
+async function sendTransactionalEmail(type, email, data = {}) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/send-email`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ type, email, data })
+    });
+    const body = await res.json().catch(() => ({}));
+    return { ok: res.ok, ...body };
+  } catch (err) {
+    console.error("sendTransactionalEmail error:", err);
+    return { ok: false, error: err.message };
+  }
+}
+
 async function requestPlan(orgId, planCode, note, userId){
   const { error } = await sb.from("plan_requests").insert({
     org_id: orgId, plan_code: planCode, note: note || null, requested_by: userId,
@@ -1914,6 +1933,8 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
           if (!mem) {
             await createOrg(wn, data.session.user.id);
           }
+          // Send welcome & trial activation email directly via Resend
+          sendTransactionalEmail("welcome", email, { company_name: wn, plan_name: planCode, full_name: wn });
           setMsg("Workspace ready! Launching Razorpay payment mandate authorization...");
           await startCheckout(planCode, "razorpay", billingCycle);
         } else {
@@ -1921,9 +1942,11 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
           setMode("confirm_sent");
         }
       } else {
-        const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
-        if (error) throw error;
-        setMsg("Reset link sent — check your inbox and follow the link to set a new password.");
+        const mailRes = await sendTransactionalEmail("password_reset", email);
+        if (!mailRes.ok && !mailRes.sent) {
+          throw new Error(mailRes.error || "Couldn't dispatch password reset email.");
+        }
+        setMsg("Password reset email sent directly to your inbox via Resend! Check your email and click the link to set a new password.");
       }
     } catch (e) {
       window.__FD_CREATING_ORG = false;
@@ -2352,8 +2375,19 @@ function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
         training_notes: `Scheduled for: ${scheduledTimeStr} | Topic: ${topic} ${notes ? `| Notes: ${notes}` : ""}`,
         training_meet_link: meetLink
       });
+      
+      const { data: { session } } = await sb.auth.getSession();
+      if (session && session.user && session.user.email) {
+        sendTransactionalEmail("training_booked", session.user.email, {
+          scheduled_time: scheduledTimeStr,
+          topic,
+          notes,
+          meet_link: meetLink
+        });
+      }
+
       if (onBookingUpdated) onBookingUpdated();
-      setMsg("Training session confirmed! We have reserved your Google Meet slot.");
+      setMsg("Training session confirmed! We have reserved your Google Meet slot and sent confirmation to your email.");
     } catch (e) {
       setMsg(e.message || "Couldn't save booking.");
     }
