@@ -932,7 +932,7 @@ function Root(){
   }
 
   if (!CONFIGURED) return <ConfigNotice />;
-  if (!ready) return <FullScreen>Starting up…</FullScreen>;
+  if (!ready || window.__FD_CREATING_ORG) return <FullScreen>Setting up workspace & connecting to Razorpay…</FullScreen>;
   if (recovery) return <ResetPasswordScreen onDone={()=>setRecovery(false)} />;
 
   if (!session) {
@@ -1782,11 +1782,16 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
         if (!email || !email.includes("@")) throw new Error("Please enter a valid email address.");
         if (!pw || pw.length < 6) throw new Error("Password must be at least 6 characters.");
         
+        window.__FD_CREATING_ORG = true;
         writeSolo(false);
         const { data, error } = await sb.auth.signUp({ email, password: pw });
-        if (error) throw error;
+        if (error) {
+          window.__FD_CREATING_ORG = false;
+          throw error;
+        }
 
         if (data && data.user && data.user.identities && data.user.identities.length === 0) {
+          window.__FD_CREATING_ORG = false;
           throw new Error("Account already exists with this email! Please click 'Already have an account? Sign in' below to sign in.");
         }
 
@@ -1796,6 +1801,7 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
           setMsg("Workspace created! Launching Razorpay payment mandate authorization...");
           await startCheckout(planCode, "razorpay", billingCycle);
         } else {
+          window.__FD_CREATING_ORG = false;
           setMode("confirm_sent");
         }
       } else {
@@ -1804,6 +1810,7 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
         setMsg("Reset link sent — check your inbox and follow the link to set a new password.");
       }
     } catch (e) {
+      window.__FD_CREATING_ORG = false;
       let msg = e.message || "Something went wrong.";
       if (/signups not allowed/i.test(msg)) {
         msg = "Public signups are currently disabled in your Supabase project. Enable 'Allow new users to sign up' under Supabase Dashboard → Authentication → Providers → Email.";
@@ -2025,8 +2032,9 @@ function ResetPasswordScreen({ onDone }){
 /* ================================================================== */
 function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
   const [name, setName] = useState("");
+  const [billingCycle, setBillingCycle] = useState("monthly"); // monthly | yearly
   const [plansList, setPlansList] = useState([]);
-  const [planCode, setPlanCode] = useState("team");
+  const [planCode, setPlanCode] = useState("solo");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -2035,11 +2043,13 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
       .then(({ data }) => {
         if (data && data.length) {
           const buyable = data.filter(p => p.code !== "free" && p.code !== "unlimited");
-          setPlansList(buyable.length ? buyable : data);
-          const firstWithRzp = buyable.find(p => p.razorpay_plan_id) || buyable[0] || data[0];
+          const list = buyable.length ? buyable : data;
+          setPlansList(list);
+          const firstWithRzp = list.find(p => p.razorpay_plan_id) || list[0];
           if (firstWithRzp) setPlanCode(firstWithRzp.code);
         }
-      });
+      })
+      .catch(() => {});
   }, []);
 
   const createAndMandate = async () => {
@@ -2053,11 +2063,11 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
 
       // 2. Launch Razorpay payment mandate checkout
       setMsg("Workspace created! Launching Razorpay payment mandate authorization...");
-      await startCheckout(planCode, "razorpay");
+      await startCheckout(planCode, "razorpay", billingCycle);
     } catch (e) { 
       setMsg(e.message || "Couldn't complete Razorpay mandate checkout."); 
+      setBusy(false);
     }
-    setBusy(false);
   };
 
   const accept = async (inv) => {
@@ -2072,6 +2082,12 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
       setBusy(false);
     }
   };
+
+  const defaultPlans = [
+    { code: "solo", name: "Solo Executive", seat_limit: 1, price_display: "399 Per Month Billed Monthly", price_display_yearly: "299 Per Month Billed Annually", trial_days: 15 },
+    { code: "starter", name: "Business Starter", seat_limit: 3, price_display: "999 Per Month", price_display_yearly: "749 Per Month Billed Annually", trial_days: 15 }
+  ];
+  const displayPlans = plansList.length > 0 ? plansList : defaultPlans;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#fbf9fa] px-4 py-10">
@@ -2108,32 +2124,66 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Select Subscription Plan Mandate</label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {plansList.map(p => (
-                <div 
-                  key={p.code}
-                  onClick={() => setPlanCode(p.code)}
-                  className={`rounded-2xl border p-4 cursor-pointer transition ${
-                    planCode === p.code ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">Select Plan & Billing</label>
+              <div className="flex items-center rounded-xl bg-slate-100 p-1 border border-slate-200">
+                <button 
+                  type="button" 
+                  onClick={() => setBillingCycle("monthly")}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition ${
+                    billingCycle === "monthly" ? "bg-white text-slate-950 shadow-xs" : "text-slate-500 hover:text-slate-900"
                   }`}
                 >
-                  <div className="text-xs font-bold text-slate-950">{p.name}</div>
-                  <div className="text-lg font-extrabold text-slate-950 mt-1">
-                    {p.price_display ? (p.price_display.startsWith("₹") ? p.price_display : "₹" + p.price_display) : "Contact Us"}
-                    <span className="text-xs font-normal text-slate-500"> / mo</span>
+                  Monthly
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setBillingCycle("yearly")}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition flex items-center gap-1 ${
+                    billingCycle === "yearly" ? "bg-amber-400 text-slate-950 shadow-xs" : "text-slate-500 hover:text-slate-900"
+                  }`}
+                >
+                  <span>Annual</span>
+                  <span className="text-[10px] bg-slate-950 text-white px-1.5 py-0.2 rounded-md">Save 25%</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {displayPlans.map(p => {
+                const priceText = billingCycle === "yearly" && p.price_display_yearly
+                  ? (p.price_display_yearly.startsWith("₹") ? p.price_display_yearly : "₹" + p.price_display_yearly)
+                  : (p.price_display ? (p.price_display.startsWith("₹") ? p.price_display : "₹" + p.price_display) : "Contact Us");
+
+                return (
+                  <div 
+                    key={p.code}
+                    onClick={() => setPlanCode(p.code)}
+                    className={`rounded-2xl border p-4 cursor-pointer transition ${
+                      planCode === p.code ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-950">{p.name}</span>
+                      {p.code === "starter" && (
+                        <span className="bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-bold">Popular</span>
+                      )}
+                    </div>
+                    <div className="text-base font-extrabold text-slate-950 mt-1 leading-tight">
+                      {priceText}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-1 font-medium">
+                      {p.seat_limit ? `${p.seat_limit} Seat${p.seat_limit===1?"":"s"}` : "Unlimited Seats"} • {p.trial_days ? `${p.trial_days}-Day Free Trial` : "Instant Activation"}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1 font-medium">
-                    {p.seat_limit ? `Includes ${p.seat_limit} Seats` : "Unlimited Seats"} • {p.trial_days ? `${p.trial_days}-Day Free Trial` : "Instant Activation"}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
           <button onClick={createAndMandate} disabled={busy}
             className="w-full py-3.5 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition shadow-md disabled:opacity-60 flex items-center justify-center gap-2">
-            {busy ? "Setting Up Workspace..." : "Create Workspace & Authorize Razorpay Mandate →"}
+            {busy ? "Setting Up Workspace..." : `Create Workspace & Authorize ${billingCycle === "yearly" ? "Annual" : "Monthly"} Mandate →`}
           </button>
         </div>
 
