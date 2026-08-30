@@ -580,6 +580,77 @@ Deno.serve(async (req) => {
         </body>
         </html>
       `;
+    // --------------------------------------------------------------------------
+    // 6. TASK DELEGATION NOTIFICATION EMAIL (Dispatched to Team Member)
+    // --------------------------------------------------------------------------
+    else if (type === "task_delegated") {
+      const taskTitle = data.task_title || "New Deliverable";
+      const delegatorName = data.delegator_name || "Founder / Leadership";
+      const companyName = data.company_name || "Workspace";
+      const dueDate = data.due_date || "Today";
+      const taskLink = data.link || "";
+      const notes = data.notes || "";
+      const memberName = data.member_name || "Team Member";
+
+      subject = `New Deliverable Assigned: ${taskTitle} (Due: ${dueDate})`;
+      html = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"/></head>
+        <body style="font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:0;padding:24px;background-color:#f8fafc;color:#0f172a;">
+          <div style="max-width:540px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:24px;padding:36px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05);">
+            <div style="margin-bottom:24px;display:flex;align-items:center;gap:12px;">
+              <span style="font-size:24px;font-weight:900;letter-spacing:-0.5px;color:#0f172a;">FLOW<span style="color:#d97706;">DIRECTOR</span></span>
+            </div>
+
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:12px 16px;margin-bottom:24px;">
+              <span style="font-size:12px;font-weight:800;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;">📥 New Task Delegated to You</span>
+            </div>
+
+            <h1 style="font-size:20px;font-weight:800;color:#0f172a;line-height:1.3;margin:0 0 12px 0;">Hello ${esc(memberName)},</h1>
+            
+            <p style="font-size:14px;line-height:1.6;color:#475569;margin:0 0 20px 0;">
+              <b>${esc(delegatorName)}</b> (${esc(companyName)}) has assigned a new deliverable to your Focus Desk.
+            </p>
+
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin:24px 0;">
+              <div style="margin-bottom:12px;">
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Deliverable Title</span>
+                <span style="font-size:16px;font-weight:800;color:#0f172a;">${esc(taskTitle)}</span>
+              </div>
+              <div style="margin-bottom:12px;">
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Due Date</span>
+                <span style="font-size:14px;font-weight:700;color:#d97706;">📅 ${esc(dueDate)}</span>
+              </div>
+              ${taskLink ? `
+              <div style="margin-bottom:12px;">
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Context Link / Document</span>
+                <a href="${esc(taskLink)}" target="_blank" style="font-size:13px;font-weight:700;color:#2563eb;word-break:break-all;">${esc(taskLink)} ↗</a>
+              </div>` : ""}
+              ${notes ? `
+              <div>
+                <span style="font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;display:block;">Instructions / Notes</span>
+                <span style="font-size:13px;color:#475569;">${esc(notes)}</span>
+              </div>` : ""}
+            </div>
+
+            <div style="margin:28px 0;text-align:center;">
+              <a href="${esc(origin)}" style="background:#0f172a;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;display:inline-block;box-shadow:0 4px 12px rgba(15,23,42,0.15);">
+                Open My Focus Desk &amp; Complete Task →
+              </a>
+            </div>
+
+            <p style="font-size:12px;color:#64748b;line-height:1.5;margin-top:20px;">
+              When you complete this task, click <b>[ ✓ Mark as Done &amp; Notify Founder ]</b> in your Focus Desk to automatically resolve it in leadership's radar.
+            </p>
+
+            <p style="font-size:12px;color:#94a3b8;margin-top:32px;border-top:1px solid #f1f5f9;padding-top:16px;">
+              FlowDirector · Team Delegation &amp; Focus Engine · flowdirector.co
+            </p>
+          </div>
+        </body>
+        </html>
+      `;
     } else {
       return json({ error: `Unknown email type: ${type}` }, 400);
     }

@@ -4924,6 +4924,7 @@ function FollowUpView({ data, patch, orgCtx, meId }){
   const [newTaskText, setNewTaskText] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
   const [newDue, setNewDue] = useState(today);
+  const [newLink, setNewLink] = useState("");
   const [planners, setPlanners] = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [notice, setNotice] = useState("");
@@ -4950,6 +4951,24 @@ function FollowUpView({ data, patch, orgCtx, meId }){
   const resolve=(id)=>patch(d=>{d.dailyBackup=d.dailyBackup.filter(b=>b.id!==id);});
   const reassign=(id,v)=>patch(d=>{const b=d.dailyBackup.find(x=>x.id===id); if(b) b.assignee=v;});
 
+  const notifyEmployee = (task) => {
+    const memberObj = teamMembers.find(m => (m.name && m.name.toLowerCase() === (task.assignee||"").toLowerCase()) || (m.email && m.email.toLowerCase() === (task.assignee||"").toLowerCase()));
+    if (memberObj && memberObj.email) {
+      sendTransactionalEmail("task_delegated", memberObj.email, {
+        task_title: task.text,
+        delegator_name: orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership",
+        company_name: orgCtx?.org?.name || "Workspace",
+        due_date: task.due,
+        link: task.link || "",
+        notes: "Delegated from Follow-up Radar",
+        member_name: memberObj.name || memberObj.email
+      });
+      say(`✓ Email alert dispatched to ${memberObj.name || memberObj.email}!`);
+    } else {
+      say(`No email found for assignee "${task.assignee}". Invite them in Settings > Team to enable auto-emails.`);
+    }
+  };
+
   const handleQuickDelegate = (e) => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
@@ -4961,14 +4980,31 @@ function FollowUpView({ data, patch, orgCtx, meId }){
       due: newDue || today,
       time: "",
       assignee: newAssignee || "Team",
+      link: newLink.trim() || null,
       done: false
     };
     patch(d => {
       d.dailyBackup = d.dailyBackup || [];
       d.dailyBackup.unshift(task);
     });
+
+    const memberObj = teamMembers.find(m => (m.name && m.name.toLowerCase() === (newAssignee||"").toLowerCase()) || (m.email && m.email.toLowerCase() === (newAssignee||"").toLowerCase()));
+    if (memberObj && memberObj.email) {
+      sendTransactionalEmail("task_delegated", memberObj.email, {
+        task_title: task.text,
+        delegator_name: orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership",
+        company_name: orgCtx?.org?.name || "Workspace",
+        due_date: task.due,
+        link: task.link || "",
+        notes: "Delegated from Follow-up Radar",
+        member_name: memberObj.name || memberObj.email
+      });
+      say(`✓ Task assigned & notification email dispatched to ${memberObj.name || memberObj.email}!`);
+    } else {
+      say(`✓ Task assigned to ${newAssignee || "team"}!`);
+    }
     setNewTaskText("");
-    say(`✓ Task assigned to ${newAssignee || "team"}!`);
+    setNewLink("");
   };
 
   // Combine team members list
@@ -4995,7 +5031,7 @@ function FollowUpView({ data, patch, orgCtx, meId }){
             Team Tasks &amp; Delegation Control
           </h2>
           <p className="text-xs text-slate-600">
-            Track tasks you have assigned to employees, view employee deliverable notes, and inspect today's live team standups.
+            Track tasks you have assigned to employees, attach context links, and inspect today's live team standups.
           </p>
         </div>
 
@@ -5029,6 +5065,12 @@ function FollowUpView({ data, patch, orgCtx, meId }){
                 onChange={e => setNewTaskText(e.target.value)}
                 placeholder="+ Delegate a new task or deliverable to an employee..."
                 className="flex-1 min-w-[240px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
+              />
+              <input 
+                value={newLink}
+                onChange={e => setNewLink(e.target.value)}
+                placeholder="Attach Doc / Loom / Figma link (Optional)..."
+                className="w-56 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
               />
               <select 
                 value={newAssignee} 
@@ -5092,6 +5134,17 @@ function FollowUpView({ data, patch, orgCtx, meId }){
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-extrabold text-slate-900">{b.text}</span>
                             {b.tag && <span className="rounded-md bg-white border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 font-bold">{b.tag}</span>}
+                            {b.link && (
+                              <a 
+                                href={b.link} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs"
+                              >
+                                <span>🔗</span>
+                                <span>Doc / Link ↗</span>
+                              </a>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             {b.due && (
@@ -5106,6 +5159,14 @@ function FollowUpView({ data, patch, orgCtx, meId }){
                         </div>
 
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => notifyEmployee(b)}
+                            title="Send instant transactional email notification to this team member"
+                            className="rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 px-2.5 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1"
+                          >
+                            <span>✉️</span>
+                            <span>Notify</span>
+                          </button>
                           <select 
                             value={b.assignee||""} 
                             onChange={e=>reassign(b.id,e.target.value)} 
@@ -5442,7 +5503,7 @@ function DueBanner({ data }){
   );
 }
 
-// Shared click-to-edit row for anything shaped like {id,text,tag,taskType,due,time,assignee} —
+// Shared click-to-edit row for anything shaped like {id,text,tag,taskType,due,time,assignee,link} —
 // dailyBackup / weeklySomeday / monthlyTray all use this shape post-Transfer, and none of them
 // had a way to fix a mistake after the fact. Click the text (or the pencil) to reveal every field.
 function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, extra }){
@@ -5461,6 +5522,18 @@ function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, e
           {item.due && <span className="ml-1.5 mono text-xs text-slate-400">📅 {item.due}{item.time?` ${item.time}`:""}</span>}
           {item.assignee && <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-600">→ {item.assignee}</span>}
         </button>
+        {item.link && (
+          <a 
+            href={item.link} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            onClick={e => e.stopPropagation()}
+            className="ml-1 inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs"
+          >
+            <span>🔗</span>
+            <span>Link ↗</span>
+          </a>
+        )}
         <span className="flex shrink-0 items-center gap-1">
           {extra}
           {item.tag && <span className="rounded bg-white px-1.5 py-0.5 text-xs text-slate-400">{item.tag}</span>}
@@ -5474,6 +5547,12 @@ function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, e
     <div className="space-y-1.5 rounded-md border border-amber-200 bg-amber-50 p-2 text-sm">
       <input value={item.text} onChange={e=>onUpdate("text",e.target.value)}
         className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-amber-400" />
+      <input 
+        value={item.link||""} 
+        onChange={e=>onUpdate("link",e.target.value)} 
+        placeholder="Attach URL / Google Doc / Loom / Figma link..." 
+        className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400" 
+      />
       <div className="flex flex-wrap items-center gap-1.5">
         <select value={item.tag||""} onChange={e=>onUpdate("tag",e.target.value)} className="rounded border border-slate-200 bg-white px-1.5 py-1 text-xs outline-none">
           <option value="">— Category —</option>
@@ -5880,6 +5959,17 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
                     </span>
                   )}
                   {b.tag && <span className="text-[10px] text-slate-400 bg-white px-2 py-0.5 rounded-md border border-slate-200">{b.tag}</span>}
+                  {b.link && (
+                    <a 
+                      href={b.link} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs"
+                    >
+                      <span>🔗</span>
+                      <span>Open Reference / Doc ↗</span>
+                    </a>
+                  )}
                 </div>
                 <h4 className="text-sm font-extrabold text-slate-900">{b.text}</h4>
               </div>
@@ -5909,6 +5999,17 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
                     <span className="text-[11px] font-bold text-slate-500">
                       📅 Due: {t.due}
                     </span>
+                  )}
+                  {t.link && (
+                    <a 
+                      href={t.link} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 hover:bg-blue-100 transition shadow-2xs"
+                    >
+                      <span>🔗</span>
+                      <span>Open Reference / Doc ↗</span>
+                    </a>
                   )}
                 </div>
                 <h4 className="text-sm font-extrabold text-slate-900">{t.title}</h4>
@@ -6001,7 +6102,193 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
   );
 }
 
+/* ================================================================== */
+/*  CALENDAR SYNC & .ICS EXPORT ENGINE                                */
+/* ================================================================== */
+function generateDayIcs(data, dk) {
+  const day = data.daily?.[dk] || {};
+  const [yr, mo, dy] = dk.split("-").map(Number);
+  const pad = (n) => String(n).padStart(2, "0");
+  const events = [];
+
+  // 1. One Main Outcome
+  if (day.outcome) {
+    const startStr = `${yr}${pad(mo)}${pad(dy)}T090000`;
+    const endStr = `${yr}${pad(mo)}${pad(dy)}T100000`;
+    events.push([
+      "BEGIN:VEVENT",
+      `UID:fd-outcome-${dk}-${Date.now()}@flowdirector.co`,
+      `DTSTAMP:${startStr}Z`,
+      `DTSTART:${startStr}`,
+      `DTEND:${endStr}`,
+      `SUMMARY:★ MAIN OUTCOME: ${day.outcome}`,
+      `DESCRIPTION:FlowDirector One Main Outcome for today.\\nStatus: ${day.marks?.[0] || "Planned"}`,
+      "STATUS:CONFIRMED",
+      "BEGIN:VALARM",
+      "TRIGGER:-PT15M",
+      "ACTION:DISPLAY",
+      "DESCRIPTION:Reminder: Time to execute your Main Outcome (FlowDirector)",
+      "END:VALARM",
+      "END:VEVENT"
+    ].join("\r\n"));
+  }
+
+  // 2. Top 3 Priorities
+  (day.priorities || []).forEach((p, idx) => {
+    if (!p) return;
+    const startHour = 10 + idx;
+    const startStr = `${yr}${pad(mo)}${pad(dy)}T${pad(startHour)}0000`;
+    const endStr = `${yr}${pad(mo)}${pad(dy)}T${pad(startHour + 1)}0000`;
+    events.push([
+      "BEGIN:VEVENT",
+      `UID:fd-prio-${dk}-${idx}-${Date.now()}@flowdirector.co`,
+      `DTSTAMP:${startStr}Z`,
+      `DTSTART:${startStr}`,
+      `DTEND:${endStr}`,
+      `SUMMARY:Priority ${idx + 1}: ${p}`,
+      `DESCRIPTION:Daily Priority ${idx + 1} from FlowDirector.\\nMark: ${day.marks?.[idx] || "Planned"}`,
+      "STATUS:CONFIRMED",
+      "BEGIN:VALARM",
+      "TRIGGER:-PT10M",
+      "ACTION:DISPLAY",
+      `DESCRIPTION:Upcoming: Priority ${idx + 1} - ${p}`,
+      "END:VALARM",
+      "END:VEVENT"
+    ].join("\r\n"));
+  });
+
+  // 3. Hourly Blocks
+  Object.entries(day.blocks || {}).forEach(([slotTime, text]) => {
+    if (!text) return;
+    const match = slotTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    let h = match ? parseInt(match[1], 10) : 9;
+    const m = match ? parseInt(match[2], 10) : 0;
+    const ampm = match && match[3] ? match[3].toUpperCase() : "";
+    if (ampm === "PM" && h < 12) h += 12;
+    if (ampm === "AM" && h === 12) h = 0;
+
+    const startStr = `${yr}${pad(mo)}${pad(dy)}T${pad(h)}${pad(m)}00`;
+    const endStr = `${yr}${pad(mo)}${pad(dy)}T${pad((h + 1) % 24)}${pad(m)}00`;
+
+    events.push([
+      "BEGIN:VEVENT",
+      `UID:fd-block-${dk}-${h}-${m}@flowdirector.co`,
+      `DTSTAMP:${startStr}Z`,
+      `DTSTART:${startStr}`,
+      `DTEND:${endStr}`,
+      `SUMMARY:Focus: ${text}`,
+      `DESCRIPTION:Scheduled Time Block in FlowDirector`,
+      "STATUS:CONFIRMED",
+      "END:VEVENT"
+    ].join("\r\n"));
+  });
+
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//FlowDirector//Executive Cockpit Focus Blocks//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    ...events,
+    "END:VCALENDAR"
+  ].join("\r\n");
+}
+
+function CalendarSyncModal({ data, dk, onClose }){
+  const icsData = generateDayIcs(data, dk);
+
+  const downloadIcsFile = () => {
+    const blob = new Blob([icsData], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `flowdirector-focus-${dk}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const day = data.daily?.[dk] || {};
+  const mainOutcome = day.outcome || "Executive Focus Block";
+  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("★ " + mainOutcome)}&details=${encodeURIComponent("Planned via FlowDirector Cockpit")}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-2xl">🗓️</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">Calendar Sync &amp; .ICS Export</h3>
+              <p className="text-xs text-slate-500">Sync your daily focus blocks to Google, Apple, or Outlook Calendar</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+        </div>
+
+        {/* Option 1: Direct 1-Click .ICS Download */}
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-amber-900">
+              Option 1: 1-Click .ICS File Download
+            </span>
+            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
+              With 15-Min Alarms
+            </span>
+          </div>
+          <p className="text-xs text-slate-700">
+            Download your scheduled time blocks and One Main Outcome for <b>{prettyDate(dk)}</b> into a standard calendar file.
+          </p>
+          <button
+            onClick={downloadIcsFile}
+            className="w-full rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2.5 text-xs font-black shadow-xs transition flex items-center justify-center gap-1.5"
+          >
+            <span>📥</span>
+            <span>Download .ICS Calendar File</span>
+          </button>
+        </div>
+
+        {/* Option 2: 1-Click Google Calendar */}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
+          <span className="text-xs font-black uppercase tracking-wider text-slate-700 block">
+            Option 2: 1-Click Google Calendar Event
+          </span>
+          <a
+            href={gcalUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 py-2.5 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+          >
+            <span>📅</span>
+            <span>Add Main Outcome to Google Calendar ↗</span>
+          </a>
+        </div>
+
+        {/* Import Instructions */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2 text-xs text-slate-600">
+          <span className="font-extrabold uppercase tracking-wider text-slate-800 block text-[11px]">
+            How to Import on Phone &amp; Laptop:
+          </span>
+          <ul className="space-y-1 list-disc pl-4">
+            <li><b>Apple Calendar (Mac/iPhone):</b> Open the downloaded <code>.ics</code> file; tap <i>Add All to Calendar</i>.</li>
+            <li><b>Google Calendar:</b> Go to Google Calendar &gt; <i>Settings</i> &gt; <i>Import</i> &gt; Select the <code>.ics</code> file.</li>
+            <li><b>Outlook:</b> Double click the file or drag into Outlook Calendar.</li>
+          </ul>
+        </div>
+
+        <div className="flex items-center justify-end">
+          <button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DailyView({ data, patch, dk, setDk }){
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
   const blank=()=>({outcome:"",priorities:["","",""],marks:["","",""],blocks:{},actual:{},closure:{score:0,ate:"",family:""},routineDone:{}});
   const day=data.daily[dk]||blank();
   const upd=(fn)=>patch(d=>{ if(!d.daily[dk]) d.daily[dk]=blank(); fn(d.daily[dk]); });
@@ -6025,14 +6312,26 @@ function DailyView({ data, patch, dk, setDk }){
   return (
     <div>
       <Callout>Decide the day before the day decides you. ONE main outcome, max 3 priorities. Slot khaali hua? Pick from Backup.</Callout>
-      <div className="mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-        <button onClick={()=>setDk(shiftDay(dk,-1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
-        <div className="text-center">
-          <div className="font-semibold text-slate-800">{prettyDate(dk)}</div>
-          {dk!==todayKey() && <button onClick={()=>setDk(todayKey())} className="text-xs text-amber-600 hover:underline">jump to today</button>}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setDk(shiftDay(dk,-1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
+          <div className="text-center">
+            <div className="font-semibold text-slate-800">{prettyDate(dk)}</div>
+            {dk!==todayKey() && <button onClick={()=>setDk(todayKey())} className="text-xs text-amber-600 hover:underline">jump to today</button>}
+          </div>
+          <button onClick={()=>setDk(shiftDay(dk,1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
         </div>
-        <button onClick={()=>setDk(shiftDay(dk,1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
+
+        <button 
+          onClick={() => setShowCalendarModal(true)}
+          className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1.5"
+        >
+          <span>🗓️</span>
+          <span>Calendar Sync &amp; .ICS</span>
+        </button>
       </div>
+
+      {showCalendarModal && <CalendarSyncModal data={data} dk={dk} onClose={() => setShowCalendarModal(false)} />}
       <OverduePanel data={data} patch={patch} />
       {dueToday.length>0 && (
         <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
@@ -9842,6 +10141,35 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
       <TaskTypeLabelsSection data={data} patch={patch} />
       <TeamSection data={data} patch={patch} inCompany={!!(orgCtx && orgCtx.membership)} />
       <NotificationSection />
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs space-y-3">
+        <div className="flex items-center gap-2.5">
+          <span className="text-xl">🗓️</span>
+          <div>
+            <h3 className="font-bold text-sm text-slate-900">Calendar Integration &amp; .ICS Sync</h3>
+            <p className="text-xs text-slate-500">Sync planned focus blocks and One Main Outcomes to Apple Calendar, Google Calendar, or Microsoft Outlook.</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <button 
+            onClick={() => {
+              const icsData = generateDayIcs(data, todayKey());
+              const blob = new Blob([icsData], { type: "text/calendar;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `flowdirector-focus-${todayKey()}.ics`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }} 
+            className="flex items-center gap-1.5 rounded-xl border border-slate-300 bg-slate-50 hover:bg-slate-100 px-3.5 py-2 text-xs font-bold text-slate-800 transition shadow-2xs"
+          >
+            <span>📥</span>
+            <span>Download Today's Focus Blocks (.ICS)</span>
+          </button>
+        </div>
+      </div>
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <h3 className="mb-3 font-semibold text-slate-700">Data</h3>
         <div className="flex flex-wrap gap-2">
