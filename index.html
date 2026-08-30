@@ -1895,9 +1895,22 @@ function ResetPasswordScreen({ onDone }){
 /* ================================================================== */
 function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
   const [name, setName] = useState("");
-  const [planCode, setPlanCode] = useState("team"); // team (10 seats) | enterprise (50 seats)
+  const [plansList, setPlansList] = useState([]);
+  const [planCode, setPlanCode] = useState("team");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    sb.from("plans").select("*").order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length) {
+          const buyable = data.filter(p => p.code !== "free" && p.code !== "unlimited");
+          setPlansList(buyable.length ? buyable : data);
+          const firstWithRzp = buyable.find(p => p.razorpay_plan_id) || buyable[0] || data[0];
+          if (firstWithRzp) setPlanCode(firstWithRzp.code);
+        }
+      });
+  }, []);
 
   const createAndMandate = async () => {
     const n = name.trim();
@@ -1967,27 +1980,24 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Select Subscription Plan Mandate</label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div 
-                onClick={() => setPlanCode("team")}
-                className={`rounded-2xl border p-4 cursor-pointer transition ${
-                  planCode === "team" ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
-                }`}
-              >
-                <div className="text-xs font-bold text-slate-950">Company Addon Plan</div>
-                <div className="text-lg font-extrabold text-slate-950 mt-1">₹2,999<span className="text-xs font-normal text-slate-500"> / mo</span></div>
-                <div className="text-[11px] text-slate-500 mt-1 font-medium">Includes 10 Seats • 15-Day Free Trial</div>
-              </div>
-
-              <div 
-                onClick={() => setPlanCode("business")}
-                className={`rounded-2xl border p-4 cursor-pointer transition ${
-                  planCode === "business" ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
-                }`}
-              >
-                <div className="text-xs font-bold text-slate-950">Business Plan</div>
-                <div className="text-lg font-extrabold text-slate-950 mt-1">₹3,999<span className="text-xs font-normal text-slate-500"> / mo</span></div>
-                <div className="text-[11px] text-slate-500 mt-1 font-medium">Includes 50 Seats • 15-Day Free Trial</div>
-              </div>
+              {plansList.map(p => (
+                <div 
+                  key={p.code}
+                  onClick={() => setPlanCode(p.code)}
+                  className={`rounded-2xl border p-4 cursor-pointer transition ${
+                    planCode === p.code ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  }`}
+                >
+                  <div className="text-xs font-bold text-slate-950">{p.name}</div>
+                  <div className="text-lg font-extrabold text-slate-950 mt-1">
+                    {p.price_display ? (p.price_display.startsWith("₹") ? p.price_display : "₹" + p.price_display) : "Contact Us"}
+                    <span className="text-xs font-normal text-slate-500"> / mo</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1 font-medium">
+                    {p.seat_limit ? `Includes ${p.seat_limit} Seats` : "Unlimited Seats"} • {p.trial_days ? `${p.trial_days}-Day Free Trial` : "Instant Activation"}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -4831,6 +4841,7 @@ function AdminPlans({ plans, onSaved }){
         price_display_yearly: draft.price_display_yearly || null,
         razorpay_plan_id: draft.razorpay_plan_id || null,
         razorpay_plan_id_yearly: draft.razorpay_plan_id_yearly || null,
+        trial_days: draft.trial_days === "" ? 0 : Number(draft.trial_days),
         sort_order: Number(draft.sort_order) || 0,
       });
       onSaved(`Saved ${draft.name}.`); setDraft(null);
@@ -4848,7 +4859,7 @@ function AdminPlans({ plans, onSaved }){
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="font-semibold text-slate-700">Plans</h3>
-        <button onClick={()=>setDraft({ code:"", name:"", seat_limit:"", price_display:"", price_display_yearly:"", razorpay_plan_id:"", razorpay_plan_id_yearly:"", sort_order:0 })}
+        <button onClick={()=>setDraft({ code:"", name:"", seat_limit:"", price_display:"", price_display_yearly:"", razorpay_plan_id:"", razorpay_plan_id_yearly:"", trial_days:15, sort_order:0 })}
           className="rounded-md bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-700">New plan</button>
       </div>
 
@@ -4860,6 +4871,7 @@ function AdminPlans({ plans, onSaved }){
               <span className="mono ml-2 text-xs text-slate-400">{p.code}</span>
               <div className="text-xs text-slate-500">
                 {p.seat_limit == null ? "Unlimited seats" : `Up to ${p.seat_limit} seat${p.seat_limit===1?"":"s"}`}
+                {p.trial_days != null ? ` · ${p.trial_days}-Day Trial Mandate` : " · 15-Day Trial Mandate"}
                 {p.price_display ? " · Monthly: " + p.price_display : ""}
                 {p.price_display_yearly ? " · Yearly: " + p.price_display_yearly : ""}
                 {p.razorpay_plan_id ? ` · RZP: ${p.razorpay_plan_id}` : " · (No RZP Monthly ID)"}
@@ -4867,7 +4879,7 @@ function AdminPlans({ plans, onSaved }){
               </div>
             </div>
             <div className="flex gap-2">
-              <button onClick={()=>setDraft({...p, seat_limit: p.seat_limit == null ? "" : p.seat_limit})}
+              <button onClick={()=>setDraft({...p, seat_limit: p.seat_limit == null ? "" : p.seat_limit, trial_days: p.trial_days == null ? 15 : p.trial_days})}
                 className="text-xs font-semibold text-slate-700 hover:text-slate-900">Edit</button>
               <button onClick={()=>remove(p)} className="text-xs text-slate-400 hover:text-rose-500">Delete</button>
             </div>
@@ -4893,6 +4905,11 @@ function AdminPlans({ plans, onSaved }){
             <label className="text-xs text-slate-500">Seat Limit <span className="text-slate-400">(blank = unlimited)</span>
               <input value={draft.seat_limit} onChange={e=>setDraft({...draft, seat_limit:e.target.value})}
                 type="number" min="1" placeholder="Unlimited"
+                className="mt-0.5 block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm" />
+            </label>
+            <label className="text-xs text-slate-500">Free Trial Mandate (Days)
+              <input value={draft.trial_days ?? 15} onChange={e=>setDraft({...draft, trial_days:e.target.value})}
+                type="number" min="0" placeholder="15"
                 className="mt-0.5 block w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm" />
             </label>
             <label className="text-xs text-slate-500">Monthly Price Text
@@ -4921,7 +4938,7 @@ function AdminPlans({ plans, onSaved }){
             </label>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            Paste the Razorpay Plan IDs directly here from your Razorpay Dashboard. Once saved, online checkout is immediately active!
+            Paste the Razorpay Plan IDs directly here from your Razorpay Dashboard. Free trial mandate will be scheduled automatically for each subscriber!
           </p>
           <div className="mt-3 flex gap-2">
             <button onClick={save} disabled={busy}

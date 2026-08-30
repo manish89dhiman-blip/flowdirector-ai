@@ -84,8 +84,13 @@ Deno.serve(async (req) => {
     if (membership.role !== "owner")
       return json({ error: "Only the company owner can change the plan" }, 403);
 
-    const { data: plan } = await asUser
-      .from("plans").select("code, name, seat_limit, razorpay_plan_id")
+    const admin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    const { data: plan } = await admin
+      .from("plans").select("code, name, seat_limit, razorpay_plan_id, trial_days")
       .eq("code", plan_code).maybeSingle();
 
     if (!plan) return json({ error: "Unknown plan" }, 400);
@@ -93,14 +98,10 @@ Deno.serve(async (req) => {
       return json({ error: `Plan "${plan.name}" has no Razorpay plan ID set yet` }, 400);
 
     // --- seats to bill for --------------------------------------------------
-    // Bill for the seats the company actually needs right now, never fewer
-    // than the people already in it, so an upgrade can't undercount and lock
-    // the owner out of their own team.
-    const admin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
+    // Flat plan tier pricing: quantity is always 1 for the whole company seat quota.
+    const quantity = 1;
 
+    // --- reuse the Razorpay customer if we already made one -----------------
     const [{ count: memberCount }, { count: inviteCount }, { data: sub }] = await Promise.all([
       admin.from("memberships").select("id", { count: "exact", head: true })
         .eq("org_id", membership.org_id),
@@ -110,15 +111,9 @@ Deno.serve(async (req) => {
         .eq("org_id", membership.org_id).maybeSingle(),
     ]);
 
-    // Flat plan tier pricing: quantity is always 1 for the whole company seat quota.
-    const quantity = 1;
-
-    // --- reuse the Razorpay customer if we already made one -----------------
     let customerId: string | null = sub?.razorpay_customer_id ?? null;
     if (!customerId) {
       try {
-        // fail_existing: "0" returns the existing customer instead of erroring
-        // when one already matches — otherwise a second purchase attempt dies.
         const cust = await rzp(keyId, keySecret, "/customers", {
           email: user.email,
           fail_existing: "0",
@@ -126,28 +121,32 @@ Deno.serve(async (req) => {
         });
         customerId = cust?.id ?? null;
       } catch (e) {
-        // Not fatal: Razorpay collects the customer's details on the hosted
-        // page if we don't supply one. Log and carry on rather than blocking
-        // the sale.
         console.error("customer create failed, continuing without one:", (e as Error).message);
       }
     }
 
+    // --- calculate trial period start_at mandate schedule -------------------
+    const trialDays = plan.trial_days != null ? Number(plan.trial_days) : 15;
+    const startAt = trialDays > 0 ? Math.floor(Date.now() / 1000) + (trialDays * 86400) : undefined;
+
     // --- create the subscription -------------------------------------------
     // total_count is REQUIRED by Razorpay — there is no "until cancelled".
     // 120 monthly cycles = 10 years, which is the usual stand-in for it.
-    const subscription = await rzp(keyId, keySecret, "/subscriptions", {
+    const subPayload: Record<string, any> = {
       plan_id: plan.razorpay_plan_id,
       total_count: Number(Deno.env.get("RAZORPAY_TOTAL_COUNT") ?? 120),
       quantity,
       customer_notify: 1,
       ...(customerId ? { customer_id: customerId } : {}),
-      // The webhook reads these back to know which company to credit.
+      ...(startAt ? { start_at: startAt } : {}),
       notes: {
         org_id: membership.org_id,
         plan_code: plan.code,
+        trial_days: trialDays,
       },
-    });
+    };
+
+    const subscription = await rzp(keyId, keySecret, "/subscriptions", subPayload);
 
     if (!subscription?.short_url)
       return json({ error: "Razorpay did not return a checkout link" }, 502);
