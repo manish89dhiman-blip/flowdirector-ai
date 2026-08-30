@@ -4556,7 +4556,30 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [trainingChecked, setTrainingChecked] = useState(false);
 
-  useEffect(() => { loadState(userId).then(setData).catch(()=>setData(structuredClone(SEED))); }, [userId]);
+  useEffect(() => { 
+    loadState(userId).then(loaded => {
+      const d = loaded || structuredClone(SEED);
+      const tz = d?.settings?.timezone || "Asia/Kolkata";
+      const t = todayKey(tz);
+      let dirty = false;
+      if (Array.isArray(d.dailyBackup)) {
+        d.dailyBackup.forEach(b => {
+          if (isHolidayItem(b) && !b.done) {
+            b.done = true;
+            dirty = true;
+          }
+          if (b.tag === "Finance" && b.due && b.due < t && (b.text?.includes("Advance Tax") || b.text?.includes("TDS Return") || b.text?.includes("ITR") || b.text?.includes("Tax Audit")) && !b.done) {
+            b.done = true;
+            dirty = true;
+          }
+        });
+      }
+      setData(d);
+      if (dirty) {
+        saveState(userId, d).catch(() => {});
+      }
+    }).catch(() => setData(structuredClone(SEED))); 
+  }, [userId]);
   useEffect(() => { amPlatformAdmin(userId).then(setIsAdmin); }, [userId]);
   useEffect(() => { amTrainingCoach(userId, session?.user?.email).then(setIsCoach); }, [userId, session?.user?.email]);
 
@@ -5452,6 +5475,15 @@ const shiftDay = (k,n)=>{const d=new Date(k+"T00:00:00");d.setDate(d.getDate()+n
 const prettyDate = (k)=>new Date(k+"T00:00:00").toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long"});
 const PMARKS=[{v:"",label:"○",cls:"text-slate-400"},{v:"done",label:"✓",cls:"text-emerald-600"},{v:"moved",label:"→",cls:"text-amber-600"},{v:"delegated",label:"o",cls:"text-sky-600"},{v:"dropped",label:"✗",cls:"text-rose-500"}];
 
+const isHolidayItem = (item) => {
+  if (!item) return false;
+  if (item.tag === "Holiday" || item.category === "Holiday") return true;
+  if (item.taskType === "HOLIDAY") return true;
+  if (typeof item.text === "string" && (item.text.startsWith("🎆") || item.text.includes("National Holiday"))) return true;
+  if (typeof item.item === "string" && (item.item.startsWith("🎆") || item.item.includes("National Holiday"))) return true;
+  return false;
+};
+
 const dueStatus = (dateStr, tz = "Asia/Kolkata") => {
   if (!dateStr) return null;
   const t = todayKey(tz);
@@ -5461,11 +5493,25 @@ const dueStatus = (dateStr, tz = "Asia/Kolkata") => {
 };
 const collectDueItems = (data) => {
   const overdue=[], today=[];
-  const check=(text,due)=>{ const s=dueStatus(due); if(s==="overdue") overdue.push(text); else if(s==="today") today.push(text); };
-  data.captures.filter(c=>c.status!=="Transferred"&&c.status!=="Done").forEach(c=>check(c.item,c.due));
-  data.dailyBackup.filter(b=>!b.done).forEach(b=>check(b.text,b.due));
-  data.weeklySomeday.filter(b=>!b.done).forEach(b=>check(b.text,b.due));
-  data.monthlyTray.filter(b=>!b.done).forEach(b=>check(b.text,b.due));
+  const tz = data?.settings?.timezone || "Asia/Kolkata";
+  const check=(it)=>{
+    const text = it.item || it.text;
+    const due = it.due;
+    if (!due) return;
+    if (isHolidayItem(it)) {
+      // Holidays only show on the day itself as a festival notification, NEVER as overdue chores!
+      const s = dueStatus(due, tz);
+      if (s === "today") today.push(text);
+      return;
+    }
+    const s = dueStatus(due, tz);
+    if (s === "overdue") overdue.push(text);
+    else if (s === "today") today.push(text);
+  };
+  (data.captures||[]).filter(c=>c.status!=="Transferred"&&c.status!=="Done").forEach(check);
+  (data.dailyBackup||[]).filter(b=>!b.done).forEach(check);
+  (data.weeklySomeday||[]).filter(b=>!b.done).forEach(check);
+  (data.monthlyTray||[]).filter(b=>!b.done).forEach(check);
   return { overdue, today };
 };
 // Every item with a due date, indexed by that exact "YYYY-MM-DD" — shared by
@@ -5547,10 +5593,10 @@ const removeSourceItem = (patch, source, id) => {
 // as the top summary banner: a finished task isn't overdue anymore.
 const overdueEntries = (data) => {
   const map = dueItemsByDate(data);
-  const t = todayKey();
+  const t = todayKey(data?.settings?.timezone || "Asia/Kolkata");
   const out = [];
   Object.keys(map).filter(k=>k<t).sort().forEach(k => {
-    map[k].forEach(it => { if (!it.done) out.push({ ...it, due:k }); });
+    map[k].forEach(it => { if (!it.done && !isHolidayItem(it)) out.push({ ...it, due:k }); });
   });
   return out;
 };
@@ -6719,6 +6765,8 @@ function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
 
   const importHolidays = () => {
     let added = 0;
+    const tz = data?.settings?.timezone || "Asia/Kolkata";
+    const t = todayKey(tz);
     patch(d => {
       d.dailyBackup = d.dailyBackup || [];
       INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
@@ -6729,8 +6777,8 @@ function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
             due: hol.due,
             time: "",
             tag: "Holiday",
-            taskType: "DAILY",
-            done: false
+            taskType: "HOLIDAY",
+            done: hol.due < t
           });
           added++;
         }
@@ -6742,6 +6790,8 @@ function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
   const importTaxDeadlines = () => {
     let recAdded = 0;
     let qaAdded = 0;
+    const tz = data?.settings?.timezone || "Asia/Kolkata";
+    const t = todayKey(tz);
     patch(d => {
       d.recurringMonthly = d.recurringMonthly || [];
       d.dailyBackup = d.dailyBackup || [];
@@ -6768,13 +6818,13 @@ function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
             time: "",
             tag: item.tag,
             taskType: item.taskType,
-            done: false
+            done: item.due < t
           });
           qaAdded++;
         }
       });
     });
-    if (onNotice) onNotice(`✓ Imported ${recAdded} monthly recurring tax rules & ${qaAdded} annual/advance tax deadlines!`);
+    if (onNotice) onNotice(`✓ Imported ${recAdded} monthly recurring tax rules & ${qaAdded} upcoming compliance deadlines!`);
   };
 
   return (
@@ -10680,6 +10730,8 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                 <button
                   onClick={() => {
                     let added = 0;
+                    const tz = data?.settings?.timezone || "Asia/Kolkata";
+                    const t = todayKey(tz);
                     patch(d => {
                       d.dailyBackup = d.dailyBackup || [];
                       INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
@@ -10690,8 +10742,8 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                             due: hol.due,
                             time: "",
                             tag: "Holiday",
-                            taskType: "DAILY",
-                            done: false
+                            taskType: "HOLIDAY",
+                            done: hol.due < t
                           });
                           added++;
                         }
@@ -10720,6 +10772,8 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                   onClick={() => {
                     let recCount = 0;
                     let deadCount = 0;
+                    const tz = data?.settings?.timezone || "Asia/Kolkata";
+                    const t = todayKey(tz);
                     patch(d => {
                       d.recurringMonthly = d.recurringMonthly || [];
                       d.dailyBackup = d.dailyBackup || [];
@@ -10731,7 +10785,7 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                       });
                       TAX_COMPLIANCE_CATALOG.quarterlyAnnual.forEach(item => {
                         if (!d.dailyBackup.some(b => b.text === item.text && b.due === item.due)) {
-                          d.dailyBackup.push({ id: uid(), text: item.text, due: item.due, time: "", tag: item.tag, taskType: item.taskType, done: false });
+                          d.dailyBackup.push({ id: uid(), text: item.text, due: item.due, time: "", tag: item.tag, taskType: item.taskType, done: item.due < t });
                           deadCount++;
                         }
                       });
