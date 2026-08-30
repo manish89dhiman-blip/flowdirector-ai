@@ -899,6 +899,7 @@ function Root(){
   const [orgReady, setOrgReady] = useState(false);
   const [orgError, setOrgError] = useState("");
   const [solo, setSolo] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState("solo");
 
   useEffect(() => {
     if (!CONFIGURED) { setReady(true); return; }
@@ -935,9 +936,18 @@ function Root(){
   if (recovery) return <ResetPasswordScreen onDone={()=>setRecovery(false)} />;
 
   if (!session) {
-    if (path === "/signup" || path === "/trial") return <AuthScreen initialMode="up" onBack={() => navigate("/")} />;
-    if (path === "/login" || path === "/signin") return <AuthScreen initialMode="in" onBack={() => navigate("/")} />;
-    return <LandingScreen onSignIn={() => navigate("/login")} onSignUp={() => navigate("/signup")} />;
+    if (path === "/signup" || path === "/trial") {
+      return <AuthScreen initialMode="up" initialPlan={selectedPlan} onBack={() => navigate("/")} />;
+    }
+    if (path === "/login" || path === "/signin") {
+      return <AuthScreen initialMode="in" onBack={() => navigate("/")} />;
+    }
+    return (
+      <LandingScreen 
+        onSignIn={() => navigate("/login")} 
+        onSignUp={(p) => { setSelectedPlan(p || "solo"); navigate("/signup"); }} 
+      />
+    );
   }
 
   // Signed in — if still on auth routes, navigate to main app
@@ -1570,22 +1580,22 @@ function LandingScreen({ onSignIn, onSignUp }){
             {/* Solo Trial */}
             <div className="bg-white border border-slate-200 rounded-3xl p-8 flex flex-col shadow-sm">
               <div className="mb-6">
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">15-Day Trial</span>
-                <h3 className="text-2xl font-bold text-slate-950 mt-1">Full Executive Trial</h3>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">1 Seat • 15-Day Trial Mandate</span>
+                <h3 className="text-2xl font-bold text-slate-950 mt-1">Solo Executive Plan</h3>
                 <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold text-slate-950">₹0</span>
-                  <span className="text-sm font-medium text-slate-500">/ 15 days</span>
+                  <span className="text-4xl font-extrabold text-slate-950">₹399</span>
+                  <span className="text-sm font-medium text-slate-500">/ mo</span>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">Full access for individual founders & executives.</p>
+                <p className="mt-2 text-xs text-slate-500 font-medium">Includes 15-Day Free Trial. Authorize mandate to activate.</p>
               </div>
               <ul className="space-y-3 mb-8 text-xs text-slate-700 flex-grow">
                 <li className="flex items-center gap-2 font-medium">✓ Full Daily Cockpit & Time Blocking</li>
                 <li className="flex items-center gap-2 font-medium">✓ Owner Hour Value Calculator</li>
                 <li className="flex items-center gap-2 font-medium">✓ Capture Inbox & Routines</li>
-                <li className="flex items-center gap-2 font-medium">✓ Zero Credit Card Required</li>
+                <li className="flex items-center gap-2 font-medium">✓ 15-Day Free Trial (Mandate Required)</li>
               </ul>
-              <button onClick={onSignUp} className="w-full py-3.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition shadow-sm">
-                Start Free Trial
+              <button onClick={()=>onSignUp("solo")} className="w-full py-3.5 rounded-xl bg-slate-900 text-white font-bold hover:bg-slate-800 transition shadow-sm">
+                Start 15-Day Free Trial
               </button>
             </div>
 
@@ -1595,22 +1605,22 @@ function LandingScreen({ onSignIn, onSignUp }){
                 RECOMMENDED
               </div>
               <div className="mb-6">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-700">Per-Seat Billing</span>
-                <h3 className="text-2xl font-bold text-slate-950 mt-1">Company Addon Plan</h3>
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-700">10 Seats • 15-Day Trial Mandate</span>
+                <h3 className="text-2xl font-bold text-slate-950 mt-1">Company Team Plan</h3>
                 <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-4xl font-extrabold text-slate-950">₹2,999</span>
+                  <span className="text-4xl font-extrabold text-slate-950">₹1,999</span>
                   <span className="text-sm font-medium text-slate-500">/ mo (includes 10 seats)</span>
                 </div>
-                <p className="mt-2 text-xs text-slate-500">Add extra seats anytime for ₹399 / extra seat / month.</p>
+                <p className="mt-2 text-xs text-slate-500 font-medium">Includes 15-Day Free Trial. Authorize mandate to activate.</p>
               </div>
               <ul className="space-y-3 mb-8 text-xs text-slate-700 flex-grow">
                 <li className="flex items-center gap-2 font-medium">✓ Includes 10 Team Seats out of the box</li>
                 <li className="flex items-center gap-2 font-medium">✓ Immediate Prorated Seat Addon Billing</li>
                 <li className="flex items-center gap-2 font-medium">✓ Team Dashboard & Goal KPI Tracking</li>
-                <li className="flex items-center gap-2 font-medium">✓ Razorpay UPI, Cards & Netbanking</li>
+                <li className="flex items-center gap-2 font-medium">✓ 15-Day Free Trial (Mandate Required)</li>
               </ul>
-              <button onClick={onSignUp} className="w-full py-3.5 rounded-xl bg-amber-400 text-slate-950 font-bold hover:bg-amber-300 transition shadow-md shadow-amber-400/20">
-                Start Trial & Upgrade
+              <button onClick={()=>onSignUp("team")} className="w-full py-3.5 rounded-xl bg-amber-400 text-slate-950 font-bold hover:bg-amber-300 transition shadow-md shadow-amber-400/20">
+                Start 15-Day Free Trial
               </button>
             </div>
           </div>
@@ -1732,12 +1742,31 @@ function LandingScreen({ onSignIn, onSignUp }){
 /* ================================================================== */
 /*  Auth                                                               */
 /* ================================================================== */
-function AuthScreen({ initialMode = "in", onBack }){
+function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
   const [mode, setMode] = useState(initialMode); // in | up | reset | confirm_sent
+  const [plansList, setPlansList] = useState([]);
+  const [planCode, setPlanCode] = useState(initialPlan || "solo");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    sb.from("plans").select("*").order("sort_order", { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length) {
+          const buyable = data.filter(p => p.code !== "free" && p.code !== "unlimited");
+          const list = buyable.length ? buyable : data;
+          setPlansList(list);
+          if (initialPlan && list.some(p => p.code === initialPlan)) {
+            setPlanCode(initialPlan);
+          } else if (list[0]) {
+            setPlanCode(list[0].code);
+          }
+        }
+      });
+  }, [initialPlan]);
 
   const submit = async () => {
     setBusy(true); setMsg("");
@@ -1746,15 +1775,24 @@ function AuthScreen({ initialMode = "in", onBack }){
         const { error } = await sb.auth.signInWithPassword({ email, password: pw });
         if (error) throw error;
       } else if (mode === "up") {
+        const wn = workspaceName.trim();
+        if (!wn) throw new Error("Please enter your Company / Workspace Name.");
         if (!email || !email.includes("@")) throw new Error("Please enter a valid email address.");
         if (!pw || pw.length < 6) throw new Error("Password must be at least 6 characters.");
+        
         writeSolo(false);
         const { data, error } = await sb.auth.signUp({ email, password: pw });
         if (error) throw error;
-        if (data && data.session) {
-          setMsg("Account created! Opening workspace setup and Razorpay mandate authorization…");
-        } else if (data && data.user && data.user.identities && data.user.identities.length === 0) {
+
+        if (data && data.user && data.user.identities && data.user.identities.length === 0) {
           throw new Error("Account already exists with this email! Please click 'Already have an account? Sign in' below to sign in.");
+        }
+
+        if (data && data.session) {
+          setMsg("Account created! Setting up workspace...");
+          await createOrg(wn, data.session.user.id);
+          setMsg("Workspace created! Launching Razorpay payment mandate authorization...");
+          await startCheckout(planCode, "razorpay");
         } else {
           setMode("confirm_sent");
         }
@@ -1773,6 +1811,8 @@ function AuthScreen({ initialMode = "in", onBack }){
     setBusy(false);
   };
 
+  const isSignup = mode === "up";
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 py-8">
       {onBack && (
@@ -1780,7 +1820,7 @@ function AuthScreen({ initialMode = "in", onBack }){
           ← Back to FlowDirector Home
         </button>
       )}
-      <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-8 text-slate-900 shadow-xl">
+      <div className={`w-full ${isSignup ? "max-w-xl" : "max-w-sm"} rounded-3xl border border-slate-200 bg-white p-8 text-slate-900 shadow-xl transition-all`}>
         <Logo height={44} lightMode={true} className="mb-4 justify-center flex" />
 
         {mode === "confirm_sent" ? (
@@ -1802,27 +1842,80 @@ function AuthScreen({ initialMode = "in", onBack }){
           </div>
         ) : (
           <>
+            <h2 className="text-xl font-extrabold text-slate-950 text-center">
+              {mode==="in" && "Sign In to Your Workspace"}
+              {mode==="up" && "Start 15-Day Free Trial"}
+              {mode==="reset" && "Reset Your Password"}
+            </h2>
             <p className="mt-1 text-xs text-slate-600 text-center font-medium">
-              {mode==="in" && "Sign in to your planner."}
-              {mode==="up" && "Start your 15-Day Free Trial (Mandate Required)."}
+              {mode==="in" && "Welcome back! Enter your login details."}
+              {mode==="up" && "Select your plan and authorize mandate. No charges during trial."}
               {mode==="reset" && "Enter your email and we'll send you a reset link."}
             </p>
 
-            <div className="mt-6 space-y-3">
-              <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Email Address"
-                onKeyDown={e=>e.key==="Enter"&&mode==="reset"&&submit()}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
-              {mode!=="reset" &&
-                <input value={pw} onChange={e=>setPw(e.target.value)} type="password" placeholder="Password"
-                  onKeyDown={e=>e.key==="Enter"&&submit()}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />}
+            <div className="mt-6 space-y-4">
+              {isSignup && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">1. Select Your Plan</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {plansList.map(p => (
+                      <div 
+                        key={p.code}
+                        onClick={() => setPlanCode(p.code)}
+                        className={`rounded-2xl border p-4 cursor-pointer transition ${
+                          planCode === p.code ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-950">{p.name}</span>
+                          {p.code === "team" && (
+                            <span className="bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full text-[10px] font-bold">Popular</span>
+                          )}
+                        </div>
+                        <div className="text-lg font-extrabold text-slate-950 mt-1">
+                          {p.price_display ? (p.price_display.startsWith("₹") ? p.price_display : "₹" + p.price_display) : "Contact Us"}
+                          <span className="text-xs font-normal text-slate-500"> / mo</span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-1 font-medium">
+                          {p.seat_limit ? `${p.seat_limit} Seat${p.seat_limit===1?"":"s"}` : "Unlimited Seats"} • {p.trial_days ? `${p.trial_days}-Day Free Trial` : "Trial Mandate"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {isSignup && (
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">2. Company / Workspace Name</label>
+                  <input value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} type="text" placeholder="e.g. Acme Corporation"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+                </div>
+              )}
+
+              <div>
+                {isSignup && <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">3. Your Work Email</label>}
+                <input value={email} onChange={e=>setEmail(e.target.value)} type="email" placeholder="Email Address"
+                  onKeyDown={e=>e.key==="Enter"&&mode==="reset"&&submit()}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+              </div>
+
+              {mode!=="reset" && (
+                <div>
+                  {isSignup && <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1">4. Password</label>}
+                  <input value={pw} onChange={e=>setPw(e.target.value)} type="password" placeholder="Password (min 6 characters)"
+                    onKeyDown={e=>e.key==="Enter"&&submit()}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition" />
+                </div>
+              )}
+
               <button onClick={submit} disabled={busy}
-                className="w-full rounded-xl bg-slate-950 px-4 py-3 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60">
-                {busy ? "…" : mode==="in" ? "Sign in" : mode==="up" ? "Start Trial & Setup Mandate" : "Send reset link"}
+                className="w-full rounded-xl bg-slate-950 px-4 py-3.5 text-xs font-bold text-white hover:bg-slate-800 transition shadow-md disabled:opacity-60 flex items-center justify-center gap-2">
+                {busy ? "Setting Up Workspace..." : mode==="in" ? "Sign In →" : mode==="up" ? "Start 15-Day Trial & Authorize Razorpay Mandate →" : "Send Reset Link"}
               </button>
             </div>
 
-            {msg && <p className="mt-3 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-xl">{msg}</p>}
+            {msg && <p className="mt-4 text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl leading-relaxed">{msg}</p>}
 
             <div className="mt-5 flex flex-col items-center gap-2 pt-2 border-t border-slate-100">
               {mode==="in" &&
@@ -1831,7 +1924,7 @@ function AuthScreen({ initialMode = "in", onBack }){
                 </button>}
               {mode!=="reset" &&
                 <button onClick={()=>{setMode(mode==="in"?"up":"in"); setMsg("");}} className="text-xs text-slate-600 hover:text-slate-950 font-semibold">
-                  {mode==="in" ? "Need an account? Start Trial & Mandate" : "Already have an account? Sign in"}
+                  {mode==="in" ? "Need an account? Start 15-Day Free Trial" : "Already have an account? Sign in"}
                 </button>}
               {mode==="reset" &&
                 <button onClick={()=>{setMode("in"); setMsg("");}} className="text-xs text-slate-500 hover:text-slate-900 font-medium">
