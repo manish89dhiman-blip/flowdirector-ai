@@ -51,17 +51,21 @@ Deno.serve(async (req) => {
 
     const plannerData = stateRow?.data || {};
     const dailyMap = plannerData.daily || {};
+    const monthlyMap = plannerData.monthly || {};
+    const recurringMonthly = plannerData.recurringMonthly || [];
+    const dailyBackup = plannerData.dailyBackup || [];
+    const monthlyTray = plannerData.monthlyTray || [];
 
     const events: string[] = [];
     const nowIso = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 
-    // Iterate through all days in dailyMap
+    // 1. Iterate through Daily Outcomes, Priorities, and Hourly Blocks
     Object.entries(dailyMap).forEach(([dk, dayObj]: [string, any]) => {
       if (!dk || !dayObj || typeof dayObj !== "object") return;
       const [yr, mo, dy] = dk.split("-").map(Number);
       if (!yr || !mo || !dy) return;
 
-      // 1. One Main Outcome (★)
+      // 1a. One Main Outcome (★)
       if (dayObj.outcome && String(dayObj.outcome).trim()) {
         const startStr = `${yr}${pad(mo)}${pad(dy)}T090000`;
         const endStr = `${yr}${pad(mo)}${pad(dy)}T100000`;
@@ -83,7 +87,7 @@ Deno.serve(async (req) => {
         ].join("\r\n"));
       }
 
-      // 2. Top 3 Priorities
+      // 1b. Top 3 Priorities
       (dayObj.priorities || []).forEach((p: string, idx: number) => {
         if (!p || !String(p).trim()) return;
         const startHour = 10 + idx;
@@ -107,7 +111,7 @@ Deno.serve(async (req) => {
         ].join("\r\n"));
       });
 
-      // 3. Hourly Planned Blocks
+      // 1c. Hourly Planned Blocks
       Object.entries(dayObj.blocks || {}).forEach(([slotTime, text]: [string, any]) => {
         if (!text || !String(text).trim()) return;
         const match = slotTime.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
@@ -134,6 +138,129 @@ Deno.serve(async (req) => {
       });
     });
 
+    // 2. Monthly Fixed Commitments & Buffer Days
+    Object.entries(monthlyMap).forEach(([mk, monthObj]: [string, any]) => {
+      if (!mk || !monthObj || typeof monthObj !== "object") return;
+      const [yr, mo] = mk.split("-").map(Number);
+      if (!yr || !mo) return;
+
+      // 2a. Monthly Fixed Commitments
+      Object.entries(monthObj.days || {}).forEach(([dayNumStr, text]: [string, any]) => {
+        const dy = Number(dayNumStr);
+        if (!dy || !text || !String(text).trim()) return;
+        const startStr = `${yr}${pad(mo)}${pad(dy)}T093000`;
+        const endStr = `${yr}${pad(mo)}${pad(dy)}T103000`;
+
+        events.push([
+          "BEGIN:VEVENT",
+          `UID:fd-monthly-fixed-${userId}-${mk}-${dy}@flowdirector.co`,
+          `DTSTAMP:${nowIso}`,
+          `DTSTART:${startStr}`,
+          `DTEND:${endStr}`,
+          `SUMMARY:📅 MONTHLY COMMITMENT: ${String(text).replace(/\n/g, " ")}`,
+          `DESCRIPTION:Fixed Monthly Commitment from Monthly Blueprint`,
+          "STATUS:CONFIRMED",
+          "BEGIN:VALARM",
+          "TRIGGER:-PT15M",
+          "ACTION:DISPLAY",
+          `DESCRIPTION:Monthly Commitment: ${text}`,
+          "END:VALARM",
+          "END:VEVENT"
+        ].join("\r\n"));
+      });
+
+      // 2b. Buffer Days (Protected 0-Meeting Days)
+      (monthObj.buffers || []).forEach((dy: number) => {
+        if (!dy) return;
+        const startStr = `${yr}${pad(mo)}${pad(dy)}T080000`;
+        const endStr = `${yr}${pad(mo)}${pad(dy)}T180000`;
+
+        events.push([
+          "BEGIN:VEVENT",
+          `UID:fd-monthly-buffer-${userId}-${mk}-${dy}@flowdirector.co`,
+          `DTSTAMP:${nowIso}`,
+          `DTSTART:${startStr}`,
+          `DTEND:${endStr}`,
+          `SUMMARY:⭐ BUFFER DAY (Protected Zero-Meeting Focus)`,
+          `DESCRIPTION:Reserved Buffer Day in FlowDirector — No external meetings. Catch-up, strategy & delegation.`,
+          "STATUS:CONFIRMED",
+          "END:VEVENT"
+        ].join("\r\n"));
+      });
+    });
+
+    // 3. Recurring Monthly Rules (e.g. TDS on 7th, GSTR-1 on 11th, PF on 15th, GSTR-3B on 20th)
+    const curDate = new Date();
+    for (let offset = -1; offset <= 6; offset++) {
+      const d = new Date(curDate.getFullYear(), curDate.getMonth() + offset, 1);
+      const yr = d.getFullYear();
+      const mo = d.getMonth() + 1;
+      const daysInMonth = new Date(yr, mo, 0).getDate();
+
+      recurringMonthly.forEach((r: any, idx: number) => {
+        if (!r || !r.text) return;
+        const dy = Math.min(r.day || 1, daysInMonth);
+        const timeStr = r.time || "10:00";
+        const [hStr, mStr] = timeStr.split(":");
+        const h = Number(hStr) || 10;
+        const m = Number(mStr) || 0;
+
+        const startStr = `${yr}${pad(mo)}${pad(dy)}T${pad(h)}${pad(m)}00`;
+        const endStr = `${yr}${pad(mo)}${pad(dy)}T${pad(h + 1)}${pad(m)}00`;
+
+        events.push([
+          "BEGIN:VEVENT",
+          `UID:fd-recurring-monthly-${userId}-${yr}-${mo}-${dy}-${idx}@flowdirector.co`,
+          `DTSTAMP:${nowIso}`,
+          `DTSTART:${startStr}`,
+          `DTEND:${endStr}`,
+          `SUMMARY:🔁 ${r.tag ? `[${r.tag}] ` : ""}${String(r.text).replace(/\n/g, " ")}`,
+          `DESCRIPTION:Monthly Recurring Rule / Tax Event in FlowDirector`,
+          "STATUS:CONFIRMED",
+          "BEGIN:VALARM",
+          "TRIGGER:-PT15M",
+          "ACTION:DISPLAY",
+          `DESCRIPTION:Recurring Monthly Task: ${r.text}`,
+          "END:VALARM",
+          "END:VEVENT"
+        ].join("\r\n"));
+      });
+    }
+
+    // 4. Yearly & Statutory Deadlines & Milestones (from dailyBackup & monthlyTray)
+    const allDatedItems = [...(Array.isArray(dailyBackup) ? dailyBackup : []), ...(Array.isArray(monthlyTray) ? monthlyTray : [])];
+    allDatedItems.forEach((item: any) => {
+      if (!item || !item.due || !item.text) return;
+      const [yr, mo, dy] = item.due.split("-").map(Number);
+      if (!yr || !mo || !dy) return;
+
+      const timeStr = item.time || "10:00";
+      const [hStr, mStr] = timeStr.split(":");
+      const h = Number(hStr) || 10;
+      const m = Number(mStr) || 0;
+
+      const startStr = `${yr}${pad(mo)}${pad(dy)}T${pad(h)}${pad(m)}00`;
+      const endStr = `${yr}${pad(mo)}${pad(dy)}T${pad(h + 1)}${pad(m)}00`;
+      const icon = item.tag === "Holiday" ? "🎆 " : item.tag === "Finance" ? "📊 " : "📌 ";
+
+      events.push([
+        "BEGIN:VEVENT",
+        `UID:fd-deadline-${userId}-${item.id || item.due}@flowdirector.co`,
+        `DTSTAMP:${nowIso}`,
+        `DTSTART:${startStr}`,
+        `DTEND:${endStr}`,
+        `SUMMARY:${icon}${String(item.text).replace(/\n/g, " ")}`,
+        `DESCRIPTION:Annual Milestone / Statutory Deadline in FlowDirector.\\nTag: ${item.tag || "General"}`,
+        "STATUS:CONFIRMED",
+        "BEGIN:VALARM",
+        "TRIGGER:-PT15M",
+        "ACTION:DISPLAY",
+        `DESCRIPTION:Deadline: ${item.text}`,
+        "END:VALARM",
+        "END:VEVENT"
+      ].join("\r\n"));
+    });
+
     const icsContent = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
@@ -142,7 +269,7 @@ Deno.serve(async (req) => {
       "METHOD:PUBLISH",
       "X-WR-CALNAME:FlowDirector Focus Schedule",
       "X-WR-TIMEZONE:Asia/Kolkata",
-      "X-WR-CALDESC:Always live synced focus blocks and priorities from FlowDirector Cockpit",
+      "X-WR-CALDESC:Always live synced focus blocks, monthly fixed commitments, buffer days and statutory deadlines from FlowDirector",
       ...events,
       "END:VCALENDAR"
     ].join("\r\n");
