@@ -2354,10 +2354,23 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
 function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated }) {
   const org = orgCtx?.org;
   const profile = orgCtx?.profile;
-  const userId = session.user.id;
+  const userId = session?.user?.id;
 
   const isProfileDone = !!(profile && profile.profile_completed);
   const [step, setStep] = useState(isProfileDone ? "training" : "profile"); // profile | training | booked
+
+  // Email Verification & Correction State
+  const [currentEmail, setCurrentEmail] = useState(session?.user?.email || profile?.email || "");
+  const [isEmailVerified, setIsEmailVerified] = useState(!!profile?.email_verified);
+  const [showEmailEdit, setShowEmailEdit] = useState(false);
+  const [newEmailInput, setNewEmailInput] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCodeInput, setOtpCodeInput] = useState("");
+  const [otpTargetEmail, setOtpTargetEmail] = useState("");
+  const [otpCooldown, setOtpCooldown] = useState(0);
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [otpMsg, setOtpMsg] = useState("");
+  const [otpTone, setOtpTone] = useState("ok"); // ok | bad
 
   // Profile Form State
   const [fullName, setFullName] = useState(profile?.full_name || "");
@@ -2381,6 +2394,96 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
   useEffect(() => {
     if (primaryGoal) setTopic(primaryGoal);
   }, [primaryGoal]);
+
+  // Cooldown timer
+  useEffect(() => {
+    if (otpCooldown > 0) {
+      const t = setTimeout(() => setOtpCooldown(c => c - 1), 1000);
+      return () => clearTimeout(t);
+    }
+  }, [otpCooldown]);
+
+  const handleSendOtp = async (targetEmail, isChange = false) => {
+    const emailToUse = (targetEmail || currentEmail).trim();
+    if (!emailToUse || !emailToUse.includes("@")) {
+      setOtpMsg("Please enter a valid email address.");
+      setOtpTone("bad");
+      return;
+    }
+    setOtpBusy(true); setOtpMsg("");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-email-otp`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "send",
+          email: currentEmail,
+          new_email: isChange ? emailToUse : undefined
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Couldn't dispatch verification code.");
+
+      setOtpSent(true);
+      setOtpTargetEmail(emailToUse);
+      setOtpCooldown(60);
+      setOtpTone("ok");
+      setOtpMsg(`6-digit verification code sent to ${emailToUse}. Check your inbox!`);
+    } catch (e) {
+      setOtpTone("bad");
+      setOtpMsg(e.message || "Failed to send verification code.");
+    }
+    setOtpBusy(false);
+  };
+
+  const handleVerifyOtp = async () => {
+    const code = otpCodeInput.trim();
+    if (!code || code.length < 6) {
+      setOtpMsg("Please enter the 6-digit code received in your email.");
+      setOtpTone("bad");
+      return;
+    }
+    setOtpBusy(true); setOtpMsg("");
+    try {
+      const isChange = otpTargetEmail.toLowerCase() !== currentEmail.toLowerCase();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/verify-email-otp`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_ANON_KEY,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "verify",
+          email: currentEmail,
+          code: code,
+          user_id: userId,
+          new_email: isChange ? otpTargetEmail : undefined
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Verification failed.");
+
+      setIsEmailVerified(true);
+      if (isChange) {
+        setCurrentEmail(otpTargetEmail);
+        setShowEmailEdit(false);
+      }
+      setOtpSent(false);
+      setOtpCodeInput("");
+      setOtpTone("ok");
+      setOtpMsg(isChange ? `Email successfully updated and confirmed to ${otpTargetEmail}!` : "Email successfully verified via OTP!");
+      if (onUpdated) onUpdated();
+    } catch (e) {
+      setOtpTone("bad");
+      setOtpMsg(e.message || "Invalid or expired verification code.");
+    }
+    setOtpBusy(false);
+  };
 
   const handleSaveProfile = async () => {
     const fn = fullName.trim();
@@ -2507,8 +2610,127 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
         {step === "profile" && (
           <div className="space-y-4">
             <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              Welcome to FlowDirector! Please provide your executive contact details so we can tailor your workspace, configure your 15-day trial, and coordinate your training session.
+              Welcome to FlowDirector! Please confirm your executive email and contact details to personalize your workspace and prepare for your 1-on-1 coaching call.
             </p>
+
+            {/* EMAIL VERIFICATION & TYPO CORRECTION CARD */}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 text-left space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-0.5">Account & Notification Email</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-900 mono">{currentEmail}</span>
+                    {isEmailVerified ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+                        <span>✓</span> Verified
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">
+                        <span>⚠️</span> Unverified
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {!isEmailVerified && !otpSent && !showEmailEdit && (
+                    <button 
+                      onClick={() => handleSendOtp(currentEmail, false)}
+                      disabled={otpBusy}
+                      className="rounded-xl bg-slate-950 px-3 py-1.5 text-xs font-bold text-white hover:bg-slate-800 transition shadow-xs disabled:opacity-50"
+                    >
+                      {otpBusy ? "Sending..." : "Verify via OTP"}
+                    </button>
+                  )}
+                  {!showEmailEdit && (
+                    <button 
+                      onClick={() => { setShowEmailEdit(true); setNewEmailInput(currentEmail); setOtpSent(false); setOtpMsg(""); }}
+                      className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                    >
+                      ✏️ Change / Correct Email
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* EDIT / CORRECT EMAIL SUB-PANEL */}
+              {showEmailEdit && (
+                <div className="mt-2 rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 space-y-3">
+                  <div className="text-xs font-bold text-blue-950">
+                    Correct Mistyped Email Address
+                  </div>
+                  <p className="text-[11px] text-blue-900 leading-relaxed">
+                    Have a typo in your signup email? Enter your correct email below. We'll send a 6-digit code to confirm and instantly update your account.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <input 
+                      type="email"
+                      value={newEmailInput}
+                      onChange={e => setNewEmailInput(e.target.value)}
+                      placeholder="correct_email@company.com"
+                      className="min-w-[14rem] flex-1 rounded-xl border border-blue-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600"
+                    />
+                    <button 
+                      onClick={() => handleSendOtp(newEmailInput, true)}
+                      disabled={otpBusy || !newEmailInput || otpCooldown > 0}
+                      className="rounded-xl bg-blue-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs"
+                    >
+                      {otpBusy ? "Sending..." : otpCooldown > 0 ? `Resend (${otpCooldown}s)` : "Send Code to New Email →"}
+                    </button>
+                    <button 
+                      onClick={() => { setShowEmailEdit(false); setOtpSent(false); setOtpMsg(""); }}
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ENTER OTP CODE SUB-PANEL */}
+              {otpSent && (
+                <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 p-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-amber-950">
+                      Enter 6-Digit Code sent to <span className="mono font-bold">{otpTargetEmail}</span>
+                    </div>
+                    {otpCooldown > 0 ? (
+                      <span className="text-[10px] text-slate-500 font-bold">Resend code in {otpCooldown}s</span>
+                    ) : (
+                      <button 
+                        onClick={() => handleSendOtp(otpTargetEmail, showEmailEdit)} 
+                        className="text-[10px] text-blue-700 font-bold hover:underline"
+                      >
+                        Resend Code
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="text" 
+                      maxLength={6}
+                      value={otpCodeInput}
+                      onChange={e => setOtpCodeInput(e.target.value.replace(/\D/g, ''))}
+                      placeholder="123456"
+                      className="w-32 rounded-xl border border-amber-300 bg-white px-3 py-2 text-center text-sm font-black tracking-widest text-slate-900 outline-none focus:border-amber-500"
+                    />
+                    <button 
+                      onClick={handleVerifyOtp}
+                      disabled={otpBusy || otpCodeInput.length < 6}
+                      className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50 transition shadow-xs"
+                    >
+                      {otpBusy ? "Verifying..." : "Confirm & Verify Code →"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {otpMsg && (
+                <p className={`text-xs font-medium p-2.5 rounded-xl ${otpTone === "bad" ? "text-rose-800 bg-rose-50 border border-rose-200" : "text-emerald-800 bg-emerald-50 border border-emerald-200"}`}>
+                  {otpMsg}
+                </p>
+              )}
+            </div>
 
             <div className="space-y-3 pt-1">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
