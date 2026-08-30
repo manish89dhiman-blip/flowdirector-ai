@@ -1231,6 +1231,440 @@ function AdminPortalDesk({ session, onBack }){
 }
 
 /* ================================================================== */
+/*  Coach Toolkit: Industry KRA Presets & Cheat Sheets                */
+/* ================================================================== */
+const INDUSTRY_CHEAT_SHEETS = [
+  {
+    id: "agency",
+    name: "Digital Marketing & Creative Agencies",
+    icon: "🎨",
+    timeBleed: "Founder personally writing ad copy, client WhatsApp handling, and micro-revisions.",
+    dayThemes: {
+      mon: "Client Account KRAs & Retainer Health",
+      tue: "Creative Delivery & Campaign Audits",
+      wed: "New Business Proposals & Pitches",
+      thu: "Team Skill Coaching & SOP Updates",
+      fri: "Cash Collections, Billing & Profit Review",
+      sat: "Weekly Strategic Synthesis & High-Level Reading"
+    },
+    kras: [
+      { name: "Monthly Retainer MRR", target: "₹15,00,000 / month", unit: "₹" },
+      { name: "Average Client Blended ROAS", target: "> 3.8x ROAS", unit: "ROAS" },
+      { name: "Client Monthly Churn Rate", target: "< 3.0%", unit: "%" },
+      { name: "Team Billable Capacity Utilization", target: "> 80%", unit: "%" }
+    ]
+  },
+  {
+    id: "manufacturing",
+    name: "Manufacturing, Trading & Distribution",
+    icon: "🏭",
+    timeBleed: "Founder sitting on the shop floor resolving vendor delays and micromanaging labor.",
+    dayThemes: {
+      mon: "Raw Material & Vendor Negotiations",
+      tue: "Plant Production Line & Maintenance Audit",
+      wed: "Key B2B Distributor & Institutional Sales",
+      thu: "Quality Control, Dispatch & Logistics",
+      fri: "Payment Recovery (DSO) & Statutory Compliance",
+      sat: "Factory Capex & Machine Expansion Review"
+    },
+    kras: [
+      { name: "Monthly Finished Goods Output Value", target: "₹45,00,000 / month", unit: "₹" },
+      { name: "Plant Machine Downtime / OEE", target: "< 3.5% Downtime", unit: "%" },
+      { name: "Days Sales Outstanding (Payment Recovery)", target: "< 42 Days DSO", unit: "Days" },
+      { name: "Rework / Scrap Rejection Rate", target: "< 1.5%", unit: "%" }
+    ]
+  },
+  {
+    id: "d2c",
+    name: "D2C, E-Commerce & Retail Brands",
+    icon: "🛍️",
+    timeBleed: "Founder chasing courier COD returns, manual packing checks, and replying to Instagram DMs.",
+    dayThemes: {
+      mon: "Meta/Google Ad Creative Performance & Blended ROAS",
+      tue: "Inventory Re-stocking & 3PL Logistics",
+      wed: "New Product Development & Packaging",
+      thu: "Influencer Partnerships & Affiliate Pipeline",
+      fri: "Contribution Margin 3 (CM3) & Net Cash Flow",
+      sat: "Competitor Benchmarking & Customer Reviews"
+    },
+    kras: [
+      { name: "Net Monthly E-Commerce Revenue", target: "₹25,00,000 / month", unit: "₹" },
+      { name: "Blended Customer Acquisition Cost (CAC)", target: "< ₹380 / order", unit: "₹" },
+      { name: "90-Day Repeat Customer Rate", target: "> 28%", unit: "%" },
+      { name: "NDR / RTO (Return to Origin) Rate", target: "< 12%", unit: "%" }
+    ]
+  },
+  {
+    id: "consulting",
+    name: "Consulting, Legal & Professional Services",
+    icon: "💼",
+    timeBleed: "Founder personally executing basic client audits and manual slide deck formatting.",
+    dayThemes: {
+      mon: "Active Engagement Milestone Reviews",
+      tue: "Client Strategy Workshops & Advisory",
+      wed: "High-Ticket Inbound Lead Qualification",
+      thu: "Knowledge Asset & IP Framework Development",
+      fri: "Retainer Billing, Margins & Cash Flow",
+      sat: "Thought Leadership & Industry Networking"
+    },
+    kras: [
+      { name: "Closed Consulting Contract Value", target: "₹12,00,000 / month", unit: "₹" },
+      { name: "Average Project Realized Hourly Rate", target: "> ₹7,500 / hr", unit: "₹/hr" },
+      { name: "Client Net Promoter Score (NPS)", target: "> 75 NPS", unit: "Score" },
+      { name: "Proposal-to-Close Win Rate", target: "> 40%", unit: "%" }
+    ]
+  },
+  {
+    id: "saas",
+    name: "B2B Tech, SaaS & Software Companies",
+    icon: "💻",
+    timeBleed: "Founder debugging minor frontend tickets and conducting repetitive generic demos.",
+    dayThemes: {
+      mon: "Product Roadmap & Sprint Prioritization",
+      tue: "High-Value Enterprise Demos & Dials",
+      wed: "Product Architecture & Code Reviews",
+      thu: "User Churn & Customer Success Analysis",
+      fri: "Unit Economics, MRR Growth & Runway",
+      sat: "Competitive Moat & Long-Term Strategy"
+    },
+    kras: [
+      { name: "Monthly Recurring Revenue (MRR)", target: "₹8,00,000 / month", unit: "₹" },
+      { name: "Trial-to-Paid Mandate Conversion Rate", target: "> 14%", unit: "%" },
+      { name: "Monthly Net Revenue Retention (NRR)", target: "> 108%", unit: "%" },
+      { name: "LTV to CAC Ratio", target: "> 4.5x", unit: "Ratio" }
+    ]
+  },
+  {
+    id: "realestate",
+    name: "Real Estate, Construction & Contracting",
+    icon: "🏢",
+    timeBleed: "Founder driving to job sites to resolve material shortages and daily labor arguments.",
+    dayThemes: {
+      mon: "Site Progress Audits & Contractor Milestones",
+      tue: "Material Procurement & Cement/Steel POs",
+      wed: "High-Net-Worth Buyer Meetings & Closings",
+      thu: "Municipal Approvals & Compliance",
+      fri: "Contractor Stage Payouts & Cash Collections",
+      sat: "New Land Acquisition Feasibility"
+    },
+    kras: [
+      { name: "Monthly Booking Sales Value", target: "₹1.50 Crore / month", unit: "₹" },
+      { name: "Construction Milestone Schedule Variance", target: "< 5 Days Delay", unit: "Days" },
+      { name: "Customer Stage Payment Recovery Rate", target: "> 92%", unit: "%" },
+      { name: "Safety & Quality Defect Score", target: "Zero Major Incidents", unit: "Score" }
+    ]
+  }
+];
+
+/* ================================================================== */
+/*  1-Click Screen-Share Presentation Slide Deck for Coaches          */
+/* ================================================================== */
+function CoachSlideDeckModal({ onClose }){
+  const [slide, setSlide] = useState(1);
+  const totalSlides = 4;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md">
+      <div className="w-full max-w-4xl rounded-3xl border border-slate-700 bg-slate-900 text-white p-6 sm:p-8 shadow-2xl space-y-6 flex flex-col justify-between min-h-[580px]">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-3">
+            <span className="rounded-full bg-amber-400/10 border border-amber-400/30 px-3 py-0.5 text-xs font-black text-amber-400 uppercase tracking-wider">
+              🖥️ Screen-Share Deck · Slide {slide} of {totalSlides}
+            </span>
+          </div>
+          <button onClick={onClose} className="rounded-full bg-slate-800 p-2 text-slate-400 hover:text-white transition">
+            ✕ Close Deck
+          </button>
+        </div>
+
+        {/* Slide Contents */}
+        <div className="flex-1 flex items-center justify-center py-4">
+          {/* SLIDE 1: The Founder Bottleneck */}
+          {slide === 1 && (
+            <div className="w-full space-y-6 text-center">
+              <div className="inline-block rounded-full bg-rose-500/20 border border-rose-500/30 px-4 py-1 text-xs font-bold text-rose-300 uppercase tracking-widest">
+                The Core Problem
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+                The Founder Bottleneck Trap
+              </h2>
+              <p className="text-slate-300 text-base max-w-2xl mx-auto">
+                Why 80% of business founders work 14 hours every single day, but their company revenue stays completely flat.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left pt-2 max-w-3xl mx-auto">
+                <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-5 space-y-2">
+                  <span className="text-xs font-black text-rose-400 uppercase tracking-wider block">❌ The Reactive Firefighter</span>
+                  <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-4">
+                    <li>Starts day by opening WhatsApp & email</li>
+                    <li>Spends 70% of day on ₹300/hr admin tasks</li>
+                    <li>Chases employees for updates continuously</li>
+                    <li>Endless firefighting; zero strategic growth</li>
+                  </ul>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-5 space-y-2">
+                  <span className="text-xs font-black text-emerald-400 uppercase tracking-wider block">✓ The FlowDirector Architect</span>
+                  <ul className="text-xs text-slate-300 space-y-1.5 list-disc pl-4">
+                    <li>Plans One Main Outcome the evening before</li>
+                    <li>Protects mornings with zero email/phone</li>
+                    <li>Delegates any task below Owner Hour Value</li>
+                    <li>Reviews team once a week on Themed Days</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SLIDE 2: Owner Hour Value Formula */}
+          {slide === 2 && (
+            <div className="w-full space-y-6 text-center">
+              <div className="inline-block rounded-full bg-amber-400/20 border border-amber-400/30 px-4 py-1 text-xs font-bold text-amber-300 uppercase tracking-widest">
+                Financial Physics
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+                The Owner Hour Value (OHV) Formula
+              </h2>
+              <p className="text-slate-300 text-base max-w-2xl mx-auto">
+                Your brain is an expensive machine. Know your exact hourly worth.
+              </p>
+
+              <div className="rounded-3xl border border-amber-400/40 bg-slate-950 p-6 sm:p-8 max-w-2xl mx-auto shadow-2xl space-y-4">
+                <div className="text-2xl sm:text-3xl font-black text-amber-400 font-mono">
+                  Target Annual Income ÷ Total Annual Hours = ₹ OHV / hr
+                </div>
+                <hr className="border-slate-800" />
+                <div className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
+                  ⚖️ <b>The ₹300/hr Loss Rule:</b> If a task can be done by an assistant or team member for ₹300–₹500/hr, and you do it yourself, you are burning <b>₹1,500+ every single hour</b> in lost founder leverage.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SLIDE 3: The 3 Operating Pillars */}
+          {slide === 3 && (
+            <div className="w-full space-y-6 text-center">
+              <div className="inline-block rounded-full bg-blue-500/20 border border-blue-500/30 px-4 py-1 text-xs font-bold text-blue-300 uppercase tracking-widest">
+                The 3 Core Pillars
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+                The 3 Operating Pillars for Domination
+              </h2>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left pt-2 max-w-4xl mx-auto">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 space-y-2">
+                  <span className="text-2xl block">🎯</span>
+                  <h4 className="text-sm font-black text-white uppercase">1. Top 3 Monthly KRAs</h4>
+                  <p className="text-xs text-slate-400">Lock in only 3 Big Rocks for the month. Measure progress every Friday.</p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 space-y-2">
+                  <span className="text-2xl block">📅</span>
+                  <h4 className="text-sm font-black text-white uppercase">2. 6 Themed Days</h4>
+                  <p className="text-xs text-slate-400">Batch your cognitive focus (e.g. Marketing Mon, Team Tue, Finance Fri).</p>
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 space-y-2">
+                  <span className="text-2xl block">⚡</span>
+                  <h4 className="text-sm font-black text-white uppercase">3. Quick Capture</h4>
+                  <p className="text-xs text-slate-400">Dump ideas in 3 seconds. Zero cognitive overhead. Clean mental RAM.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SLIDE 4: The Evening Closure Rule */}
+          {slide === 4 && (
+            <div className="w-full space-y-6 text-center">
+              <div className="inline-block rounded-full bg-emerald-500/20 border border-emerald-500/30 px-4 py-1 text-xs font-bold text-emerald-300 uppercase tracking-widest">
+                The Daily Master Habit
+              </div>
+              <h2 className="text-3xl sm:text-5xl font-black tracking-tight text-white leading-tight">
+                "Jo Pehle Likha, Wahi Bachega"
+              </h2>
+              <p className="text-slate-300 text-base max-w-2xl mx-auto">
+                Spend <b>exactly 5 minutes</b> at 6:30 PM doing Evening Closure. Tomorrow's battle is won the night before.
+              </p>
+
+              <div className="rounded-3xl border border-emerald-500/30 bg-emerald-950/20 p-6 max-w-2xl mx-auto text-left space-y-3">
+                <div className="text-xs font-black text-emerald-400 uppercase tracking-wider">Your Daily Evening Closure Checklist:</div>
+                <div className="space-y-2 text-xs text-slate-200">
+                  <div className="flex items-center gap-2"><span>1.</span> <span>Mark today's completed items ✓</span></div>
+                  <div className="flex items-center gap-2"><span>2.</span> <span>Define your <b>One Main Outcome</b> for tomorrow</span></div>
+                  <div className="flex items-center gap-2"><span>3.</span> <span>Select your <b>Top 3 Priorities</b> for tomorrow</span></div>
+                  <div className="flex items-center gap-2"><span>4.</span> <span>Tomorrow morning: zero email/phone until Priority 1 is done!</span></div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Navigation */}
+        <div className="flex items-center justify-between border-t border-slate-800 pt-4">
+          <button 
+            onClick={() => setSlide(Math.max(1, slide - 1))}
+            disabled={slide === 1}
+            className="rounded-xl border border-slate-700 bg-slate-800 px-5 py-2.5 text-xs font-bold text-slate-300 hover:bg-slate-700 disabled:opacity-30 transition"
+          >
+            ← Previous Slide
+          </button>
+
+          <div className="flex items-center gap-1.5">
+            {[1, 2, 3, 4].map(s => (
+              <button key={s} onClick={() => setSlide(s)} className={`h-2.5 rounded-full transition-all ${slide === s ? "w-8 bg-amber-400" : "w-2.5 bg-slate-700 hover:bg-slate-600"}`} />
+            ))}
+          </div>
+
+          <button 
+            onClick={() => {
+              if (slide < totalSlides) setSlide(slide + 1);
+              else onClose();
+            }}
+            className="rounded-xl bg-amber-400 px-6 py-2.5 text-xs font-black text-slate-950 hover:bg-amber-300 transition shadow-md"
+          >
+            {slide < totalSlides ? "Next Slide →" : "Finish Presentation ✓"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Industry KRA & Day Theme Cheat Sheet Modal for Coaches            */
+/* ================================================================== */
+function CoachKrasCheatSheetModal({ onClose, onNotice }){
+  const [selectedIndustry, setSelectedIndustry] = useState(INDUSTRY_CHEAT_SHEETS[0]);
+  const [copied, setCopied] = useState("");
+
+  const handleCopyText = (txt, label) => {
+    navigator.clipboard.writeText(txt);
+    setCopied(label);
+    if (onNotice) onNotice(`Copied ${label} to clipboard!`);
+    setTimeout(() => setCopied(""), 3000);
+  };
+
+  const copyDayThemesText = () => {
+    const lines = Object.entries(selectedIndustry.dayThemes)
+      .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
+      .join("\n");
+    handleCopyText(lines, "Day Themes");
+  };
+
+  const copyKrasText = () => {
+    const lines = selectedIndustry.kras
+      .map((k, i) => `${i+1}. ${k.name} (Target: ${k.target})`)
+      .join("\n");
+    handleCopyText(lines, "KRAs");
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-4xl rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xl space-y-6 max-h-[90vh] flex flex-col justify-between overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+          <div>
+            <span className="rounded-full bg-blue-100 text-blue-900 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider">
+              📋 Coach Cheat Sheet
+            </span>
+            <h3 className="text-xl font-extrabold text-slate-950 mt-1">Industry KRAs &amp; Day Theme Presets</h3>
+          </div>
+          <button onClick={onClose} className="rounded-full bg-slate-100 p-2 text-slate-500 hover:text-slate-900 font-bold">
+            ✕
+          </button>
+        </div>
+
+        {/* Industry Selector Tabs */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+          {INDUSTRY_CHEAT_SHEETS.map(ind => (
+            <button
+              key={ind.id}
+              onClick={() => setSelectedIndustry(ind)}
+              className={`p-3 rounded-2xl text-xs font-bold border transition text-center flex flex-col items-center gap-1 ${
+                selectedIndustry.id === ind.id 
+                  ? "bg-slate-950 text-white border-slate-950 shadow-md scale-102" 
+                  : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              <span className="text-lg">{ind.icon}</span>
+              <span className="truncate w-full text-[11px]">{ind.name.split("&")[0]}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Selected Industry Content */}
+        <div className="space-y-5 bg-slate-50/70 p-5 rounded-2xl border border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-base font-extrabold text-slate-950 flex items-center gap-2">
+              <span>{selectedIndustry.icon}</span>
+              <span>{selectedIndustry.name}</span>
+            </h4>
+            <span className="text-xs text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1 rounded-full font-bold">
+              ⚠️ #1 Time Bleed: {selectedIndustry.timeBleed}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Day Themes */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">📅 Recommended Day Themes</span>
+                <button 
+                  onClick={copyDayThemesText}
+                  className="text-xs font-bold text-blue-700 hover:underline flex items-center gap-1"
+                >
+                  {copied === "Day Themes" ? "✓ Copied!" : "📋 Copy Themes"}
+                </button>
+              </div>
+              <div className="space-y-1.5 text-xs">
+                {Object.entries(selectedIndustry.dayThemes).map(([k, v]) => (
+                  <div key={k} className="flex items-start gap-2 p-1.5 rounded-lg bg-slate-50 border border-slate-100">
+                    <span className="font-mono uppercase font-black text-slate-500 w-10 shrink-0">{k}</span>
+                    <span className="font-medium text-slate-800">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Metric KRAs */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">🎯 Top 4 Actionable Metric KRAs</span>
+                <button 
+                  onClick={copyKrasText}
+                  className="text-xs font-bold text-blue-700 hover:underline flex items-center gap-1"
+                >
+                  {copied === "KRAs" ? "✓ Copied!" : "📋 Copy KRAs"}
+                </button>
+              </div>
+              <div className="space-y-2 text-xs">
+                {selectedIndustry.kras.map((kra, i) => (
+                  <div key={i} className="p-2 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between">
+                    <div>
+                      <span className="font-extrabold text-slate-950 block">{kra.name}</span>
+                      <span className="text-[10px] text-amber-900 font-medium">Target: {kra.target}</span>
+                    </div>
+                    <span className="text-[10px] font-black uppercase text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md">
+                      {kra.unit}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end pt-2">
+          <button onClick={onClose} className="rounded-xl bg-slate-950 px-5 py-2 text-xs font-bold text-white hover:bg-slate-800">
+            Close Cheat Sheet
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
 /*  Coach Operations Portal & Desk                                     */
 /* ================================================================== */
 function CoachPortalDesk({ session, onBack }){
@@ -1243,6 +1677,8 @@ function CoachPortalDesk({ session, onBack }){
   const [outcomeNotes, setOutcomeNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [meetLinkInput, setMeetLinkInput] = useState("");
+  const [showSlideDeck, setShowSlideDeck] = useState(false);
+  const [showKrasModal, setShowKrasModal] = useState(false);
 
   const email = session?.user?.email;
   const userId = session?.user?.id;
@@ -1421,6 +1857,43 @@ function CoachPortalDesk({ session, onBack }){
           </div>
         </div>
 
+        {/* Coach Facilitation Tools Bar */}
+        <div className="rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <span className="text-[10px] font-black uppercase text-amber-900 bg-amber-200/60 px-2.5 py-0.5 rounded-full border border-amber-300">
+              ⚡ LIVE CALL FACILITATION TOOLKIT
+            </span>
+            <h3 className="text-sm font-extrabold text-slate-950 mt-1">Screen-Share Slide Deck &amp; Industry Cheat Sheets</h3>
+            <p className="text-xs text-slate-600">Everything you need to run a high-converting 20-minute executive strategy call.</p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button 
+              onClick={() => setShowSlideDeck(true)}
+              className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white hover:bg-slate-800 transition shadow-sm flex items-center gap-1.5"
+            >
+              <span>🖥️</span>
+              <span>Launch Screen-Share Deck</span>
+            </button>
+            <button 
+              onClick={() => setShowKrasModal(true)}
+              className="rounded-xl bg-white border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-800 hover:bg-slate-50 transition shadow-xs flex items-center gap-1.5"
+            >
+              <span>📋</span>
+              <span>Industry KRA Cheat Sheet</span>
+            </button>
+            <a 
+              href="/flowdirector-coach-playbook.pdf" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="rounded-xl bg-amber-400 border border-amber-500/30 px-4 py-2.5 text-xs font-black text-slate-950 hover:bg-amber-300 transition shadow-xs flex items-center gap-1.5"
+            >
+              <span>📖</span>
+              <span>Playbook PDF ↗</span>
+            </a>
+          </div>
+        </div>
+
         {/* Coach Meet Link Quick Settings */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
           <div className="flex-1 min-w-[280px]">
@@ -1585,6 +2058,15 @@ function CoachPortalDesk({ session, onBack }){
               </div>
             </div>
           </div>
+        )}
+        {/* Slide Deck Modal */}
+        {showSlideDeck && (
+          <CoachSlideDeckModal onClose={() => setShowSlideDeck(false)} />
+        )}
+
+        {/* Industry KRAs Cheat Sheet Modal */}
+        {showKrasModal && (
+          <CoachKrasCheatSheetModal onClose={() => setShowKrasModal(false)} onNotice={say} />
         )}
       </main>
     </div>
