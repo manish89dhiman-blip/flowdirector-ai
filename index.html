@@ -44,7 +44,7 @@ const sb = CONFIGURED ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON
 /* ------------------------------------------------------------------ */
 const ICON = {
   standup:"🎯", capture:"📥", followup:"📋", daily:"☀️", weekly:"🗓️", monthly:"📅", maybe:"💡", reference:"📓",
-  goals:"🎯", people:"📊", team:"👥",
+  goals:"🎯", people:"📊", team:"👥", manual:"📖", guide:"📚", docs:"📚",
   settings:"⚙️", plus:"＋", trash:"🗑", check:"✓", send:"➤", x:"✕", star:"★",
   starO:"☆", left:"‹", right:"›", info:"ⓘ", download:"⤓"
 };
@@ -2113,6 +2113,9 @@ function Root(){
   if (path === "/terms") return <TermsPage session={session} />;
   if (path === "/contact") return <ContactPage session={session} />;
   if (path === "/refund" || path === "/refund-policy") return <RefundPage session={session} />;
+  if (path === "/manual" || path === "/guide" || path === "/help" || path === "/docs" || path === "/knowledge-base") {
+    return <StandaloneManualPage session={session} onBack={() => navigate("/")} />;
+  }
   if (path === "/admin" || path === "/admin-login" || path === "/admin-desk") {
     return <AdminPortalDesk session={session} onBack={() => navigate("/")} />;
   }
@@ -4633,6 +4636,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
     ...(role ? [["goals","Goals"]] : []),
     ...(canSeeOthers ? [["people","Dashboard"]] : []),
     ...(role === "owner" ? [["team","Team"]] : []),
+    ["manual","User Guide"],
     ["settings","Settings"],
   ];
 
@@ -4736,7 +4740,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
           onOpenTraining={() => setShowTrainingModal(true)} 
         />
 
-        {tab!=="daily" && tab!=="weekly" && tab!=="standup" && <DueBanner data={data} />}
+        {tab!=="daily" && tab!=="weekly" && tab!=="standup" && tab!=="manual" && <DueBanner data={data} />}
         {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} />}
         {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} />}
         {tab==="followup" && <FollowUpView data={data} patch={patch} />}
@@ -4748,6 +4752,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         {tab==="goals" && <GoalsView orgCtx={orgCtx} meId={userId} />}
         {tab==="people" && <PeopleView orgCtx={orgCtx} meId={userId} />}
         {tab==="team" && <TeamView orgCtx={orgCtx} meId={userId} />}
+        {tab==="manual" && <KnowledgeBaseManualView onOpenTraining={() => setShowTrainingModal(true)} />}
         {tab==="settings" && <SettingsView data={data} patch={patch} setData={setData} userId={userId}
                                orgCtx={orgCtx} orgError={orgError}
                                onLeftOrg={onLeftOrg} onStartCompany={onStartCompany}
@@ -6169,6 +6174,441 @@ function ReferenceView({ data, patch }){
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  6b · KNOWLEDGE BASE & EXECUTIVE USER MANUAL                       */
+/* ================================================================== */
+const MANUAL_CHAPTERS = [
+  {
+    id: "philosophy",
+    category: "Core Philosophy",
+    title: "1. The Core Philosophy & Founder Leverage",
+    icon: "👑",
+    description: "The mental operating system that transitions you from a 14-hour reactive firefighter into an architect of leverage.",
+    sections: [
+      {
+        title: "1.1 The Priority Pre-Emption Rule: 'Jo Pehle Likha, Wahi Bachega'",
+        content: `Average founders start their day by opening WhatsApp, email, or Slack. This immediately surrenders their cognitive focus to other people's emergencies.
+        
+In FlowDirector, your day is won or lost the evening before. Whatever outcome and top 3 priorities you write down during your 5-Minute Evening Closure become your non-negotiable anchor. When you wake up, your morning is shielded until your One Main Outcome is executed.`
+      },
+      {
+        title: "1.2 The Owner Hour Value (OHV) & The ₹300/hr Founder Trap",
+        content: `Your brain is an expensive strategic asset. Your Owner Hour Value (OHV) is calculated as:
+Target Annual Income ÷ Total Annual Working Hours (Days/Week × Hours/Day × 50 Weeks).
+
+If your OHV is ₹3,500/hr, every time you format an invoice, chase an employee, or do a routine spreadsheet edit that a ₹300/hr assistant could do, you are literally losing ₹3,200 every single hour. FlowDirector visually highlights high-value tasks and flags low-value tasks for delegation.`
+      },
+      {
+        title: "1.3 Intention vs. Reality (Eliminating Time Optimism)",
+        content: `Most productivity apps only let you create endless to-do lists that roll over forever. FlowDirector tracks Planned Hourly Blocks against Actual Executed Reality so you can identify where your focus leaks and build operational discipline.`
+      }
+    ]
+  },
+  {
+    id: "capture",
+    category: "Daily & Weekly Rhythms",
+    title: "2. The Quick Capture Inbox",
+    icon: "📥",
+    description: "Zero-friction mental RAM offloader that eliminates self-messaging on WhatsApp and forgotten ideas.",
+    sections: [
+      {
+        title: "2.1 The 3-Second Mental Dump",
+        content: `Whenever an idea, follow-up, or to-do enters your head during the day, do not try to remember it and do not message yourself on WhatsApp. Type it into Quick Capture and hit Enter. It takes 3 seconds and clears your working memory immediately.`
+      },
+      {
+        title: "2.2 Categorization & Estimated Hourly Value",
+        content: `Each captured item can be tagged with a Category (e.g. Sales, Ops, Finance, Personal) and an Estimated ₹ Value (e.g. ₹5,000/hr Strategic vs ₹300/hr Administrative).`
+      },
+      {
+        title: "2.3 The 5:30 PM Daily Inbox Triage",
+        content: `At the end of your operational day, open your Quick Capture inbox. In 2 minutes, route each item:
+• To Daily: Place directly into tomorrow's hourly focus blocks.
+• To Weekly Someday: Place into this week's theme buckets.
+• To Delegation: Assign directly to a team member with a due date.`
+      }
+    ]
+  },
+  {
+    id: "daily",
+    category: "Daily & Weekly Rhythms",
+    title: "3. Daily Cockpit & Hourly Block Alignment",
+    icon: "☀️",
+    description: "Your daily mission control center for proactive execution and evening closure.",
+    sections: [
+      {
+        title: "3.1 One Main Outcome (★) & Top 3 Priorities",
+        content: `Every day has exactly ONE headline outcome (★). If you only accomplish this single thing today, your day was a success. Below it, list up to 3 tactical priorities.`
+      },
+      {
+        title: "3.2 Hourly Planned vs. Actual Time Slot Chart",
+        content: `Plan your day in 60-minute blocks (e.g. 9am Deep Work, 11am Sales Calls, 3pm Team Reviews). As your day unfolds, note the actual reality to calibrate your focus.`
+      },
+      {
+        title: "3.3 Repeating Routine Checklist & Overdue Alerts",
+        content: `Items in your Routine repeat every single day (e.g. Morning Journal, Cash Balance Check, Evening Closure). Checking off an item resets tomorrow. Any past-due items from anywhere in your planner automatically appear in the red Overdue banner.`
+      },
+      {
+        title: "3.4 The 5-Minute Evening Closure Master Protocol",
+        content: `At 6:30 PM, spend 5 minutes closing your day:
+1. Mark completed tasks ✓.
+2. Score your day (1 to 3 stars).
+3. Set your One Main Outcome and 3 Priorities for tomorrow.
+4. Shut your laptop with zero mental residue.`
+      }
+    ]
+  },
+  {
+    id: "weekly",
+    category: "Daily & Weekly Rhythms",
+    title: "4. Weekly Theming Grid & Cognitive Batching",
+    icon: "🗓️",
+    description: "Eliminate context-switching fatigue by dedicating specific days of the week to specific business engines.",
+    sections: [
+      {
+        title: "4.1 The Power of Day Themes",
+        content: `Context switching kills up to 40% of executive productivity. By giving each day a thematic headline, you batch similar decisions together (e.g. Monday = Team & KRAs, Tuesday = Sales & Marketing, Friday = Finance & Strategy).`
+      },
+      {
+        title: "4.2 Configuring Your Day Themes",
+        content: `In the Weekly view or Settings, customize your 6 weekly headlines. These titles appear across your entire workspace as a visual focus reminder.`
+      }
+    ]
+  },
+  {
+    id: "monthly",
+    category: "Daily & Weekly Rhythms",
+    title: "5. Monthly Recurring Engine & Compliance Tray",
+    icon: "📅",
+    description: "Never miss a payroll, GST, TDS, board meeting, or recurring statutory deadline again.",
+    sections: [
+      {
+        title: "5.1 Fixed Recurring Monthly Deadlines",
+        content: `Add items that happen on the same day every single month (e.g. 7th = TDS Deposit, 10th = Salary Disbursement, 20th = GSTR-3B Filing, 28th = Board Review). FlowDirector plots them across days 1 to 31 automatically.`
+      },
+      {
+        title: "5.2 The Monthly Tray",
+        content: `Store big strategic initiatives slated for this month that are not tied to a specific day yet.`
+      }
+    ]
+  },
+  {
+    id: "delegation",
+    category: "Delegation & Standups",
+    title: "6. Follow-Up & Delegation Radar",
+    icon: "📋",
+    description: "A centralized dashboard for everything you have delegated or are waiting on from others.",
+    sections: [
+      {
+        title: "6.1 Delegating Tasks with Assignees & Due Dates",
+        content: `Tag any task as DELEGATE or WAITING-FOR and select an assignee from your team. It immediately leaves your daily cognitive load and enters your Follow-Up radar.`
+      },
+      {
+        title: "6.2 Automatic Resolution via Team Member Desk",
+        content: `When your team member marks the task as complete in their Focus Desk, it automatically resolves in your follow-up list with their completion timestamp and notes.`
+      }
+    ]
+  },
+  {
+    id: "team_desk",
+    category: "Delegation & Standups",
+    title: "7. Team Member & Assistant Focus Desk",
+    icon: "👤",
+    description: "A dedicated distraction-free workspace for employees and executive assistants.",
+    sections: [
+      {
+        title: "7.1 Daily 3 Standup Priorities (Morning Protocol)",
+        content: `Invited team members log their Top 3 Deliverables for today and link each one to their assigned KRA. A live progress bar tracks completion throughout the day.`
+      },
+      {
+        title: "7.2 One-Click WhatsApp Standup Share",
+        content: `Team members can click 'Share Standup Update' to copy a formatted message to WhatsApp or Slack to update leadership instantly.`
+      },
+      {
+        title: "7.3 Delegated Deliverables & 'Mark as Done' Action",
+        content: `Employees see all tasks assigned to them by leadership. Clicking '[ ✓ Mark as Done & Notify ]' prompts for an optional deliverable note and marks it complete.`
+      }
+    ]
+  },
+  {
+    id: "goals",
+    category: "KRAs & Dashboard",
+    title: "8. Strategic Goals, KRAs & Attainment Tracker",
+    icon: "🎯",
+    description: "Connect daily tactical time blocks to high-level monthly and quarterly company metrics.",
+    sections: [
+      {
+        title: "8.1 Defining Key Result Areas (KRAs) & KPIs",
+        content: `Create high-level KRAs (e.g. Sales Revenue, Retention, Hiring) and attach metric KPIs with target values and cadences (Monthly, Quarterly).`
+      },
+      {
+        title: "8.2 Logging Actuals & Attainment Scoring",
+        content: `Log actual performance numbers. FlowDirector calculates attainment % with color-coded health indicators (Green = 100%+, Amber = 80-99%, Red = < 80%).`
+      }
+    ]
+  },
+  {
+    id: "people",
+    category: "KRAs & Dashboard",
+    title: "9. Executive Dashboard (People View)",
+    icon: "📊",
+    description: "Full visibility into how your leadership team is planning, executing, and following through.",
+    sections: [
+      {
+        title: "9.1 Team Planning Discipline & Scorecards",
+        content: `Owners and managers can view team metrics: Priority Completion Rate, Days Planned %, Average Day Scores, and Overdue Deliverables.`
+      },
+      {
+        title: "9.2 Real-Time Live Standup Inspection",
+        content: `Click on any team member's card to see their live 3 priorities for today, what they've checked off, and any blockers they flagged for you.`
+      }
+    ]
+  },
+  {
+    id: "settings",
+    category: "Settings & Billing",
+    title: "10. Workspace Settings, Team Invites & Billing",
+    icon: "⚙️",
+    description: "Manage your company configuration, custom categories, user permissions, and Razorpay billing.",
+    sections: [
+      {
+        title: "10.1 Owner Hour Value Settings",
+        content: `Configure your target monthly/annual income, working days per week (1-7), and working hours per day. Your OHV threshold recalculates instantly.`
+      },
+      {
+        title: "10.2 Inviting Team Members & Roles",
+        content: `Invite employees and assistants via email. Assign roles: Owner (Full workspace control), Manager (Views direct reports), or Member (Views own focus desk).`
+      },
+      {
+        title: "10.3 Billing, Upgrades & Invoices",
+        content: `Manage your subscription plan (Solo, Team, Scale), add extra user seats with prorated Razorpay billing, and download GST invoices.`
+      }
+    ]
+  }
+];
+
+function KnowledgeBaseManualView({ onOpenTraining }){
+  const [search, setSearch] = useState("");
+  const [activeCategory, setActiveCategory] = useState("all");
+  const [expandedChapters, setExpandedChapters] = useState({ philosophy: true, capture: true });
+
+  const categories = [
+    { id: "all", label: "All Topics" },
+    { id: "Core Philosophy", label: "Core Philosophy" },
+    { id: "Daily & Weekly Rhythms", label: "Daily & Weekly" },
+    { id: "Delegation & Standups", label: "Delegation & Team" },
+    { id: "KRAs & Dashboard", label: "KRAs & Dashboard" },
+    { id: "Settings & Billing", label: "Settings & Billing" }
+  ];
+
+  const filteredChapters = MANUAL_CHAPTERS.filter(ch => {
+    const matchesCategory = activeCategory === "all" || ch.category === activeCategory;
+    if (!matchesCategory) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const matchesTitle = ch.title.toLowerCase().includes(q) || ch.description.toLowerCase().includes(q);
+    const matchesSection = ch.sections.some(s => s.title.toLowerCase().includes(q) || s.content.toLowerCase().includes(q));
+    return matchesTitle || matchesSection;
+  });
+
+  const toggleChapter = (id) => {
+    setExpandedChapters(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Knowledge Base Header Banner */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-xs flex flex-wrap items-center justify-between gap-6">
+        <div className="space-y-2 max-w-2xl">
+          <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-blue-900">
+            <span>📚 EXECUTIVE KNOWLEDGE BASE &amp; USER MANUAL</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-950 tracking-tight">
+            How to Master Your FlowDirector Cockpit
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-medium">
+            A comprehensive guide covering every client-facing feature, the Owner Hour Value methodology, morning standup protocols, and delegation tracking.
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          {onOpenTraining && (
+            <button 
+              onClick={onOpenTraining}
+              className="w-full sm:w-auto rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-5 py-3 text-xs font-black transition shadow-sm flex items-center justify-center gap-2"
+            >
+              <span>📹</span>
+              <span>Book 1:1 Strategy Session</span>
+            </button>
+          )}
+          <a 
+            href="/flowdirector-coach-playbook.pdf" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-4 py-3 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+          >
+            <span>📖</span>
+            <span>Download Coach PDF ↗</span>
+          </a>
+        </div>
+      </div>
+
+      {/* Search and Category Filter Toolbar */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+        <div className="relative">
+          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+          <input 
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search knowledge base (e.g. Owner Hour Value, Evening Closure, Quick Capture, Standup, KRAs)..."
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 py-2.5 text-xs text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-slate-700">
+              ✕ Clear
+            </button>
+          )}
+        </div>
+
+        {/* Category Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {categories.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setActiveCategory(c.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition ${
+                activeCategory === c.id 
+                  ? "bg-slate-950 text-white shadow-xs" 
+                  : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Chapters Accordion / List */}
+      <div className="space-y-4">
+        {filteredChapters.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center space-y-2">
+            <span className="text-3xl block">🔍</span>
+            <h4 className="text-sm font-bold text-slate-800">No matching articles found</h4>
+            <p className="text-xs text-slate-500">Try searching for different keywords like 'OHV', 'Closure', 'Team', or clear your search.</p>
+          </div>
+        )}
+
+        {filteredChapters.map(ch => {
+          const isOpen = expandedChapters[ch.id] || !!search.trim();
+          return (
+            <div key={ch.id} className="rounded-3xl border border-slate-200 bg-white shadow-xs overflow-hidden transition">
+              {/* Chapter Header Bar */}
+              <button 
+                onClick={() => toggleChapter(ch.id)}
+                className="w-full text-left p-5 sm:p-6 flex items-center justify-between gap-4 hover:bg-slate-50/70 transition border-b border-transparent"
+              >
+                <div className="flex items-start gap-3.5">
+                  <span className="text-2xl sm:text-3xl shrink-0">{ch.icon}</span>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md">
+                        {ch.category}
+                      </span>
+                    </div>
+                    <h3 className="text-base sm:text-lg font-black text-slate-950 mt-1">
+                      {ch.title}
+                    </h3>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      {ch.description}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold shrink-0">
+                  {isOpen ? "▲" : "▼"}
+                </div>
+              </button>
+
+              {/* Chapter Expanded Body */}
+              {isOpen && (
+                <div className="p-5 sm:p-6 pt-0 space-y-5 border-t border-slate-100 bg-slate-50/30">
+                  {ch.sections.map((sec, idx) => (
+                    <div key={idx} className="rounded-2xl border border-slate-200 bg-white p-5 space-y-2.5 shadow-2xs">
+                      <h4 className="text-sm font-extrabold text-slate-950 flex items-center gap-2">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                        <span>{sec.title}</span>
+                      </h4>
+                      <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line font-medium">
+                        {sec.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Bottom VIP Help Box */}
+      <div className="rounded-3xl border border-amber-300 bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 p-6 sm:p-8 text-white shadow-xl flex flex-wrap items-center justify-between gap-6">
+        <div className="space-y-1.5 max-w-xl">
+          <span className="text-[10px] font-black uppercase tracking-wider text-amber-200 bg-black/20 px-2.5 py-0.5 rounded-full">
+            VIP 1-on-1 Implementation Coaching
+          </span>
+          <h3 className="text-xl sm:text-2xl font-black">
+            Want us to configure your cockpit live with you?
+          </h3>
+          <p className="text-xs text-amber-100 leading-relaxed font-medium">
+            Every active account includes a complimentary 20-minute private strategy session with a certified FlowDirector implementation coach.
+          </p>
+        </div>
+
+        {onOpenTraining && (
+          <button 
+            onClick={onOpenTraining}
+            className="rounded-2xl bg-slate-950 text-white hover:bg-slate-800 px-6 py-3.5 text-xs font-black transition shadow-lg shrink-0 flex items-center gap-2"
+          >
+            <span>📹</span>
+            <span>Book My 1:1 Strategy Call →</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StandaloneManualPage({ session, onBack }){
+  const [showTraining, setShowTraining] = useState(false);
+
+  return (
+    <div className="min-h-screen bg-[#fbf9fa] text-slate-900 font-sans antialiased">
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
+          <Logo height={44} lightMode={true} onClick={() => navigate("/")} />
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate("/")} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-800 hover:bg-slate-50 transition shadow-xs">
+              ← Return to Cockpit
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto p-4 sm:p-6 py-8">
+        <KnowledgeBaseManualView onOpenTraining={() => setShowTraining(true)} />
+      </main>
+
+      <LegalFooter />
+
+      {showTraining && (
+        <ExecutiveWelcomeOnboardingFlow 
+          session={session}
+          onClose={() => setShowTraining(false)}
+        />
+      )}
     </div>
   );
 }
