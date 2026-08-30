@@ -1910,15 +1910,9 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
 
       // 2. Launch Razorpay payment mandate checkout
       setMsg("Workspace created! Launching Razorpay payment mandate authorization...");
-      try {
-        await startCheckout(planCode, "razorpay");
-      } catch (checkoutErr) {
-        const reason = checkoutErr.message || "";
-        setMsg(`Workspace created! Please authorize your Razorpay mandate on the next screen to activate your cockpit. (${reason})`);
-      }
-      onJoined({ membership, org, pendingInvites:[] });
+      await startCheckout(planCode, "razorpay");
     } catch (e) { 
-      setMsg(e.message || "Couldn't set up the company."); 
+      setMsg(e.message || "Couldn't complete Razorpay mandate checkout."); 
     }
     setBusy(false);
   };
