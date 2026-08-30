@@ -1979,13 +1979,13 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
               </div>
 
               <div 
-                onClick={() => setPlanCode("enterprise")}
+                onClick={() => setPlanCode("business")}
                 className={`rounded-2xl border p-4 cursor-pointer transition ${
-                  planCode === "enterprise" ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
+                  planCode === "business" ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-400/40" : "border-slate-200 bg-slate-50 hover:border-slate-300"
                 }`}
               >
-                <div className="text-xs font-bold text-slate-950">Enterprise Plan</div>
-                <div className="text-lg font-extrabold text-slate-950 mt-1">₹9,999<span className="text-xs font-normal text-slate-500"> / mo</span></div>
+                <div className="text-xs font-bold text-slate-950">Business Plan</div>
+                <div className="text-lg font-extrabold text-slate-950 mt-1">₹3,999<span className="text-xs font-normal text-slate-500"> / mo</span></div>
                 <div className="text-[11px] text-slate-500 mt-1 font-medium">Includes 50 Seats • 15-Day Free Trial</div>
               </div>
             </div>
