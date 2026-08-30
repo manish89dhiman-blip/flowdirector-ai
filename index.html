@@ -4764,7 +4764,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} />}
         {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} />}
         {tab==="followup" && <FollowUpView data={data} patch={patch} orgCtx={orgCtx} meId={userId} />}
-        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} />}
+        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} />}
         {tab==="weekly" && <WeeklyView data={data} patch={patch} />}
         {tab==="monthly" && <MonthlyView data={data} patch={patch} onGoToDay={(dateStr)=>{setDailyDate(dateStr); setTab("daily");}} />}
         {tab==="ideas" && <IdeasAndReferenceView data={data} patch={patch} />}
@@ -6194,8 +6194,19 @@ function generateDayIcs(data, dk) {
   ].join("\r\n");
 }
 
-function CalendarSyncModal({ data, dk, onClose }){
+function CalendarSyncModal({ data, dk, userId, onClose }){
+  const [copiedFeed, setCopiedFeed] = useState(false);
   const icsData = generateDayIcs(data, dk);
+
+  const feedUrl = userId ? `${SUPABASE_URL}/functions/v1/calendar-feed?u=${userId}` : "";
+  const webcalUrl = feedUrl ? feedUrl.replace(/^https?:\/\//i, "webcal://") : "";
+
+  const copyFeedUrl = () => {
+    if (!feedUrl) return;
+    navigator.clipboard.writeText(feedUrl);
+    setCopiedFeed(true);
+    setTimeout(() => setCopiedFeed(false), 3000);
+  };
 
   const downloadIcsFile = () => {
     const blob = new Blob([icsData], { type: "text/calendar;charset=utf-8" });
@@ -6209,10 +6220,6 @@ function CalendarSyncModal({ data, dk, onClose }){
     URL.revokeObjectURL(url);
   };
 
-  const day = data.daily?.[dk] || {};
-  const mainOutcome = day.outcome || "Executive Focus Block";
-  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("★ " + mainOutcome)}&details=${encodeURIComponent("Planned via FlowDirector Cockpit")}`;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
       <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-5">
@@ -6220,61 +6227,71 @@ function CalendarSyncModal({ data, dk, onClose }){
           <div className="flex items-center gap-2.5">
             <span className="text-2xl">🗓️</span>
             <div>
-              <h3 className="font-extrabold text-base text-slate-950">Calendar Sync &amp; .ICS Export</h3>
-              <p className="text-xs text-slate-500">Sync your daily focus blocks to Google, Apple, or Outlook Calendar</p>
+              <h3 className="font-extrabold text-base text-slate-950">Live Calendar Sync &amp; Feed</h3>
+              <p className="text-xs text-slate-500">Keep Google, Apple, and Outlook Calendars continuously updated</p>
             </div>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700 font-bold">✕</button>
         </div>
 
-        {/* Option 1: Direct 1-Click .ICS Download */}
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2">
+        {/* Feature 1: Live Continuous Subscription Feed */}
+        {feedUrl && (
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse"></span>
+                <span>Live Auto-Updating Subscription (Always in Sync)</span>
+              </span>
+            </div>
+            <p className="text-xs text-slate-700">
+              Subscribe once. Whenever you edit time blocks or priorities in FlowDirector, your calendar updates automatically in the background.
+            </p>
+            
+            <div className="flex flex-wrap gap-2 pt-1">
+              <a
+                href={webcalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2 px-3 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
+              >
+                <span>🍏</span>
+                <span>Subscribe in Apple Calendar</span>
+              </a>
+              <button
+                onClick={copyFeedUrl}
+                className="rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 py-2 px-3.5 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+              >
+                <span>{copiedFeed ? "✓" : "📋"}</span>
+                <span>{copiedFeed ? "URL Copied!" : "Copy Feed URL"}</span>
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-indigo-100 text-[11px] text-slate-600 space-y-1">
+              <p><b>Google Calendar setup:</b> Copy Feed URL &gt; Go to Google Calendar &gt; <i>Other calendars (+)</i> &gt; <i>From URL</i> &gt; Paste.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Feature 2: Static 1-Click .ICS File Download */}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase tracking-wider text-amber-900">
-              Option 1: 1-Click .ICS File Download
+            <span className="text-xs font-black uppercase tracking-wider text-slate-700">
+              Snapshot Export: Single-Day .ICS File
             </span>
-            <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-md">
-              With 15-Min Alarms
+            <span className="text-[10px] font-bold text-slate-600 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+              {prettyDate(dk)}
             </span>
           </div>
-          <p className="text-xs text-slate-700">
-            Download your scheduled time blocks and One Main Outcome for <b>{prettyDate(dk)}</b> into a standard calendar file.
+          <p className="text-xs text-slate-600">
+            Download a standalone snapshot of today's One Main Outcome and planned hourly focus blocks.
           </p>
           <button
             onClick={downloadIcsFile}
-            className="w-full rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2.5 text-xs font-black shadow-xs transition flex items-center justify-center gap-1.5"
+            className="w-full rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
           >
             <span>📥</span>
-            <span>Download .ICS Calendar File</span>
+            <span>Download Static .ICS for {prettyDate(dk)}</span>
           </button>
-        </div>
-
-        {/* Option 2: 1-Click Google Calendar */}
-        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
-          <span className="text-xs font-black uppercase tracking-wider text-slate-700 block">
-            Option 2: 1-Click Google Calendar Event
-          </span>
-          <a
-            href={gcalUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 py-2.5 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
-          >
-            <span>📅</span>
-            <span>Add Main Outcome to Google Calendar ↗</span>
-          </a>
-        </div>
-
-        {/* Import Instructions */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2 text-xs text-slate-600">
-          <span className="font-extrabold uppercase tracking-wider text-slate-800 block text-[11px]">
-            How to Import on Phone &amp; Laptop:
-          </span>
-          <ul className="space-y-1 list-disc pl-4">
-            <li><b>Apple Calendar (Mac/iPhone):</b> Open the downloaded <code>.ics</code> file; tap <i>Add All to Calendar</i>.</li>
-            <li><b>Google Calendar:</b> Go to Google Calendar &gt; <i>Settings</i> &gt; <i>Import</i> &gt; Select the <code>.ics</code> file.</li>
-            <li><b>Outlook:</b> Double click the file or drag into Outlook Calendar.</li>
-          </ul>
         </div>
 
         <div className="flex items-center justify-end">
@@ -6287,7 +6304,7 @@ function CalendarSyncModal({ data, dk, onClose }){
   );
 }
 
-function DailyView({ data, patch, dk, setDk }){
+function DailyView({ data, patch, dk, setDk, userId }){
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const blank=()=>({outcome:"",priorities:["","",""],marks:["","",""],blocks:{},actual:{},closure:{score:0,ate:"",family:""},routineDone:{}});
   const day=data.daily[dk]||blank();
@@ -6327,11 +6344,11 @@ function DailyView({ data, patch, dk, setDk }){
           className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1.5"
         >
           <span>🗓️</span>
-          <span>Calendar Sync &amp; .ICS</span>
+          <span>Calendar Sync &amp; Feed</span>
         </button>
       </div>
 
-      {showCalendarModal && <CalendarSyncModal data={data} dk={dk} onClose={() => setShowCalendarModal(false)} />}
+      {showCalendarModal && <CalendarSyncModal data={data} dk={dk} userId={userId} onClose={() => setShowCalendarModal(false)} />}
       <OverduePanel data={data} patch={patch} />
       {dueToday.length>0 && (
         <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
