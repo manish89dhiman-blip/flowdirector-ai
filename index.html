@@ -581,6 +581,69 @@ async function setSubscription(orgId, { plan_code, status, seats, until }){
   if (error) throw error;
 }
 
+async function loadPlatformSetting(key, fallback = "") {
+  try {
+    const { data } = await sb.from("platform_settings").select("value").eq("key", key).maybeSingle();
+    return (data && data.value) ? data.value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function savePlatformSetting(key, value) {
+  const { error } = await sb.from("platform_settings").upsert({ key, value, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+async function updateOrgTraining(orgId, updates) {
+  const { error } = await sb.from("organizations").update(updates).eq("id", orgId);
+  if (error) throw error;
+}
+
+const SAMPLE_EXECUTIVE_BLUEPRINT = {
+  settings: { income: 500000, hours: 200 },
+  dayThemes: {
+    mon: "Strategic Vision & Pipeline",
+    tue: "Operations & Delivery Systems",
+    wed: "Automation & Product Growth",
+    thu: "Team Leadership & 1:1 Reviews",
+    fri: "Finance, Metrics & Weekly Review",
+    sat: "Deep Focus & Knowledge",
+    sun: "Recharge & Family"
+  },
+  categories: ["Strategy", "Hiring", "Sales", "Operations", "Finance", "Personal"],
+  taskTypeLabels: { ...DEFAULT_TASK_TYPE_LABELS },
+  team: [
+    { name: "Executive Assistant", role: "Ops Lead", email: "assistant@company.com" },
+    { name: "Sales Lead", role: "Growth", email: "sales@company.com" }
+  ],
+  captures: [
+    { id: uid(), text: "Delegate weekly invoice reconciliation & GST filing", type: "DELEGATE", cat: "Finance", created: new Date().toISOString() },
+    { id: uid(), text: "Draft quarterly business expansion roadmap", type: "SCHEDULE", cat: "Strategy", created: new Date().toISOString() },
+    { id: uid(), text: "Audit customer onboarding drop-off points with sales lead", type: "WAITING-FOR", cat: "Sales", created: new Date().toISOString() },
+    { id: uid(), text: "Review automation for client intake questionnaires", type: "AUTOMATE", cat: "Operations", created: new Date().toISOString() }
+  ],
+  daily: {},
+  dailyBackup: [
+    { id: uid(), text: "Review Weekly Cash Flow & Receivables", type: "DAILY", cat: "Finance", done: false },
+    { id: uid(), text: "Conduct 15-min Morning Standup with Core Team", type: "DAILY", cat: "Operations", done: false }
+  ],
+  weekly: {},
+  weeklySomeday: [],
+  monthly: {},
+  monthlyTray: [],
+  recurringMonthly: [
+    { id: uid(), text: "Monthly P&L and Strategic Goal Review", day: 1, cat: "Finance" },
+    { id: uid(), text: "Executive Compensation & Bonus Distribution", day: 5, cat: "Finance" }
+  ],
+  maybe: [
+    { id: uid(), text: "Explore AI automated customer support bot integration", revisit: "", created: new Date().toISOString() }
+  ],
+  reference: [
+    { id: uid(), title: "Core Delegation Matrix", body: "Rule: If a task has an hourly value below ₹2,500/hr, delegate or automate it immediately.", created: new Date().toISOString() }
+  ]
+};
+
 async function requestPlan(orgId, planCode, note, userId){
   const { error } = await sb.from("plan_requests").insert({
     org_id: orgId, plan_code: planCode, note: note || null, requested_by: userId,
@@ -2256,6 +2319,320 @@ function OnboardingScreen({ session, pendingInvites, onJoined, onSolo }){
 }
 
 /* ================================================================== */
+/*  Training & Coaching Call Modal (Google Meet)                      */
+/* ================================================================== */
+function TrainingBookingModal({ orgCtx, onClose, onBookingUpdated }) {
+  const org = orgCtx?.org;
+  const isBooked = org?.training_status === "booked";
+  const [preferredDate, setPreferredDate] = useState("");
+  const [preferredTime, setPreferredTime] = useState("11:00 AM");
+  const [topic, setTopic] = useState("Owner Hour Value & Delegation Setup");
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [externalUrl, setExternalUrl] = useState("");
+
+  useEffect(() => {
+    loadPlatformSetting("google_meet_booking_url", "https://calendar.google.com/calendar/appointments/schedules")
+      .then(setExternalUrl);
+  }, []);
+
+  const handleBook = async () => {
+    if (!preferredDate) {
+      setMsg("Please select your preferred date for the Google Meet call.");
+      return;
+    }
+    setBusy(true); setMsg("");
+    try {
+      const scheduledTimeStr = `${preferredDate} at ${preferredTime} (IST)`;
+      const meetLink = "https://meet.google.com/new";
+      await updateOrgTraining(org.id, {
+        training_status: "booked",
+        training_booked_at: new Date().toISOString(),
+        training_notes: `Scheduled for: ${scheduledTimeStr} | Topic: ${topic} ${notes ? `| Notes: ${notes}` : ""}`,
+        training_meet_link: meetLink
+      });
+      if (onBookingUpdated) onBookingUpdated();
+      setMsg("Training session confirmed! We have reserved your Google Meet slot.");
+    } catch (e) {
+      setMsg(e.message || "Couldn't save booking.");
+    }
+    setBusy(false);
+  };
+
+  const handleCancelOrReschedule = async () => {
+    setBusy(true);
+    try {
+      await updateOrgTraining(org.id, {
+        training_status: "unbooked",
+        training_booked_at: null
+      });
+      if (onBookingUpdated) onBookingUpdated();
+    } catch (e) {
+      setMsg(e.message || "Couldn't update booking.");
+    }
+    setBusy(false);
+  };
+
+  const handleSkip = async () => {
+    try {
+      if (org && org.training_status === "unbooked") {
+        await updateOrgTraining(org.id, { training_status: "skipped" });
+        if (onBookingUpdated) onBookingUpdated();
+      }
+    } catch (_) {}
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs">
+      <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 text-slate-900 shadow-2xl space-y-6">
+        <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-2xl border border-emerald-200 text-emerald-700">
+              📹
+            </div>
+            <div>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100/70 px-2.5 py-0.5 text-[10px] font-bold text-emerald-950 mb-1">
+                COMPLIMENTARY EXECUTIVE COACHING
+              </div>
+              <h2 className="text-xl font-extrabold text-slate-950">1-on-1 Google Meet Training Call</h2>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition">
+            ✕
+          </button>
+        </div>
+
+        {isBooked ? (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 text-left space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                <span className="text-xs font-bold text-emerald-950 uppercase tracking-wider">Session Scheduled</span>
+              </div>
+              <div className="text-sm font-bold text-slate-900">
+                {org.training_notes || "Executive Onboarding Strategy Call"}
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Your 1-on-1 session is booked. We will connect over Google Meet to review your company KRAs, calculate delegation velocity, and set up your team's weekly focus grid.
+              </p>
+              <div className="pt-2 flex flex-wrap gap-2">
+                <a 
+                  href={org.training_meet_link || "https://meet.google.com"} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-sm inline-flex items-center gap-1.5"
+                >
+                  <span>Open Google Meet</span>
+                  <span>↗</span>
+                </a>
+                <button 
+                  onClick={handleCancelOrReschedule} 
+                  disabled={busy}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-xs"
+                >
+                  Reschedule / Change Slot
+                </button>
+              </div>
+            </div>
+            <button onClick={onClose} className="w-full py-3 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition">
+              Back to Cockpit →
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+              Accelerate your team's results with a dedicated 20-minute onboarding strategy call with our product specialist. We will help you dial in your <b>Owner Hour Value</b>, configure custom task labels, and structure your monthly KRAs.
+            </p>
+
+            {externalUrl && (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50/50 p-4 flex items-center justify-between gap-3">
+                <div className="text-xs text-blue-950 font-medium">
+                  <b>Prefer direct calendar booking?</b> Pick a live instant slot on our Google Calendar schedule.
+                </div>
+                <a 
+                  href={externalUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="shrink-0 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-blue-700 transition shadow-xs flex items-center gap-1"
+                >
+                  <span>Open Calendar</span>
+                  <span>↗</span>
+                </a>
+              </div>
+            )}
+
+            <div className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Preferred Date</label>
+                  <input 
+                    type="date" 
+                    value={preferredDate} 
+                    onChange={e => setPreferredDate(e.target.value)}
+                    min={new Date().toISOString().split("T")[0]}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Preferred Time Slot (IST)</label>
+                  <select 
+                    value={preferredTime} 
+                    onChange={e => setPreferredTime(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                  >
+                    <option value="10:00 AM">10:00 AM – 10:30 AM</option>
+                    <option value="11:30 AM">11:30 AM – 12:00 PM</option>
+                    <option value="02:00 PM">02:00 PM – 02:30 PM</option>
+                    <option value="04:00 PM">04:00 PM – 04:30 PM</option>
+                    <option value="05:30 PM">05:30 PM – 06:00 PM</option>
+                    <option value="07:00 PM">07:00 PM – 07:30 PM</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Primary Focus Area</label>
+                <select 
+                  value={topic} 
+                  onChange={e => setTopic(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                >
+                  <option value="Owner Hour Value & Delegation Setup">Owner Hour Value & Delegation Setup</option>
+                  <option value="Team KRA / KPI Goal Alignment">Team KRA / KPI Goal Alignment</option>
+                  <option value="Weekly Time Blocking & Focus Grid Mastery">Weekly Time Blocking & Focus Grid Mastery</option>
+                  <option value="Custom Workflow & Multi-User Rollout">Custom Workflow & Multi-User Rollout</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Additional Notes / Questions (Optional)</label>
+                <input 
+                  type="text" 
+                  value={notes} 
+                  onChange={e => setNotes(e.target.value)} 
+                  placeholder="e.g. We have 4 managers and want to standardize weekly reporting"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-600 focus:bg-white transition"
+                />
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
+                <button 
+                  onClick={handleBook} 
+                  disabled={busy}
+                  className="w-full sm:flex-1 py-3 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition shadow-md disabled:opacity-60 flex items-center justify-center gap-1.5"
+                >
+                  <span>{busy ? "Reserving Slot..." : "Confirm Google Meet Training Session →"}</span>
+                </button>
+                <button 
+                  onClick={handleSkip} 
+                  className="w-full sm:w-auto py-3 px-4 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-900 transition"
+                >
+                  Skip for Now
+                </button>
+              </div>
+            </div>
+
+            {msg && <p className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl leading-relaxed">{msg}</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Interactive 3-Step Quick-Start Trial Activation Banner            */
+/* ================================================================== */
+function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
+  const [dismissed, setDismissed] = useState(false);
+  const ohv = Math.round((data.settings.income || 0) / (data.settings.hours || 1));
+  const hasOhv = ohv > 0;
+  const hasCaptures = (data.captures && data.captures.length > 0) || (data.dailyBackup && data.dailyBackup.length > 0);
+  const hasThemes = Object.values(data.dayThemes || {}).some(t => !!t);
+
+  const stepCount = [hasOhv, hasCaptures, hasThemes].filter(Boolean).length;
+
+  if (dismissed || stepCount === 3) return null;
+
+  const loadBlueprint = () => {
+    if (window.confirm("Load Executive Blueprint sample data? This will pre-fill realistic high-leverage themes, tasks, and settings that you can explore and edit.")) {
+      patch(d => {
+        d.settings = { ...SAMPLE_EXECUTIVE_BLUEPRINT.settings };
+        d.dayThemes = { ...SAMPLE_EXECUTIVE_BLUEPRINT.dayThemes };
+        d.categories = [...SAMPLE_EXECUTIVE_BLUEPRINT.categories];
+        d.captures = [...SAMPLE_EXECUTIVE_BLUEPRINT.captures];
+        d.dailyBackup = [...SAMPLE_EXECUTIVE_BLUEPRINT.dailyBackup];
+        d.recurringMonthly = [...SAMPLE_EXECUTIVE_BLUEPRINT.recurringMonthly];
+        d.reference = [...SAMPLE_EXECUTIVE_BLUEPRINT.reference];
+      });
+    }
+  };
+
+  return (
+    <div className="mb-6 rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-white p-5 sm:p-6 text-slate-900 shadow-sm relative overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-100 pb-3">
+        <div className="flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-xs">🚀</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-950">Quick-Start Mastery Guide ({stepCount}/3 Completed)</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button onClick={loadBlueprint} className="text-xs font-bold text-blue-700 hover:text-blue-900 underline flex items-center gap-1">
+            <span>✨ Load Executive Sample Blueprint</span>
+          </button>
+          <button onClick={() => setDismissed(true)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className={`rounded-2xl border p-3.5 transition ${hasOhv ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Step 1</span>
+            {hasOhv ? <span className="text-emerald-700 font-bold text-xs">✓ Done</span> : <span className="text-slate-400 text-xs">Pending</span>}
+          </div>
+          <div className="text-xs font-bold text-slate-950 mt-1">Calculate Owner Hour Value</div>
+          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">Set your income goal & hours to calculate hourly delegation baseline.</p>
+          {!hasOhv && (
+            <button onClick={() => onGoToTab("settings")} className="mt-2.5 rounded-lg bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800 transition">
+              Calculate OHV →
+            </button>
+          )}
+        </div>
+
+        <div className={`rounded-2xl border p-3.5 transition ${hasThemes ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Step 2</span>
+            {hasThemes ? <span className="text-emerald-700 font-bold text-xs">✓ Done</span> : <span className="text-slate-400 text-xs">Pending</span>}
+          </div>
+          <div className="text-xs font-bold text-slate-950 mt-1">Set Weekly Focus Themes</div>
+          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">Assign strategic themes to each day (e.g. Sales, Team, Strategy).</p>
+          {!hasThemes && (
+            <button onClick={() => onGoToTab("weekly")} className="mt-2.5 rounded-lg bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800 transition">
+              Configure Themes →
+            </button>
+          )}
+        </div>
+
+        <div className={`rounded-2xl border p-3.5 transition ${hasCaptures ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Step 3</span>
+            {hasCaptures ? <span className="text-emerald-700 font-bold text-xs">✓ Done</span> : <span className="text-slate-400 text-xs">Pending</span>}
+          </div>
+          <div className="text-xs font-bold text-slate-950 mt-1">Capture & Delegate Tasks</div>
+          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">Capture all open loops and mark low-OHV items as DELEGATE or AUTOMATE.</p>
+          {!hasCaptures && (
+            <button onClick={() => onGoToTab("capture")} className="mt-2.5 rounded-lg bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800 transition">
+              Open Capture →
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
 /*  Planner shell                                                      */
 /* ================================================================== */
 function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
@@ -2270,6 +2647,8 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
   const [sub, setSub] = useState(null);
   const [subLoading, setSubLoading] = useState(true);
+  const [showTrainingModal, setShowTrainingModal] = useState(false);
+  const [trainingChecked, setTrainingChecked] = useState(false);
 
   useEffect(() => { loadState(userId).then(setData).catch(()=>setData(structuredClone(SEED))); }, [userId]);
   useEffect(() => { amPlatformAdmin(userId).then(setIsAdmin); }, [userId]);
@@ -2307,10 +2686,22 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
     notifiedRef.current = true;
   }, [data]);
 
-  const patch = (fn) => setData(d => { const c = structuredClone(d); fn(c); return c; });
-
   const isCompanyUser = orgCtx && orgCtx.membership;
   const isAuthorized = sub && (sub.status === "active" || sub.status === "trialing");
+
+  // Post-Mandate Auto-Trigger for 1:1 Executive Training Call
+  useEffect(() => {
+    if (orgCtx && orgCtx.org && isAuthorized && !trainingChecked) {
+      setTrainingChecked(true);
+      const st = orgCtx.org.training_status;
+      if ((!st || st === "unbooked") && !sessionStorage.getItem("fd_training_prompted")) {
+        sessionStorage.setItem("fd_training_prompted", "1");
+        setShowTrainingModal(true);
+      }
+    }
+  }, [orgCtx && orgCtx.org && orgCtx.org.id, isAuthorized, trainingChecked]);
+
+  const patch = (fn) => setData(d => { const c = structuredClone(d); fn(c); return c; });
 
   if (isCompanyUser && subLoading) return <FullScreen>Verifying workspace subscription status…</FullScreen>;
   if (!data) return <FullScreen>Loading your system…</FullScreen>;
@@ -2353,6 +2744,8 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const ohv = Math.round((data.settings.income||0)/(data.settings.hours||1));
   const role = orgCtx && orgCtx.membership ? orgCtx.membership.role : null;
   const canSeeOthers = role === "owner" || role === "manager";
+  const trainingBooked = orgCtx?.org?.training_status === "booked";
+
   const TABS = [
     ["capture","Capture"],["followup","Follow-up"],["daily","Daily"],["weekly","Weekly"],
     ["monthly","Monthly"],["maybe","Maybe"],["reference","Reference"],
@@ -2370,16 +2763,38 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
           <Logo height={44} lightMode={true} onClick={() => setTab("capture")} />
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-1.5 shadow-xs">
-              <span className="mono text-[11px] font-mono font-bold uppercase tracking-wider text-amber-900">Hour Value</span>
-              <span className="mono text-base font-extrabold text-amber-700">₹{ohv.toLocaleString("en-IN")}</span>
+          <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
+            {/* 15-Day Free Trial Countdown Badge */}
+            <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-1.5 shadow-xs">
+              <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
+              <span className="text-xs font-bold text-blue-900">15-Day Trial Active</span>
             </div>
-            <div className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
-              <span className="text-xs font-semibold text-slate-600 hidden md:inline">{session.user.email}</span>
+
+            {/* Google Meet 1:1 Training Call Button */}
+            {orgCtx?.org && (
+              <button 
+                onClick={() => setShowTrainingModal(true)}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-xs ${
+                  trainingBooked 
+                    ? "bg-emerald-100/80 text-emerald-950 border border-emerald-300 hover:bg-emerald-200" 
+                    : "bg-amber-400 text-slate-950 hover:bg-amber-300"
+                }`}
+              >
+                <span>{trainingBooked ? "📅" : "📹"}</span>
+                <span>{trainingBooked ? "Google Meet Booked" : "Book 1:1 Training Call"}</span>
+              </button>
+            )}
+
+            <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 shadow-xs">
+              <span className="mono text-[11px] font-mono font-bold uppercase tracking-wider text-amber-900">Hour Value</span>
+              <span className="mono text-sm sm:text-base font-extrabold text-amber-700">₹{ohv.toLocaleString("en-IN")}</span>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
+              <span className="text-xs font-semibold text-slate-600 hidden lg:inline">{session.user.email}</span>
               <button 
                 onClick={() => sb.auth.signOut()} 
-                className="rounded-lg bg-slate-950 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800 transition-all duration-150 shadow-xs"
+                className="rounded-lg bg-slate-950 px-2.5 py-1 text-xs font-bold text-white hover:bg-slate-800 transition-all duration-150 shadow-xs"
               >
                 Sign out
               </button>
@@ -2412,6 +2827,13 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
+        <QuickStartBanner 
+          data={data} 
+          patch={patch} 
+          onGoToTab={setTab} 
+          onOpenTraining={() => setShowTrainingModal(true)} 
+        />
+
         {tab!=="daily" && tab!=="weekly" && <DueBanner data={data} />}
         {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} />}
         {tab==="followup" && <FollowUpView data={data} patch={patch} />}
@@ -2426,8 +2848,23 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         {tab==="admin" && <AdminView meId={userId} />}
         {tab==="settings" && <SettingsView data={data} patch={patch} setData={setData} userId={userId}
                                orgCtx={orgCtx} orgError={orgError}
-                               onLeftOrg={onLeftOrg} onStartCompany={onStartCompany} />}
+                               onLeftOrg={onLeftOrg} onStartCompany={onStartCompany}
+                               onOpenTraining={() => setShowTrainingModal(true)} />}
       </main>
+
+      {showTrainingModal && (
+        <TrainingBookingModal 
+          orgCtx={orgCtx} 
+          onClose={() => setShowTrainingModal(false)}
+          onBookingUpdated={async () => {
+            try {
+              const freshCtx = await loadOrgContext(userId, session.user.email);
+              if (onLeftOrg) onLeftOrg(); // clear
+              onStartCompany(); // reload
+            } catch (_) {}
+          }}
+        />
+      )}
 
       <footer className="mx-auto max-w-6xl px-4 pb-8 pt-2 text-center text-xs text-slate-400">
         Jo pehle likha, wahi bachega — what is written first, survives. · {saving ? "Syncing…" : syncError ? "Sync failed — check your connection." : "Synced to your account."}
@@ -5377,7 +5814,7 @@ function CompanySection({ orgCtx, orgError, userId, onLeftOrg, onStartCompany })
   );
 }
 
-function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany }){
+function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany, onOpenTraining }){
   const ohv=Math.round((data.settings.income||0)/(data.settings.hours||1));
   const fileInputRef = useRef(null);
   const [clearing, setClearing] = useState(false);
@@ -5414,6 +5851,46 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
   return (
     <div className="space-y-6">
       <Callout>Any task below your Owner Hour Value should not be in your hands. Set it, then delegate ruthlessly.</Callout>
+
+      {orgCtx?.org && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📹</span>
+                <h3 className="text-sm font-bold text-slate-900">1-on-1 Executive Strategy & Onboarding Call</h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Complimentary 20-minute Google Meet coaching session to configure your KRAs and calculate delegation velocity.</p>
+            </div>
+            <button 
+              onClick={onOpenTraining}
+              className={`rounded-xl px-4 py-2 text-xs font-bold transition shadow-xs flex items-center gap-1.5 ${
+                orgCtx.org.training_status === "booked"
+                  ? "bg-emerald-100 text-emerald-950 border border-emerald-300 hover:bg-emerald-200"
+                  : "bg-slate-950 text-white hover:bg-slate-800"
+              }`}
+            >
+              <span>{orgCtx.org.training_status === "booked" ? "📅 View / Reschedule Session" : "📹 Book Google Meet Session"}</span>
+            </button>
+          </div>
+          {orgCtx.org.training_status === "booked" && (
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs text-emerald-950 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <b>Scheduled:</b> {orgCtx.org.training_notes || "1-on-1 Strategy Call"}
+              </div>
+              <a 
+                href={orgCtx.org.training_meet_link || "https://meet.google.com"} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="font-bold underline hover:no-underline text-emerald-800"
+              >
+                Join Google Meet Room ↗
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <h3 className="mb-3 font-semibold text-slate-700">Owner Hour Value</h3>
         <div className="grid gap-4 sm:grid-cols-3">
