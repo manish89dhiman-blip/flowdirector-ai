@@ -1796,16 +1796,19 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", onBack }){
         writeSolo(false);
         let { data, error } = await sb.auth.signUp({ email, password: pw });
 
-        // If user is already registered (e.g. from an earlier interrupted step), sign in directly
+        // If user is already registered, or to immediately acquire session
         if ((error && /already registered|already exists/i.test(error.message)) || 
-            (data && data.user && data.user.identities && data.user.identities.length === 0)) {
+            (data && data.user && data.user.identities && data.user.identities.length === 0) ||
+            (data && !data.session)) {
           const signInRes = await sb.auth.signInWithPassword({ email, password: pw });
-          if (signInRes.error) {
+          if (signInRes.error && error) {
             window.__FD_CREATING_ORG = false;
-            throw new Error("This email is already registered with a different password. Please click 'Sign in' below.");
+            throw error;
           }
-          data = signInRes.data;
-          error = null;
+          if (signInRes.data && signInRes.data.session) {
+            data = signInRes.data;
+            error = null;
+          }
         } else if (error) {
           window.__FD_CREATING_ORG = false;
           throw error;
