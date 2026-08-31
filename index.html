@@ -150,18 +150,21 @@ async function loadOrgContext(userId, email){
   }
 
   if (m) {
-    const { data: org, error: oErr } = await sb
-      .from("organizations").select("*").eq("id", m.org_id).maybeSingle();
+    const [{ data: org, error: oErr }, teamMembers, orgInvites] = await Promise.all([
+      sb.from("organizations").select("*").eq("id", m.org_id).maybeSingle(),
+      loadTeam(m.org_id).catch(() => []),
+      loadPendingInvites(m.org_id).catch(() => [])
+    ]);
     if (oErr) throw oErr;
-    return { membership:m, org, profile, pendingInvites: withOrgNames };
+    return { membership: m, org, profile, pendingInvites: withOrgNames, teamMembers: teamMembers || [], orgInvites: orgInvites || [] };
   }
 
   if (withOrgNames.length) {
-    return { membership:null, org:null, profile, pendingInvites:withOrgNames };
+    return { membership: null, org: null, profile, pendingInvites: withOrgNames, teamMembers: [], orgInvites: [] };
   }
 
   // No membership and no pending invites — return null membership so user lands on OnboardingScreen
-  return { membership: null, org: null, profile, pendingInvites: [] };
+  return { membership: null, org: null, profile, pendingInvites: [], teamMembers: [], orgInvites: [] };
 }
 
 async function updateProfile(userId, updates) {
@@ -276,6 +279,151 @@ async function emailInvite(inviteId, invObj = null){
 async function revokeInvite(id){
   const { error } = await sb.from("invites").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ------------------------------------------------------------------
+// Delegated Tasks & Real-time Team Helpers
+// ------------------------------------------------------------------
+async function loadDelegatedTasks(orgId) {
+  if (!sb || !orgId) return [];
+  try {
+    const { data, error } = await sb
+      .from("delegated_tasks")
+      .select("*")
+      .eq("org_id", orgId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.warn("loadDelegatedTasks:", error);
+      return [];
+    }
+    return data || [];
+  } catch (e) {
+    console.warn("loadDelegatedTasks catch:", e);
+    return [];
+  }
+}
+
+async function createDelegatedTask(orgId, delegatedBy, task) {
+  if (!sb || !orgId) return null;
+  try {
+    const { data, error } = await sb
+      .from("delegated_tasks")
+      .insert({
+        org_id: orgId,
+        delegated_by: delegatedBy,
+        assignee_id: task.assignee_id || null,
+        assignee_email: (task.assignee_email || task.email || "").trim().toLowerCase(),
+        assignee_name: task.assignee_name || task.assignee || "Team Member",
+        title: task.title || task.text,
+        details: task.details || task.notes || null,
+        link: task.link || null,
+        due_date: task.due_date || task.due || todayKey()
+      })
+      .select()
+      .single();
+    if (error) {
+      console.warn("createDelegatedTask:", error);
+      return null;
+    }
+    return data;
+  } catch (e) {
+    console.warn("createDelegatedTask catch:", e);
+    return null;
+  }
+}
+
+async function completeDelegatedTask(taskId, deliverableNote) {
+  if (!sb || !taskId) return;
+  try {
+    const { error } = await sb
+      .from("delegated_tasks")
+      .update({
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        deliverable_note: deliverableNote || null
+      })
+      .eq("id", taskId);
+    if (error) console.warn("completeDelegatedTask:", error);
+  } catch (e) {
+    console.warn("completeDelegatedTask catch:", e);
+  }
+}
+
+function getEffectiveTeam(data, orgCtx) {
+  const list = [];
+  const seen = new Set();
+
+  // 1. Registered organization members
+  if (orgCtx && Array.isArray(orgCtx.teamMembers)) {
+    orgCtx.teamMembers.forEach(m => {
+      const name = m.name || m.full_name || m.email;
+      if (name && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        list.push({
+          id: m.id || m.user_id,
+          user_id: m.user_id,
+          name: name,
+          email: m.email || "",
+          role: m.role || "employee",
+          label: `${name} (${ROLE_LABEL[m.role] || m.role}${m.email ? ' · ' + m.email : ''})`
+        });
+      }
+    });
+  }
+
+  // 2. Pending invited team members
+  if (orgCtx && Array.isArray(orgCtx.orgInvites)) {
+    orgCtx.orgInvites.forEach(inv => {
+      const email = inv.email;
+      if (email && !seen.has(email.toLowerCase())) {
+        seen.add(email.toLowerCase());
+        const shortName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        list.push({
+          id: inv.id,
+          user_id: null,
+          name: shortName,
+          email: email,
+          role: inv.role || "employee",
+          pending: true,
+          label: `${shortName} (Invited ${ROLE_LABEL[inv.role] || inv.role} · ${email})`
+        });
+      }
+    });
+  }
+
+  // 3. Custom team members stored in user data
+  if (data && Array.isArray(data.team)) {
+    data.team.forEach(t => {
+      if (t.name && !seen.has(t.name.toLowerCase())) {
+        seen.add(t.name.toLowerCase());
+        list.push({
+          id: t.id || uid(),
+          user_id: null,
+          name: t.name,
+          email: t.email || "",
+          role: t.role || "Team",
+          label: `${t.name}${t.role ? ' (' + t.role + ')' : ''}`
+        });
+      }
+    });
+  }
+
+  // Fallback defaults if no team members are present
+  if (list.length === 0) {
+    const defaults = ["Operations Lead", "Executive Assistant", "Sales Team", "Finance & Accounts"];
+    defaults.forEach(d => {
+      list.push({
+        id: d,
+        user_id: null,
+        name: d,
+        email: "",
+        role: "Team",
+        label: d
+      });
+    });
+  }
+
+  return list;
 }
 
 async function updateMembership(id, patchObj){
@@ -4710,7 +4858,7 @@ function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
 /* ================================================================== */
 /*  Planner shell                                                      */
 /* ================================================================== */
-function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
+function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, onClose }) {
   const [text, setText] = useState("");
   const [category, setCategory] = useState("");
   const [taskType, setTaskType] = useState(""); // Default to "" which means Inbox (Decide Later)
@@ -4718,6 +4866,8 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
   const [time, setTime] = useState("");
   const [assignee, setAssignee] = useState("");
   const [details, setDetails] = useState("");
+
+  const team = getEffectiveTeam(data, orgCtx);
 
   const save = () => {
     const t = text.trim();
@@ -4731,6 +4881,30 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
       time: time || "",
       assignee: assignee || ""
     };
+
+    // If delegating to a team member in an organization, create live delegated task & dispatch email
+    if (taskType === "DELEGATE" && assignee && orgCtx?.org?.id) {
+      const mem = team.find(m => m.name.toLowerCase() === assignee.toLowerCase() || (m.email && m.email.toLowerCase() === assignee.toLowerCase()));
+      createDelegatedTask(orgCtx.org.id, meId, {
+        assignee_id: mem?.user_id || null,
+        assignee_email: mem?.email || "",
+        assignee_name: mem?.name || assignee,
+        title: t,
+        details: details || "",
+        due_date: due || todayKey()
+      });
+      if (mem?.email) {
+        sendTransactionalEmail("task_delegated", mem.email, {
+          task_title: t,
+          delegator_name: orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership",
+          company_name: orgCtx?.org?.name || "Workspace",
+          due_date: due || todayKey(),
+          notes: details || "",
+          member_name: mem.name || mem.email
+        });
+      }
+    }
+
     patch(d => {
       if (taskType && ["SCHEDULE", "DAILY", "WAITING", "WAITING-FOR", "PROJECT", "DELEGATE"].includes(taskType)) {
         d.dailyBackup = d.dailyBackup || [];
@@ -4853,8 +5027,8 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
               >
                 <option value="">Myself / Unassigned</option>
-                {(data.team || []).map(m => (
-                  <option key={m.id} value={m.name}>{m.name}</option>
+                {team.map(m => (
+                  <option key={m.id} value={m.name}>{m.label}</option>
                 ))}
               </select>
             </div>
@@ -4890,13 +5064,20 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const userId = session.user.id;
   const path = usePath();
 
+  const role = orgCtx && orgCtx.membership ? orgCtx.membership.role : null;
+  const isEmployee = role === "employee" || role === "member" || role === "assistant";
+  const isManager = role === "manager";
+  const isOwner = role === "owner" || !role;
+
+  const defaultTab = isEmployee ? "standup" : "capture";
+
   const parsePlannerRoute = (p) => {
     const clean = (p || "").replace(/^\//, "");
     const parts = clean.split("/");
-    const mainTab = parts[0] || "capture";
+    const mainTab = parts[0] || defaultTab;
     const subTab = parts[1] || "";
     const validTabs = ["capture", "followup", "standup", "daily", "weekly", "monthly", "ideas", "maybe", "reference", "goals", "people", "team", "manual", "settings"];
-    let t = "capture";
+    let t = defaultTab;
     if (validTabs.includes(mainTab)) t = mainTab;
     else if (mainTab === "guide" || mainTab === "docs" || mainTab === "help") t = "manual";
     return { tab: t, subTab };
@@ -4912,7 +5093,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
     const { tab: newTab, subTab: newSubTab } = parsePlannerRoute(path);
     if (newTab !== tab) setTabState(newTab);
     if (newSubTab && newSubTab !== settingsSubTab) setSettingsSubTab(newSubTab);
-  }, [path]);
+  }, [path, isEmployee]);
 
   const setTab = (newTab) => {
     setTabState(newTab);
@@ -5055,7 +5236,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   if (isCompanyUser && subLoading) return <FullScreen>Verifying workspace subscription status…</FullScreen>;
   if (!data) return <FullScreen>Loading your system…</FullScreen>;
 
-  if (isCompanyUser && !isAuthorized && !isAdmin) {
+  if (isCompanyUser && !isAuthorized && !isAdmin && isOwner) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 text-center text-slate-900">
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-2xl">
@@ -5091,28 +5272,45 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   }
 
   const ohv = Math.round((data.settings.income||0)/(data.settings.hours||1));
-  const role = orgCtx && orgCtx.membership ? orgCtx.membership.role : null;
-  const isMember = role === "member" || role === "assistant";
   const canSeeOthers = role === "owner" || role === "manager";
   const trainingBooked = orgCtx?.org?.training_status === "booked";
 
-  const TABS = isMember
-    ? [
-        ["standup", "My Focus & Tasks"],
-        ["daily", "My Schedule"],
-        ["settings", "Settings"],
-      ]
-    : [
-        ["capture", "Capture"],
-        ["daily", "Daily"],
-        ["weekly", "Weekly"],
-        ["monthly", "Monthly"],
-        ["followup", "Delegation & Follow-up"],
-        ...(role ? [["goals", "Goals"]] : []),
-        ...(canSeeOthers ? [["people", "Team Dashboard"]] : []),
-        ["ideas", "Ideas & Reference"],
-        ["settings", "Settings"],
-      ];
+  // Role-Specific Navigation Architecture
+  let TABS = [];
+  if (isEmployee) {
+    TABS = [
+      ["standup", "My Focus & Tasks"],
+      ["daily", "My Schedule"],
+      ["weekly", "Weekly Plan"],
+      ["ideas", "Ideas & Reference"],
+      ["settings", "My Account"]
+    ];
+  } else if (isManager) {
+    TABS = [
+      ["capture", "Capture"],
+      ["daily", "Daily"],
+      ["weekly", "Weekly"],
+      ["monthly", "Monthly"],
+      ["followup", "Delegation & Radar"],
+      ["goals", "Department Goals"],
+      ["people", "My Team"],
+      ["ideas", "Ideas & Reference"],
+      ["settings", "Settings"]
+    ];
+  } else {
+    // Owner / Solo Executive
+    TABS = [
+      ["capture", "Capture"],
+      ["daily", "Daily"],
+      ["weekly", "Weekly"],
+      ["monthly", "Monthly"],
+      ["followup", "Delegation & Follow-up"],
+      ...(role ? [["goals", "Goals & KRAs"]] : []),
+      ...(role ? [["people", "Team Dashboard"]] : []),
+      ["ideas", "Ideas & Reference"],
+      ["settings", "Settings"]
+    ];
+  }
 
   return (
     <div className="min-h-screen bg-[#fbf9fa] text-slate-900 selection:bg-amber-400 font-sans antialiased">
@@ -5120,7 +5318,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       <header className="sticky top-0 z-20 hidden md:block border-b border-slate-200 bg-white/95 text-slate-900 shadow-sm backdrop-blur-md">
         {/* Tier 1: Brand & Executive Status Bar */}
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
-          <Logo height={44} lightMode={true} onClick={() => setTab(isMember ? "standup" : "capture")} />
+          <Logo height={44} lightMode={true} onClick={() => setTab(isEmployee ? "standup" : "capture")} />
 
           <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
             {/* Quick Capture Desktop Button */}
@@ -5134,14 +5332,27 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               <span className="rounded bg-slate-800 px-1 py-0.2 text-[10px] text-amber-400 font-mono">C</span>
             </button>
 
-            {/* 15-Day Free Trial Countdown Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-1.5 shadow-xs">
-              <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
-              <span className="text-xs font-bold text-blue-900">15-Day Trial Active</span>
-            </div>
-
-            {/* Google Meet 1:1 Training Call Button */}
+            {/* Company & Role Badge */}
             {orgCtx?.org && (
+              <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 shadow-2xs">
+                <span className="text-sm">🏢</span>
+                <span className="text-xs font-bold text-slate-900">{orgCtx.org.name}</span>
+                <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded-md bg-amber-400 text-slate-950">
+                  {ROLE_LABEL[role] || (isOwner ? "Founder" : role || "Member")}
+                </span>
+              </div>
+            )}
+
+            {/* 15-Day Free Trial Countdown Badge (For Owners) */}
+            {isOwner && (
+              <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-1.5 shadow-xs">
+                <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
+                <span className="text-xs font-bold text-blue-900">15-Day Trial Active</span>
+              </div>
+            )}
+
+            {/* Google Meet 1:1 Training Call Button (For Owners & Managers) */}
+            {orgCtx?.org && !isEmployee && (
               <button 
                 onClick={() => setShowTrainingModal(true)}
                 className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition shadow-xs ${
@@ -5190,10 +5401,13 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               </button>
             )}
 
-            <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 shadow-xs">
-              <span className="mono text-[11px] font-mono font-bold uppercase tracking-wider text-amber-900">Hour Value</span>
-              <span className="mono text-sm sm:text-base font-extrabold text-amber-700">₹{ohv.toLocaleString("en-IN")}</span>
-            </div>
+            {/* OHV Badge (For Owners and Managers) */}
+            {!isEmployee && (
+              <div className="flex items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 shadow-xs">
+                <span className="mono text-[11px] font-mono font-bold uppercase tracking-wider text-amber-900">Hour Value</span>
+                <span className="mono text-sm sm:text-base font-extrabold text-amber-700">₹{ohv.toLocaleString("en-IN")}</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5">
               <span className="text-xs font-semibold text-slate-600 hidden lg:inline">{session.user.email}</span>
@@ -5234,11 +5448,13 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       {/* 2. Mobile App Header Bar (< md) */}
       <header className="sticky top-0 z-20 block md:hidden border-b border-slate-200 bg-white/95 text-slate-900 shadow-xs backdrop-blur-md px-3.5 py-2">
         <div className="flex items-center justify-between">
-          <Logo height={32} lightMode={true} onClick={() => setTab(isMember ? "standup" : "daily")} />
+          <Logo height={32} lightMode={true} onClick={() => setTab(isEmployee ? "standup" : "daily")} />
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-extrabold text-amber-900">
-              <span>₹{ohv.toLocaleString("en-IN")}/h</span>
-            </div>
+            {!isEmployee && (
+              <div className="flex items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-extrabold text-amber-900">
+                <span>₹{ohv.toLocaleString("en-IN")}/h</span>
+              </div>
+            )}
             <button
               onClick={() => setShowMobileMoreDrawer(true)}
               className="rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-700 hover:bg-slate-100"
@@ -5261,10 +5477,10 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
         {tab!=="daily" && tab!=="weekly" && tab!=="standup" && tab!=="manual" && <DueBanner data={data} />}
         {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} />}
-        {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} />}
+        {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} orgCtx={orgCtx} meId={userId} />}
         {tab==="followup" && <FollowUpView data={data} patch={patch} orgCtx={orgCtx} meId={userId} />}
-        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} />}
-        {tab==="weekly" && <WeeklyView data={data} patch={patch} />}
+        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} orgCtx={orgCtx} />}
+        {tab==="weekly" && <WeeklyView data={data} patch={patch} orgCtx={orgCtx} />}
         {tab==="monthly" && <MonthlyView data={data} patch={patch} onGoToDay={(dateStr)=>{setDailyDate(dateStr); setTab("daily");}} />}
         {tab==="ideas" && <IdeasAndReferenceView data={data} patch={patch} />}
         {tab==="maybe" && <MaybeView data={data} patch={patch} />}
@@ -5284,26 +5500,26 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       {/* 3. Fixed Mobile Bottom Tab Bar with Center Floating '+' FAB (< md) */}
       <div className="fixed bottom-0 left-0 right-0 z-40 block md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-lg shadow-lg">
         <div className="flex items-center justify-around px-2 py-1.5">
-          {/* Daily Tab */}
+          {/* Primary Role Tab 1 */}
           <button
-            onClick={() => setTab("daily")}
+            onClick={() => setTab(isEmployee ? "standup" : "daily")}
             className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition ${
-              tab === "daily" ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
+              tab === (isEmployee ? "standup" : "daily") ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
             }`}
           >
-            <span className="text-lg">📅</span>
-            <span className="text-[10px] font-bold">Daily</span>
+            <span className="text-lg">{isEmployee ? "🎯" : "📅"}</span>
+            <span className="text-[10px] font-bold">{isEmployee ? "Focus" : "Daily"}</span>
           </button>
 
-          {/* Weekly Tab */}
+          {/* Primary Role Tab 2 */}
           <button
-            onClick={() => setTab("weekly")}
+            onClick={() => setTab(isEmployee ? "daily" : "weekly")}
             className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition ${
-              tab === "weekly" ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
+              tab === (isEmployee ? "daily" : "weekly") ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
             }`}
           >
-            <span className="text-lg">🗓️</span>
-            <span className="text-[10px] font-bold">Weekly</span>
+            <span className="text-lg">{isEmployee ? "📅" : "🗓️"}</span>
+            <span className="text-[10px] font-bold">{isEmployee ? "Schedule" : "Weekly"}</span>
           </button>
 
           {/* Center Floating Action Button (FAB) for Quick Capture */}
@@ -5315,15 +5531,15 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
             <span className="text-2xl font-black leading-none mb-0.5">+</span>
           </button>
 
-          {/* Follow-up Tab */}
+          {/* Primary Role Tab 3 */}
           <button
-            onClick={() => setTab("followup")}
+            onClick={() => setTab(isEmployee ? "weekly" : "followup")}
             className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition ${
-              tab === "followup" ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
+              tab === (isEmployee ? "weekly" : "followup") ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
             }`}
           >
-            <span className="text-lg">👥</span>
-            <span className="text-[10px] font-bold">Follow-up</span>
+            <span className="text-lg">{isEmployee ? "🗓️" : "👥"}</span>
+            <span className="text-[10px] font-bold">{isEmployee ? "Weekly" : "Follow-up"}</span>
           </button>
 
           {/* More Menu Drawer */}
@@ -5422,12 +5638,14 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 /* ================================================================== */
 /*  1 · CAPTURE                                                        */
 /* ================================================================== */
-function CaptureView({ data, patch, ohv }){
+function CaptureView({ data, patch, ohv, orgCtx, meId }){
   const [text, setText] = useState("");
   const [selectedCat, setSelectedCat] = useState("Deep Focus");
   const [selectedType, setSelectedType] = useState("SCHEDULE");
   const [filterCat, setFilterCat] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+
+  const team = getEffectiveTeam(data, orgCtx);
 
   const add = () => { 
     const t = text.trim(); 
@@ -5476,6 +5694,30 @@ function CaptureView({ data, patch, ohv }){
       time: item.time || "",
       assignee: item.assignee || ""
     };
+
+    // If delegating in an organization, create live delegated task & dispatch email
+    if (item.taskType === "DELEGATE" && item.assignee && orgCtx?.org?.id) {
+      const mem = team.find(m => m.name.toLowerCase() === item.assignee.toLowerCase() || (m.email && m.email.toLowerCase() === item.assignee.toLowerCase()));
+      createDelegatedTask(orgCtx.org.id, meId, {
+        assignee_id: mem?.user_id || null,
+        assignee_email: mem?.email || "",
+        assignee_name: mem?.name || item.assignee,
+        title: item.item,
+        details: item.details || "",
+        due_date: item.due || todayKey()
+      });
+      if (mem?.email) {
+        sendTransactionalEmail("task_delegated", mem.email, {
+          task_title: item.item,
+          delegator_name: orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership",
+          company_name: orgCtx?.org?.name || "Workspace",
+          due_date: item.due || todayKey(),
+          notes: item.details || "",
+          member_name: mem.name || mem.email
+        });
+      }
+    }
+
     patch(d => { 
       const t = item.taskType; 
       let dest = "";
@@ -5702,8 +5944,8 @@ function CaptureView({ data, patch, ohv }){
                   onChange={e => setAssignee(c.id, e.target.value)} 
                   className="rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-bold text-sky-950 outline-none"
                 >
-                  <option value="">— Assign to —</option>
-                  {(data.team || []).map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                  <option value="">— Assign to Team Member —</option>
+                  {team.map(m => <option key={m.id} value={m.name}>{m.label}</option>)}
                 </select>
               )}
 
@@ -5796,24 +6038,7 @@ function FollowUpView({ data, patch, orgCtx, meId }){
 
   const resolve=(id)=>patch(d=>{d.dailyBackup=d.dailyBackup.filter(b=>b.id!==id);});
   const reassign=(id,v)=>patch(d=>{const b=d.dailyBackup.find(x=>x.id===id); if(b) b.assignee=v;});
-
-  const notifyEmployee = (task) => {
-    const memberObj = teamMembers.find(m => (m.name && m.name.toLowerCase() === (task.assignee||"").toLowerCase()) || (m.email && m.email.toLowerCase() === (task.assignee||"").toLowerCase()));
-    if (memberObj && memberObj.email) {
-      sendTransactionalEmail("task_delegated", memberObj.email, {
-        task_title: task.text,
-        delegator_name: orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership",
-        company_name: orgCtx?.org?.name || "Workspace",
-        due_date: task.due,
-        link: task.link || "",
-        notes: "Delegated from Follow-up Radar",
-        member_name: memberObj.name || memberObj.email
-      });
-      say(`✓ Email alert dispatched to ${memberObj.name || memberObj.email}!`);
-    } else {
-      say(`No email found for assignee "${task.assignee}". Invite them in Settings > Team to enable auto-emails.`);
-    }
-  };
+  const team = getEffectiveTeam(data, orgCtx);
 
   const handleQuickDelegate = (e) => {
     e.preventDefault();
@@ -5834,7 +6059,20 @@ function FollowUpView({ data, patch, orgCtx, meId }){
       d.dailyBackup.unshift(task);
     });
 
-    const memberObj = teamMembers.find(m => (m.name && m.name.toLowerCase() === (newAssignee||"").toLowerCase()) || (m.email && m.email.toLowerCase() === (newAssignee||"").toLowerCase()));
+    const memberObj = team.find(m => (m.name && m.name.toLowerCase() === (newAssignee||"").toLowerCase()) || (m.email && m.email.toLowerCase() === (newAssignee||"").toLowerCase()));
+    
+    if (orgCtx?.org?.id && newAssignee) {
+      createDelegatedTask(orgCtx.org.id, meId, {
+        assignee_id: memberObj?.user_id || null,
+        assignee_email: memberObj?.email || "",
+        assignee_name: memberObj?.name || newAssignee,
+        title: newTaskText.trim(),
+        details: "",
+        link: newLink.trim() || null,
+        due_date: newDue || today
+      });
+    }
+
     if (memberObj && memberObj.email) {
       sendTransactionalEmail("task_delegated", memberObj.email, {
         task_title: task.text,
@@ -5888,23 +6126,24 @@ function FollowUpView({ data, patch, orgCtx, meId }){
               subTab === "delegated" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600 hover:text-slate-950"
             }`}
           >
-            📋 Delegated Tasks ({items.filter(i=>!i.done).length})
+            📋 Delegated Tasks ({items.filter(t=>!t.done).length})
           </button>
           <button
             onClick={() => setSubTab("standups")}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition ${
+            className={`px-4 py-2 rounded-xl text-xs font-black transition flex items-center gap-1.5 ${
               subTab === "standups" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600 hover:text-slate-950"
             }`}
           >
-            🎯 Today's Live Standups
+            <span>🎯</span>
+            <span>Live Standups ({planners.length})</span>
           </button>
         </div>
       </div>
 
       {subTab === "delegated" && (
-        <div className="space-y-6">
-          {/* Quick Delegate Input Form */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
+        <div className="space-y-5">
+          {/* Quick Delegate Input Bar */}
+          <div className="rounded-3xl border-2 border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
             <form onSubmit={handleQuickDelegate} className="flex flex-wrap items-center gap-2.5">
               <input 
                 value={newTaskText}
@@ -5923,8 +6162,8 @@ function FollowUpView({ data, patch, orgCtx, meId }){
                 onChange={e => setNewAssignee(e.target.value)}
                 className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none"
               >
-                <option value="">— Assign to Employee —</option>
-                {allTeamNames.map(n => <option key={n} value={n}>{n}</option>)}
+                <option value="">— Assign to Team Member —</option>
+                {team.map(m => <option key={m.id} value={m.name}>{m.label}</option>)}
               </select>
               <input 
                 type="date"
@@ -6480,8 +6719,10 @@ function DueBanner({ data }){
 // Shared click-to-edit row for anything shaped like {id,text,tag,taskType,due,time,assignee,link} —
 // dailyBackup / weeklySomeday / monthlyTray all use this shape post-Transfer, and none of them
 // had a way to fix a mistake after the fact. Click the text (or the pencil) to reveal every field.
-function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, extra }){
+function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, extra, orgCtx }){
   const [editing, setEditing] = useState(false);
+  const team = getEffectiveTeam(data, orgCtx);
+
   if (!editing) {
     return (
       <div className={"flex items-center justify-between gap-2 rounded-md border px-2 py-1.5 text-sm "+(item.done?"border-emerald-100 bg-emerald-50/50":"border-slate-100 bg-stone-50")}>
@@ -6542,8 +6783,8 @@ function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, e
           className="rounded border border-slate-200 bg-white px-1.5 py-1 text-xs outline-none" />
         {["DELEGATE","WAITING-FOR"].includes(item.taskType) &&
           <select value={item.assignee||""} onChange={e=>onUpdate("assignee",e.target.value)} className="rounded border border-sky-200 bg-white px-1.5 py-1 text-xs outline-none">
-            <option value="">— Assign to —</option>
-            {(data.team||[]).map(m=><option key={m.id} value={m.name}>{m.name}</option>)}
+            <option value="">— Assign to Team Member —</option>
+            {team.map(m=><option key={m.id} value={m.name}>{m.label}</option>)}
           </select>}
         <button onClick={()=>setEditing(false)} className="ml-auto rounded bg-slate-900 px-2 py-1 text-xs font-medium text-white hover:bg-slate-700">Done</button>
       </div>
@@ -6560,6 +6801,7 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
   const [deliverableNote, setDeliverableNote] = useState("");
   const [newCustomTask, setNewCustomTask] = useState("");
   const [kpis, setKpis] = useState([]);
+  const [dbTasks, setDbTasks] = useState([]);
   const [copiedStandup, setCopiedStandup] = useState(false);
   const [notice, setNotice] = useState("");
 
@@ -6590,17 +6832,32 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
     });
   };
 
-  // Load active KRAs for this organization
+  // Load active KRAs & database delegated tasks for this organization
   useEffect(() => {
     if (orgCtx?.org?.id) {
       loadKpis(orgCtx.org.id)
         .then(res => setKpis(res || []))
         .catch(() => setKpis([]));
+
+      loadDelegatedTasks(orgCtx.org.id)
+        .then(res => setDbTasks(res || []))
+        .catch(() => setDbTasks([]));
     }
   }, [orgCtx?.org?.id]);
 
   const myName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Me";
+  const myEmail = (orgCtx?.profile?.email || "").toLowerCase();
   const myRole = orgCtx?.membership?.role || "Team Member";
+
+  // Filter tasks assigned to this member from the database
+  const assignedDbTasks = dbTasks.filter(t => 
+    t.status === "pending" && 
+    (
+      (t.assignee_email && t.assignee_email.toLowerCase() === myEmail) ||
+      (t.assignee_name && myName && t.assignee_name.toLowerCase().includes(myName.toLowerCase())) ||
+      (t.assignee_id && t.assignee_id === meId)
+    )
+  );
 
   // Delegated items from dailyBackup + custom delegatedTasks
   const backupDelegated = (data.dailyBackup || []).filter(b => 
@@ -6609,15 +6866,32 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
   const customDelegated = (data.delegatedTasks || []).filter(t => !t.completed);
   const completedDelegated = (data.delegatedTasks || []).filter(t => t.completed).slice(0, 5);
 
-  const handleAddCustomTask = (e) => {
+  const handleAddCustomTask = async (e) => {
     e.preventDefault();
     if (!newCustomTask.trim()) return;
+
+    if (orgCtx?.org?.id) {
+      const created = await createDelegatedTask(orgCtx.org.id, meId, {
+        assignee_id: meId,
+        assignee_email: myEmail,
+        assignee_name: myName,
+        title: newCustomTask.trim(),
+        due_date: today
+      });
+      if (created) {
+        setDbTasks(prev => [created, ...prev]);
+        setNewCustomTask("");
+        say("Task added to your focus queue!");
+        return;
+      }
+    }
+
     patch(d => {
       d.delegatedTasks = d.delegatedTasks || [];
       d.delegatedTasks.unshift({
         id: "dt_" + Date.now(),
         title: newCustomTask.trim(),
-        delegatedBy: "Founder / Leadership",
+        delegatedBy: "Self / Leadership",
         due: today,
         completed: false,
         createdAt: new Date().toISOString()
@@ -6627,10 +6901,16 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
     say("Task added to your focus queue!");
   };
 
-  const handleConfirmComplete = () => {
+  const handleConfirmComplete = async () => {
     if (!completeModalItem) return;
     const itemId = completeModalItem.id;
     const isBackup = completeModalItem.isBackup;
+    const isDb = completeModalItem.isDb;
+
+    if (isDb) {
+      await completeDelegatedTask(itemId, deliverableNote);
+      setDbTasks(prev => prev.map(t => t.id === itemId ? { ...t, status: "completed", completed_at: new Date().toISOString(), deliverable_note: deliverableNote } : t));
+    }
 
     patch(d => {
       if (isBackup) {
@@ -6641,7 +6921,7 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
           item.deliverableNote = deliverableNote;
           item.taskType = "RESOLVED";
         }
-      } else {
+      } else if (!isDb) {
         const item = (d.delegatedTasks || []).find(b => b.id === itemId);
         if (item) {
           item.completed = true;
@@ -6911,13 +7191,55 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab }){
 
         {/* Task Cards List */}
         <div className="space-y-2.5">
-          {backupDelegated.length === 0 && customDelegated.length === 0 && (
+          {assignedDbTasks.length === 0 && backupDelegated.length === 0 && customDelegated.length === 0 && (
             <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center space-y-2">
               <span className="text-3xl block">🎉</span>
               <h4 className="text-sm font-bold text-slate-800">No Open Delegated Tasks Right Now</h4>
               <p className="text-xs text-slate-500">You are completely caught up with leadership deliverables.</p>
             </div>
           )}
+
+          {/* Real-time Database Delegated Tasks */}
+          {assignedDbTasks.map(t => (
+            <div key={t.id} className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4 hover:border-blue-300 transition flex flex-wrap items-center justify-between gap-3 shadow-xs">
+              <div className="space-y-1 flex-1 min-w-[240px]">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-blue-600 text-white px-2.5 py-0.5 text-[10px] font-black uppercase">
+                    From Leadership
+                  </span>
+                  {t.due_date && (
+                    <span className={`text-[11px] font-bold ${t.due_date < today ? "text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md" : "text-slate-600"}`}>
+                      📅 Due: {t.due_date}
+                    </span>
+                  )}
+                  {t.link && (
+                    <a 
+                      href={t.link} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="inline-flex items-center gap-1 rounded bg-white px-2 py-0.5 text-[10px] font-bold text-blue-700 hover:bg-blue-100 transition border border-blue-200"
+                    >
+                      <span>🔗</span>
+                      <span>Open Link ↗</span>
+                    </a>
+                  )}
+                </div>
+                <h4 className="text-sm font-extrabold text-slate-900">{t.title}</h4>
+                {t.details && <p className="text-xs text-slate-600">{t.details}</p>}
+              </div>
+
+              <button
+                onClick={() => {
+                  setCompleteModalItem({ id: t.id, title: t.title, isDb: true });
+                  setDeliverableNote("");
+                }}
+                className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-xs font-black transition shadow-xs flex items-center gap-1.5"
+              >
+                <span>✓</span>
+                <span>Mark as Done &amp; Submit</span>
+              </button>
+            </div>
+          ))}
 
           {/* Backup Delegated items */}
           {backupDelegated.map(b => (
@@ -7337,7 +7659,7 @@ function CalendarSyncModal({ data, dk, userId, onClose }){
   );
 }
 
-function DailyView({ data, patch, dk, setDk, userId }){
+function DailyView({ data, patch, dk, setDk, userId, orgCtx }){
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [mobileScheduleTab, setMobileScheduleTab] = useState("plan"); // "plan" | "actual"
   const blank = () => ({ outcome: "", priorities: ["", "", ""], marks: ["", "", ""], blocks: {}, actual: {}, closure: { score: 0, ate: "", family: "" }, routineDone: {} });
@@ -7849,7 +8171,7 @@ const getBlockCategoryStyle = (text) => {
   return { bg: "bg-amber-50/90", border: "border-amber-300", text: "text-amber-950", tag: "🎯 Deep Focus", badge: "bg-amber-100 text-amber-800" };
 };
 
-function WeeklyView({ data, patch }){
+function WeeklyView({ data, patch, orgCtx }){
   const [wk, setWk] = useState(mondayOf(todayKey()));
   const [viewMode, setViewMode] = useState("5day");
   const [selectedMobileDay, setSelectedMobileDay] = useState(dayOfWeekKey(todayKey()) || "mon");
@@ -8411,6 +8733,7 @@ function WeeklyView({ data, patch }){
                         key={b.id} 
                         item={b} 
                         data={data}
+                        orgCtx={orgCtx}
                         onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
                         onRemove={() => removeSomeday(b.id)}
                         prefix={
@@ -8450,6 +8773,7 @@ function WeeklyView({ data, patch }){
                     key={b.id} 
                     item={b} 
                     data={data}
+                    orgCtx={orgCtx}
                     onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
                     onRemove={() => removeSomeday(b.id)}
                     onToggleDone={() => updateSomedayField(b.id, "done", !b.done)} 
@@ -12490,6 +12814,16 @@ const SETTINGS_TABS = [
 ];
 
 function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany, onOpenTraining, isAdmin, initialSubTab = "general" }){
+  const role = orgCtx && orgCtx.membership ? orgCtx.membership.role : null;
+  const isEmployee = role === "employee" || role === "member" || role === "assistant";
+  const isManager = role === "manager";
+
+  const visibleSettingsTabs = SETTINGS_TABS.filter(t => {
+    if (isEmployee && (t.id === "company" || t.id === "billing")) return false;
+    if (isManager && t.id === "billing") return false;
+    return true;
+  });
+
   const [subTab, setSubTabState] = useState(initialSubTab);
 
   useEffect(() => {
@@ -12548,7 +12882,7 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
             onChange={e => setSubTab(e.target.value)}
             className="w-full rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-3 text-xs font-black text-slate-950 outline-none"
           >
-            {SETTINGS_TABS.map(st => (
+            {visibleSettingsTabs.map(st => (
               <option key={st.id} value={st.id}>
                 {st.icon} {st.label}
               </option>
@@ -12558,7 +12892,7 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
 
         {/* Desktop / Tablet Horizontal Strip (>= sm) */}
         <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {SETTINGS_TABS.map(st => {
+          {visibleSettingsTabs.map(st => {
             const active = subTab === st.id;
             return (
               <button
