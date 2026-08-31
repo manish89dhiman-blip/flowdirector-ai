@@ -6752,85 +6752,232 @@ function DailyView({ data, patch, dk, setDk, userId }){
 /*  3 · WEEKLY                                                         */
 /* ================================================================== */
 const mondayOf=(k)=>{const d=new Date(k+"T00:00:00");d.setDate(d.getDate()-((d.getDay()+6)%7));return dateKey(d);};
+
+const THEME_PRESETS = [
+  "🎯 Deep Tech & Product",
+  "👥 Team & Operations",
+  "💼 Sales & Client Success",
+  "📈 Finance & Strategy",
+  "🌱 Review & Delegation",
+  "🧹 Catch-up & Buffer"
+];
+
+const getBlockCategoryStyle = (text) => {
+  const t = (text || "").toLowerCase();
+  if (/meet|call|sync|1:1|standup|client|customer|interview|demo|zoom|google meet/i.test(t)) {
+    return { bg: "bg-blue-50/90", border: "border-blue-300", text: "text-blue-950", tag: "👥 Meeting", badge: "bg-blue-100 text-blue-800" };
+  }
+  if (/tax|gst|tds|sales|revenue|invoice|finance|audit|books|cash|growth|accounting/i.test(t)) {
+    return { bg: "bg-emerald-50/90", border: "border-emerald-300", text: "text-emerald-950", tag: "📈 Finance/Growth", badge: "bg-emerald-100 text-emerald-800" };
+  }
+  if (/family|workout|gym|run|dinner|lunch|personal|health|rest|meditat/i.test(t)) {
+    return { bg: "bg-purple-50/90", border: "border-purple-300", text: "text-purple-950", tag: "💜 Personal", badge: "bg-purple-100 text-purple-800" };
+  }
+  if (/email|inbox|admin|doc|ops|setup|clean|organize|system|hiring/i.test(t)) {
+    return { bg: "bg-slate-100/90", border: "border-slate-300", text: "text-slate-900", tag: "📋 Admin/Ops", badge: "bg-slate-200 text-slate-700" };
+  }
+  return { bg: "bg-amber-50/90", border: "border-amber-300", text: "text-amber-950", tag: "🎯 Deep Focus", badge: "bg-amber-100 text-amber-800" };
+};
+
 function WeeklyView({ data, patch }){
-  const [wk,setWk]=useState(mondayOf(todayKey()));
-  const blankWeek=()=>({grid:{},nonneg:{focus:false,review:false,family:false},somedayDone:{}});
-  const week=data.weekly[wk]||blankWeek();
-  const upd=(fn)=>patch(d=>{ if(!d.weekly[wk]) d.weekly[wk]=blankWeek(); fn(d.weekly[wk]); });
-  const setTheme=(day,v)=>patch(d=>{d.dayThemes[day]=v;});
-  const removeSomeday=(id)=>{ if(!confirm("Delete this item? This can't be undone.")) return; patch(d=>{d.weeklySomeday=d.weeklySomeday.filter(b=>b.id!==id);}); };
-  const toggleSomedayDone=(id)=>upd(x=>{ if(!x.somedayDone) x.somedayDone={}; x.somedayDone[id]=!x.somedayDone[id]; });
-  const updateSomedayField=(id,field,value)=>patch(d=>{const b=d.weeklySomeday.find(x=>x.id===id); if(b) b[field]=value;});
-  const recurringWeekly = data.weeklySomeday.filter(b=>b.taskType==="WEEKLY");
-  const otherSomeday = data.weeklySomeday.filter(b=>b.taskType!=="WEEKLY");
-  const weekLabel=()=>{const s=new Date(wk+"T00:00:00");const e=new Date(wk+"T00:00:00");e.setDate(e.getDate()+6);const f=x=>x.toLocaleDateString("en-IN",{day:"numeric",month:"short"});return `${f(s)} – ${f(e)}`;};
+  const [wk, setWk] = useState(mondayOf(todayKey()));
+  const [viewMode, setViewMode] = useState("5day");
+  const [editingSlot, setEditingSlot] = useState(null);
+  const [showThemePicker, setShowThemePicker] = useState(null);
+  const [showSomedayDrawer, setShowSomedayDrawer] = useState(true);
+
+  const blankWeek = () => ({ grid: {}, nonneg: { focus: false, review: false, family: false }, somedayDone: {} });
+  const week = data.weekly[wk] || blankWeek();
+  const upd = (fn) => patch(d => { if (!d.weekly[wk]) d.weekly[wk] = blankWeek(); fn(d.weekly[wk]); });
+  const setTheme = (day, v) => patch(d => { d.dayThemes[day] = v; });
+  const removeSomeday = (id) => { if (!confirm("Delete this item? This can't be undone.")) return; patch(d => { d.weeklySomeday = d.weeklySomeday.filter(b => b.id !== id); }); };
+  const toggleSomedayDone = (id) => upd(x => { if (!x.somedayDone) x.somedayDone = {}; x.somedayDone[id] = !x.somedayDone[id]; });
+  const updateSomedayField = (id, field, value) => patch(d => { const b = d.weeklySomeday.find(x => x.id === id); if (b) b[field] = value; });
+  
+  const recurringWeekly = data.weeklySomeday.filter(b => b.taskType === "WEEKLY");
+  const otherSomeday = data.weeklySomeday.filter(b => b.taskType !== "WEEKLY");
+  
+  const weekLabel = () => {
+    const s = new Date(wk + "T00:00:00");
+    const e = new Date(wk + "T00:00:00");
+    e.setDate(e.getDate() + (viewMode === "5day" ? 4 : 6));
+    const f = x => x.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    return `${f(s)} – ${f(e)}`;
+  };
+
+  const activeDayKeys = viewMode === "5day" ? DAY_KEYS.slice(0, 5) : DAY_KEYS;
   const dueMap = dueItemsByDate(data);
-  const dueByDay = DAY_KEYS.map((dayKey,i)=>({ dayKey, date: shiftDay(wk,i), items: dueMap[shiftDay(wk,i)]||[] }));
-  const hasWeekDue = dueByDay.some(d=>d.items.length>0);
+  const dueByDay = activeDayKeys.map((dayKey, i) => ({ dayKey, date: shiftDay(wk, i), items: dueMap[shiftDay(wk, i)] || [] }));
+  const hasWeekDue = dueByDay.some(d => d.items.length > 0);
   const slotMap = weeklySlotItems(data, wk, dueMap);
+
+  const plannedBlockCount = Object.keys(week.grid || {}).filter(k => week.grid[k] && week.grid[k].trim()).length;
+
+  const copyLastWeek = () => {
+    const prevWk = shiftDay(wk, -7);
+    const prevGrid = data.weekly[prevWk]?.grid || {};
+    const keys = Object.keys(prevGrid).filter(k => prevGrid[k] && prevGrid[k].trim());
+    if (keys.length === 0) {
+      alert("No scheduled blocks found in previous week to copy.");
+      return;
+    }
+    if (!confirm(`Copy ${keys.length} focus blocks from last week into this week?`)) return;
+    upd(x => {
+      keys.forEach(k => {
+        if (!x.grid[k]) x.grid[k] = prevGrid[k];
+      });
+    });
+    alert(`✓ Copied ${keys.length} weekly focus blocks!`);
+  };
+
+  const pushToDaily = () => {
+    let pushed = 0;
+    patch(d => {
+      d.daily = d.daily || {};
+      activeDayKeys.forEach((dayKey, idx) => {
+        const colDate = shiftDay(wk, idx);
+        d.daily[colDate] = d.daily[colDate] || { outcome: "", priorities: ["","",""], marks: ["","",""], blocks: {}, actual: {}, closure: { score: 0, ate: "", family: "" }, routineDone: {} };
+        WEEK_SLOTS.forEach(slot => {
+          const val = week.grid[`${slot}|${dayKey}`];
+          if (val && val.trim()) {
+            d.daily[colDate].blocks[slot] = val;
+            pushed++;
+          }
+        });
+      });
+    });
+    alert(`✓ Synced ${pushed} focus blocks into your Daily Cockpits for this week!`);
+  };
+
   return (
-    <div>
-      <Callout>Fill every Sunday. Order: Fixed → Focus blocks (before meetings!) → Meeting zones → Buffer. 3+ focus blocks, 1 review, 1 family.</Callout>
-      <div className="mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-        <button onClick={()=>setWk(shiftDay(wk,-7))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
-        <div className="text-center">
-          <div className="font-semibold text-slate-800">Week of {weekLabel()}</div>
-          {wk!==mondayOf(todayKey()) && <button onClick={()=>setWk(mondayOf(todayKey()))} className="text-xs text-amber-600 hover:underline">jump to this week</button>}
+    <div className="space-y-4">
+      {/* 1. Header Navigation & Control Center */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setWk(shiftDay(wk, -7))} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition shadow-2xs">
+            <Ic n="left"/>
+          </button>
+          <div>
+            <div className="font-extrabold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+              <span>🗓️</span>
+              <span>Week of {weekLabel()}</span>
+            </div>
+            {wk !== mondayOf(todayKey()) && (
+              <button onClick={() => setWk(mondayOf(todayKey()))} className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1">
+                <span>⚡</span> jump to this week
+              </button>
+            )}
+          </div>
+          <button onClick={() => setWk(shiftDay(wk, 7))} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition shadow-2xs">
+            <Ic n="right"/>
+          </button>
         </div>
-        <button onClick={()=>setWk(shiftDay(wk,7))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
+
+        {/* View Switcher & Automation Tools */}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* 5-Day / 7-Day Toggle */}
+          <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 text-xs font-bold shadow-2xs">
+            <button
+              onClick={() => setViewMode("5day")}
+              className={"rounded-lg px-3 py-1.5 transition " + (viewMode === "5day" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900")}
+            >
+              5-Day (Mon–Fri)
+            </button>
+            <button
+              onClick={() => setViewMode("7day")}
+              className={"rounded-lg px-3 py-1.5 transition " + (viewMode === "7day" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900")}
+            >
+              7-Day (Full Week)
+            </button>
+          </div>
+
+          <button
+            onClick={copyLastWeek}
+            title="Duplicate previous week's recurring blocks"
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs"
+          >
+            <span>🔄</span>
+            <span className="hidden sm:inline">Copy Last Week</span>
+          </button>
+
+          <button
+            onClick={pushToDaily}
+            title="Sync all weekly time blocks to daily cockpit schedules"
+            className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3 py-1.5 text-xs font-bold transition shadow-2xs"
+          >
+            <span>⚡</span>
+            <span>Sync to Daily</span>
+          </button>
+
+          <button
+            onClick={() => setShowSomedayDrawer(!showSomedayDrawer)}
+            className={"flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition shadow-2xs " + (showSomedayDrawer ? "border-amber-300 bg-amber-50 text-amber-950" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100")}
+          >
+            <span>📥</span>
+            <span>Backup Tray ({otherSomeday.length})</span>
+          </button>
+        </div>
       </div>
+
       <OverduePanel data={data} patch={patch} />
+
+      {/* 2. Due This Week Alert */}
       {hasWeekDue && (
-        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-sky-700">📌 Due this week</div>
-          <div className="grid gap-2 text-xs sm:grid-cols-7">
-            {dueByDay.map(({dayKey,date,items})=> items.length>0 && (
-              <div key={dayKey}>
-                <div className="font-semibold text-slate-600">{DAY_LABEL[dayKey]} <span className="font-normal text-slate-400">{date.slice(8,10)}</span></div>
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-3.5 shadow-xs">
+          <div className="mb-2 text-xs font-black uppercase tracking-wider text-sky-800 flex items-center gap-1.5">
+            <span>📌</span>
+            <span>Due This Week ({dueByDay.reduce((acc, d) => acc + d.items.length, 0)})</span>
+          </div>
+          <div className={"grid gap-2 text-xs sm:grid-cols-" + activeDayKeys.length}>
+            {dueByDay.map(({ dayKey, date, items }) => items.length > 0 && (
+              <div key={dayKey} className="rounded-xl border border-sky-200 bg-white p-2 shadow-2xs">
+                <div className="font-bold text-slate-700 mb-1">{DAY_LABEL[dayKey]} <span className="font-normal text-slate-400">{date.slice(8,10)}</span></div>
                 <DueChips items={items} patch={patch} tone="sky" stack />
               </div>
             ))}
           </div>
         </div>
       )}
-      <div className="mb-4 flex flex-wrap gap-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Non-negotiables:</span>
-        {[["focus","3+ focus blocks"],["review","1 review slot"],["family","1 family block"]].map(([k,l])=>(
-          <label key={k} className="flex cursor-pointer items-center gap-1.5">
-            <input type="checkbox" checked={!!week.nonneg[k]} onChange={e=>upd(x=>{x.nonneg[k]=e.target.checked;})} className="accent-amber-500" />
-            <span className={week.nonneg[k]?"text-slate-700":"text-slate-400"}>{l}</span>
-          </label>
-        ))}
-      </div>
-      {recurringWeekly.length>0 && (
-        <div className="mb-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">🔁 Recurring this week</div>
-          <div className="space-y-1">
-            {recurringWeekly.map(b=>{
-              const done = !!week.somedayDone?.[b.id];
-              return (
-                <BackupItemRow key={b.id} item={b} data={data}
-                  onUpdate={(f,v)=>updateSomedayField(b.id,f,v)} onRemove={()=>removeSomeday(b.id)}
-                  prefix={
-                    <button onClick={()=>toggleSomedayDone(b.id)} title="Done this week"
-                      className={"shrink-0 rounded px-1.5 py-0.5 "+(done?"bg-emerald-100 text-emerald-600":"text-slate-300 hover:bg-slate-100")}>
-                      <Ic n="check"/>
-                    </button>
-                  } />
-              );
-            })}
-          </div>
-          <p className="mt-2 text-xs text-slate-400">Per-week — resets next week and stays in the list until you remove it. Click the text to edit.</p>
+
+      {/* 3. Executive Non-Negotiables & Summary Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="flex flex-wrap items-center gap-4 text-xs font-bold">
+          <span className="uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+            <span>🛡️</span>
+            <span>Non-negotiables:</span>
+          </span>
+          {[["focus", "3+ focus blocks"], ["review", "1 weekly review slot"], ["family", "1 family & personal block"]].map(([k, l]) => (
+            <label key={k} className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/70 hover:bg-slate-100 px-3 py-1.5 transition">
+              <input 
+                type="checkbox" 
+                checked={!!week.nonneg[k]} 
+                onChange={e => upd(x => { x.nonneg[k] = e.target.checked; })} 
+                className="accent-amber-500 h-4 w-4 rounded cursor-pointer" 
+              />
+              <span className={week.nonneg[k] ? "text-slate-900 font-extrabold" : "text-slate-500 font-medium"}>{l}</span>
+            </label>
+          ))}
         </div>
-      )}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_240px]">
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-3">
-          <table className="w-full border-collapse text-sm">
+
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-950">
+          <span>🎯</span>
+          <span><b>{plannedBlockCount}</b> Planned Focus Slots (~{plannedBlockCount}h capacity)</span>
+        </div>
+      </div>
+
+      {/* 4. Main Time-Blocking Grid + Someday Tray Dock */}
+      <div className={"grid grid-cols-1 gap-4 " + (showSomedayDrawer ? "lg:grid-cols-[minmax(0,1fr)_280px]" : "grid-cols-1")}>
+        {/* Weekly Grid Canvas */}
+        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <table className="w-full border-collapse text-sm min-w-[640px]">
             <thead>
-              <tr>
-                <th className="w-14 p-1 text-left align-bottom mono text-xs text-slate-400">Time</th>
-                {DAY_KEYS.map((d, i)=>{
+              <tr className="border-b border-slate-200 bg-slate-50/80">
+                <th className="w-20 p-2.5 text-center align-middle font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 border-r border-slate-200">
+                  Time
+                </th>
+                {activeDayKeys.map((d, i) => {
                   const colDate = shiftDay(wk, i);
+                  const isToday = colDate === todayKey();
                   const [yS, mS, dS] = colDate.split("-");
                   const colMk = `${yS}-${mS}`;
                   const colDom = parseInt(dS, 10);
@@ -6840,20 +6987,75 @@ function WeeklyView({ data, patch }){
                   const colRecurring = (data.recurringMonthly || []).filter(r => r.day === colDom);
 
                   return (
-                    <th key={d} className="p-1 align-bottom min-w-[110px]">
-                      <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
-                        <span>{DAY_LABEL[d]} <span className="font-normal text-slate-400">{colDate.slice(8,10)}</span></span>
-                        {colIsBuffer && <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-black text-emerald-800 border border-emerald-300">⭐ Buffer</span>}
+                    <th key={d} className={"p-2.5 align-top border-r border-slate-200 last:border-r-0 transition-colors " + (isToday ? "bg-amber-50/50" : "")}>
+                      {/* Day Header Top */}
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className={"text-xs font-black uppercase tracking-wider " + (isToday ? "text-amber-900" : "text-slate-900")}>
+                            {DAY_LABEL[d]}
+                          </span>
+                          <span className={"text-[11px] font-bold " + (isToday ? "text-amber-700" : "text-slate-500")}>
+                            {new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(colDate + "T00:00:00"))}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {isToday && (
+                            <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.2 text-[9px] font-black shadow-2xs">
+                              TODAY
+                            </span>
+                          )}
+                          {colIsBuffer && (
+                            <span className="rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.2 text-[9px] font-black shadow-2xs" title="Protected Zero-Meeting Buffer Day">
+                              ⭐ Buffer
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <input value={data.dayThemes[d]||""} onChange={e=>setTheme(d,e.target.value)}
-                        className="mt-0.5 w-full rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-xs text-amber-800 outline-none focus:border-amber-400" placeholder="theme" />
+
+                      {/* Day Theme Pill with Preset Selector */}
+                      <div className="relative mb-1">
+                        <div className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50/90 px-2 py-1 shadow-2xs">
+                          <input 
+                            value={data.dayThemes[d] || ""} 
+                            onChange={e => setTheme(d, e.target.value)}
+                            placeholder="Day theme..." 
+                            className="w-full bg-transparent text-[11px] font-bold text-amber-950 outline-none placeholder:text-amber-400"
+                          />
+                          <button
+                            onClick={() => setShowThemePicker(showThemePicker === d ? null : d)}
+                            className="text-[10px] text-amber-700 hover:text-amber-950 shrink-0 font-bold"
+                            title="Pick Theme Preset"
+                          >
+                            ▾
+                          </button>
+                        </div>
+
+                        {showThemePicker === d && (
+                          <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl text-left space-y-0.5">
+                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 py-0.5">
+                              Theme Presets
+                            </div>
+                            {THEME_PRESETS.map(preset => (
+                              <button
+                                key={preset}
+                                onClick={() => { setTheme(d, preset); setShowThemePicker(null); }}
+                                className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-semibold text-slate-800 hover:bg-amber-50 hover:text-amber-950 transition"
+                              >
+                                {preset}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Horizon Badges (Monthly Blueprint & Statutory Tax Dates) */}
                       {colMonthlyText && (
-                        <div className="mt-1 rounded bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 text-[10px] font-bold text-amber-950 truncate" title={`Monthly Blueprint: ${colMonthlyText}`}>
+                        <div className="mb-1 rounded-lg bg-amber-100/90 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-950 truncate text-left" title={"Monthly Blueprint: " + colMonthlyText}>
                           📅 {colMonthlyText}
                         </div>
                       )}
                       {colRecurring.map(r => (
-                        <div key={r.id} className="mt-0.5 rounded bg-blue-50 border border-blue-200 px-1.5 py-0.5 text-[10px] font-bold text-blue-900 truncate" title={`Monthly Recurring: ${r.text}`}>
+                        <div key={r.id} className="mb-0.5 rounded-lg bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900 truncate text-left" title={"Monthly Recurring: " + r.text}>
                           🔁 {r.text}
                         </div>
                       ))}
@@ -6862,38 +7064,164 @@ function WeeklyView({ data, patch }){
                 })}
               </tr>
             </thead>
+
             <tbody>
-              {WEEK_SLOTS.map((s,si)=>(
-                <tr key={s}>
-                  <td className="p-0.5 align-top mono text-xs text-slate-400">{s}</td>
-                  {DAY_KEYS.map(d=>{ const kk=`${s}|${d}`; const badges=slotMap[`${si}|${d}`]||[]; return (
-                    <td key={d} className="p-0.5 align-top">
-                      <input value={week.grid[kk]||""} onChange={e=>upd(x=>{x.grid[kk]=e.target.value;})}
-                        className="w-full rounded border border-slate-100 bg-white px-1 py-1 text-xs outline-none focus:border-amber-300 focus:bg-amber-50" />
-                      {badges.map((b,idx)=>(
-                        <div key={idx} className="mt-0.5 break-words rounded bg-sky-50 px-1 text-[10px] leading-snug text-sky-700" title={b.text}>📌 {b.text}</div>
-                      ))}
-                    </td>
-                  );})}
+              {WEEK_SLOTS.map((s, si) => (
+                <tr key={s} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/40 transition-colors">
+                  <td className="w-20 p-2 text-center align-middle font-mono text-[11px] font-bold text-slate-500 border-r border-slate-200 bg-slate-50/40">
+                    {s}
+                  </td>
+
+                  {activeDayKeys.map(d => {
+                    const kk = `${s}|${d}`;
+                    const val = week.grid[kk] || "";
+                    const badges = slotMap[`${si}|${d}`] || [];
+                    const isEditing = editingSlot === kk;
+                    const cat = getBlockCategoryStyle(val);
+
+                    return (
+                      <td key={d} className="p-1 align-top border-r border-slate-100 last:border-r-0 relative group">
+                        {isEditing ? (
+                          <div className="rounded-xl border-2 border-amber-400 bg-white p-1.5 shadow-md space-y-1">
+                            <input
+                              autoFocus
+                              value={val}
+                              onChange={e => upd(x => { x.grid[kk] = e.target.value; })}
+                              onBlur={() => setEditingSlot(null)}
+                              onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setEditingSlot(null); }}
+                              placeholder="Focus block or meeting..."
+                              className="w-full bg-transparent text-xs font-bold text-slate-900 outline-none"
+                            />
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {["Deep Focus", "Meeting", "Finance", "Admin", "Family"].map(preset => (
+                                <button
+                                  key={preset}
+                                  onMouseDown={e => {
+                                    e.preventDefault();
+                                    upd(x => { x.grid[kk] = `[${preset}] ${val.replace(/^\[[^\]]+\]\s*/, "")}`; });
+                                    setEditingSlot(null);
+                                  }}
+                                  className="rounded bg-slate-100 hover:bg-amber-100 hover:text-amber-950 px-1.5 py-0.5 text-[9px] font-bold text-slate-700 transition"
+                                >
+                                  {preset}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : val ? (
+                          <div 
+                            onClick={() => setEditingSlot(kk)}
+                            className={"rounded-xl border p-2 text-xs font-bold transition shadow-2xs cursor-pointer group/card relative " + cat.bg + " " + cat.border + " " + cat.text}
+                          >
+                            <div className="flex items-start justify-between gap-1">
+                              <span className="break-words leading-tight flex-1">{val}</span>
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  upd(x => { delete x.grid[kk]; });
+                                }}
+                                className="text-slate-400 hover:text-rose-600 opacity-0 group-hover/card:opacity-100 transition shrink-0 text-xs font-black"
+                                title="Clear slot"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => setEditingSlot(kk)}
+                            className="h-9 rounded-xl border border-dashed border-transparent hover:border-slate-300 hover:bg-slate-50/80 transition-all flex items-center justify-center cursor-pointer"
+                          >
+                            <span className="text-[10px] font-bold text-slate-400 opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
+                              <span>+</span> Add Block
+                            </span>
+                          </div>
+                        )}
+
+                        {badges.map((b, idx) => (
+                          <div key={idx} className="mt-1 break-words rounded-lg bg-sky-50 border border-sky-200 px-2 py-0.5 text-[10px] font-bold text-sky-800 shadow-2xs" title={b.text}>
+                            📌 {b.text}
+                          </div>
+                        ))}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Someday / backup</div>
-          <p className="mb-2 text-xs text-slate-400">A slot opens → pick from here, not Instagram.</p>
-          <div className="space-y-1">
-            {otherSomeday.length===0 && <p className="py-4 text-center text-xs text-slate-400">Empty. Transfer WEEKLY items here.</p>}
-            {otherSomeday.map(b=>(
-              <BackupItemRow key={b.id} item={b} data={data}
-                onUpdate={(f,v)=>updateSomedayField(b.id,f,v)} onRemove={()=>removeSomeday(b.id)}
-                onToggleDone={()=>updateSomedayField(b.id,"done",!b.done)} />
-            ))}
+
+        {/* 5. Someday / Backup Tray Dock */}
+        {showSomedayDrawer && (
+          <div className="space-y-4">
+            {recurringWeekly.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2">
+                <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <span>🔁</span>
+                  <span>Recurring This Week</span>
+                </div>
+                <div className="space-y-1.5">
+                  {recurringWeekly.map(b => {
+                    const done = !!week.somedayDone?.[b.id];
+                    return (
+                      <BackupItemRow 
+                        key={b.id} 
+                        item={b} 
+                        data={data}
+                        onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
+                        onRemove={() => removeSomeday(b.id)}
+                        prefix={
+                          <button 
+                            onClick={() => toggleSomedayDone(b.id)} 
+                            title="Done this week"
+                            className={"shrink-0 rounded-lg p-1 transition " + (done ? "bg-emerald-100 text-emerald-700" : "text-slate-300 hover:bg-slate-100")}
+                          >
+                            <Ic n="check"/>
+                          </button>
+                        } 
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <span>📥</span>
+                  <span>Someday / Backup ({otherSomeday.length})</span>
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                When a scheduled block frees up, pull high-value backlog tasks from here.
+              </p>
+              <div className="space-y-1.5">
+                {otherSomeday.length === 0 && (
+                  <p className="py-6 text-center text-xs font-medium text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    No backlog items. Transfer tasks from Daily Backup or Capture.
+                  </p>
+                )}
+                {otherSomeday.map(b => (
+                  <BackupItemRow 
+                    key={b.id} 
+                    item={b} 
+                    data={data}
+                    onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
+                    onRemove={() => removeSomeday(b.id)}
+                    onToggleDone={() => updateSomedayField(b.id, "done", !b.done)} 
+                  />
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
       </div>
-      <p className="mt-3 text-center text-xs text-slate-400">Day themes are global — edit once, they apply to every week.</p>
+
+      <p className="text-center text-xs text-slate-400 font-medium pt-2">
+        Day themes are global — edit once, they structure your weekly executive rhythm.
+      </p>
     </div>
   );
 }
