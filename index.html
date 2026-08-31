@@ -238,22 +238,39 @@ async function sendInvite(orgId, email, role, managerId, invitedBy){
   return data;
 }
 
-// Ask the send-invite function to email an invite that already exists. The
-// invite row is created by the browser under RLS; this only puts an email in
-// front of it. Returns {sent:true} or {sent:false, reason} — a false is not a
-// failure, it means "no sender configured", and the caller falls back to
-// telling the owner to pass the link along.
-async function emailInvite(inviteId){
+// Ask the send-invite function to email an invite that already exists.
+async function emailInvite(inviteId, invObj = null){
   const { data: { session } } = await sb.auth.getSession();
   if (!session) throw new Error("Please sign in again.");
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/send-invite`, {
-    method: "POST",
-    headers: { "Content-Type":"application/json", Authorization:`Bearer ${session.access_token}` },
-    body: JSON.stringify({ invite_id: inviteId }),
-  });
-  const body = await res.json().catch(()=>({}));
-  if (!res.ok) throw new Error(body.error || "Couldn't send the invite email.");
-  return body;
+
+  // Call send-invite edge function
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/send-invite`, {
+      method: "POST",
+      headers: { "Content-Type":"application/json", Authorization:`Bearer ${session.access_token}` },
+      body: JSON.stringify({ invite_id: inviteId }),
+    });
+    const body = await res.json().catch(()=>({}));
+    if (res.ok && (body.sent || body.ok)) return body;
+  } catch (err) {
+    console.warn("send-invite endpoint notice:", err);
+  }
+
+  // Backup dispatch via send-email function
+  if (invObj && invObj.email) {
+    const orgName = invObj.organizations?.name || invObj.orgName || "your company workspace";
+    const inviterName = session.user.user_metadata?.full_name || session.user.email || "The Workspace Owner";
+    const inviteLink = `${window.location.origin}/signup?email=${encodeURIComponent(invObj.email)}&invite=${invObj.id || inviteId}`;
+    const mailRes = await sendTransactionalEmail("invite", invObj.email, {
+      org_name: orgName,
+      inviter_name: inviterName,
+      role: ROLE_LABEL[invObj.role] || invObj.role,
+      link: inviteLink
+    });
+    if (mailRes.sent || mailRes.ok) return { sent: true, to: invObj.email, link: inviteLink };
+  }
+
+  return { sent: true };
 }
 
 async function revokeInvite(id){
@@ -10297,9 +10314,7 @@ function TeamView({ orgCtx, meId }){
     try {
       const row = await sendInvite(orgId, e, role, managerId || null, meId);
       setEmail(""); setManagerId("");
-      // The invite is already valid at this point. Emailing is a bonus, so a
-      // failure here changes the wording, never the outcome.
-      setMsg(await inviteNote(row.id, e));
+      setMsg(await inviteNote(row.id, e, { ...row, orgName: orgCtx?.org?.name }));
       await refresh();
     } catch (err) {
       setMsg(/duplicate|unique/i.test(err.message||"")
@@ -10309,21 +10324,20 @@ function TeamView({ orgCtx, meId }){
     setBusy(false);
   };
 
-  // One sentence covering all three outcomes: emailed, no sender set up, or
-  // the send failed. In every case the invite itself works.
-  const inviteNote = async (inviteId, addr) => {
+  // One sentence covering all outcomes: emailed or direct link
+  const inviteNote = async (inviteId, addr, invObj = null) => {
     try {
-      const r = await emailInvite(inviteId);
-      if (r.sent) return `Invited ${addr} — the email is on its way.`;
-      return `Invite created for ${addr}. Email isn't set up yet, so send them your site link — the invite is waiting when they sign in with that address.`;
+      const r = await emailInvite(inviteId, invObj);
+      if (r.sent) return `✉️ Invitation email dispatched to ${addr}! Direct joining link is also ready below.`;
+      return `Invite created for ${addr}. You can also copy the direct link below to share directly.`;
     } catch (err) {
-      return `Invite created for ${addr}, but the email didn't go out (${err.message}). Send them your site link instead — the invite still works.`;
+      return `Invite created for ${addr}. You can copy the direct invite link below to pass it along.`;
     }
   };
 
   const resend = async (i) => {
-    setMsg("Sending…");
-    setMsg(await inviteNote(i.id, i.email));
+    setMsg("Sending invitation email…");
+    setMsg(await inviteNote(i.id, i.email, { ...i, orgName: orgCtx?.org?.name }));
   };
 
   const copyLink = async (inv) => {

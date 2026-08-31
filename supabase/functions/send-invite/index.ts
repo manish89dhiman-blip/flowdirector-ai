@@ -1,62 +1,34 @@
 // ============================================================================
 // send-invite — emails a pending invite to the person it's for.
 // ----------------------------------------------------------------------------
-// PARTIALLY VERIFIED. The Resend account, the verified sending domain and this
-// exact email template have been confirmed end to end — a send was delivered to
-// an Outlook/Hotmail inbox. What has NOT been exercised live is this function's
-// own path: the owner check, the invite lookup, and the org comparison. Those
-// are covered by tests, not by a real invocation. Send one real invite from the
-// Team tab before relying on it. See EMAIL-SETUP.md.
-//
-// The invite ROW is still created by the browser (RLS and the seat-limit
-// trigger enforce who may create it and how many). This function only puts an
-// email in front of it, so:
-//
-//   * It never creates or modifies an invite. Worst case it sends nothing.
-//   * If RESEND_API_KEY isn't set it returns { sent: false } with a reason,
-//     rather than failing. The app then falls back to today's behaviour —
-//     "copy this link and send it yourself" — so email is a pure upgrade and
-//     never a new way for inviting to break.
-//
-// Authorisation: the caller must be an OWNER of the org that the invite
-// belongs to. The invite id from the request body is never trusted on its
-// own — we load the invite and compare its org against the caller's own
-// membership. Otherwise anyone could spray invite emails from your domain.
-//
-// Deploy:  supabase functions deploy send-invite
-// Secrets: supabase secrets set RESEND_API_KEY=re_xxx
-//          supabase secrets set INVITE_FROM="Command Center <invites@yourdomain.com>"
-//          supabase secrets set APP_ORIGIN=https://your-site.com
+// Dispatches invite emails directly via Resend API
 // ============================================================================
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-
 const cors = {
-  "Access-Control-Allow-Origin": Deno.env.get("APP_ORIGIN") ?? "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, content-type, apikey",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...cors, "Content-Type": "application/json" },
-  });
-
-// Anything a person typed goes through this before it lands in an HTML email.
 const esc = (s: string) =>
-  String(s ?? "").replace(/[&<>"']/g, c =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!)
+  );
 
 const ROLE_WORD: Record<string, string> = {
-  owner: "an owner",
-  manager: "a manager",
-  employee: "a team member",
+  owner: "an Owner",
+  manager: "a Manager",
+  employee: "an Employee",
 };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "POST only" }), {
+      status: 405,
+      headers: { ...cors, "Content-Type": "application/json" }
+    });
+  }
 
   try {
     // --- who is asking? -----------------------------------------------------
