@@ -5570,15 +5570,36 @@ const dailySlotItems = (data, dateStr, dueMap) => {
 // Same idea across a whole Mon–Sun week, keyed by "slotIdx|dayKey" for the grid.
 const weeklySlotItems = (data, wk, dueMap) => {
   const map = {};
-  const add=(slotIdx,dayKey,text,tag)=>{ if(slotIdx<0) return; const k=`${slotIdx}|${dayKey}`; if(!map[k]) map[k]=[]; map[k].push({text,tag}); };
-  DAY_KEYS.forEach((dayKey,i)=>{
-    const dateStr = shiftDay(wk,i);
+  const add = (slotIdx, dayKey, text, tag, id, source, done, time) => {
+    if (slotIdx < 0) return;
+    const k = `${slotIdx}|${dayKey}`;
+    if (!map[k]) map[k] = [];
+    map[k].push({ text, tag, id, source, done, time });
+  };
+  DAY_KEYS.forEach((dayKey, i) => {
+    const dateStr = shiftDay(wk, i);
     const dow = dayOfWeekKey(dateStr);
-    const dom = parseInt(dateStr.slice(8,10),10);
-    (dueMap[dateStr]||[]).forEach(it=>add(slotIndexForTime(it.time, WEEK_SLOTS.length), dayKey, it.text, it.tag));
-    data.dailyBackup.filter(b=>b.taskType==="DAILY"&&b.time).forEach(b=>add(slotIndexForTime(b.time,WEEK_SLOTS.length), dayKey, b.text, b.tag));
-    data.weeklySomeday.filter(b=>b.taskType==="WEEKLY"&&b.due&&dayOfWeekKey(b.due)===dow).forEach(b=>add(slotIndexForTime(b.time,WEEK_SLOTS.length), dayKey, b.text, b.tag));
-    (data.recurringMonthly||[]).filter(r=>r.day===dom).forEach(r=>add(slotIndexForTime(r.time,WEEK_SLOTS.length), dayKey, r.text, r.tag));
+    const dom = parseInt(dateStr.slice(8, 10), 10);
+    
+    // 1. Items due on this date with time
+    (dueMap[dateStr] || []).forEach(it => add(slotIndexForTime(it.time, WEEK_SLOTS.length), dayKey, it.text, it.tag, it.id, it.source, it.done, it.time));
+    
+    // 2. Daily routine habits with time
+    data.dailyBackup.filter(b => b.taskType === "DAILY" && b.time && !isHolidayItem(b)).forEach(b => add(slotIndexForTime(b.time, WEEK_SLOTS.length), dayKey, b.text, b.tag, b.id, "dailyBackup", false, b.time));
+    
+    // 3. Weekly recurring items matching day of week with time
+    data.weeklySomeday.filter(b => b.taskType === "WEEKLY" && b.due && dayOfWeekKey(b.due) === dow && b.time).forEach(b => add(slotIndexForTime(b.time, WEEK_SLOTS.length), dayKey, b.text, b.tag, b.id, "weeklySomeday", false, b.time));
+    
+    // 4. Monthly recurring items matching day of month with time
+    (data.recurringMonthly || []).filter(r => r.day === dom && r.time).forEach(r => add(slotIndexForTime(r.time, WEEK_SLOTS.length), dayKey, r.text, r.tag, r.id, "recurringMonthly", false, r.time));
+
+    // 5. Daily cockpit scheduled focus blocks for this date
+    const dailyBlocks = data.daily?.[dateStr]?.blocks || {};
+    WEEK_SLOTS.forEach((s, sIdx) => {
+      if (dailyBlocks[s] && dailyBlocks[s].trim()) {
+        add(sIdx, dayKey, dailyBlocks[s], "Focus Block", `daily-block-${dateStr}-${sIdx}`, "dailyBlock", false, "");
+      }
+    });
   });
   return map;
 };
@@ -6782,6 +6803,7 @@ const getBlockCategoryStyle = (text) => {
 function WeeklyView({ data, patch }){
   const [wk, setWk] = useState(mondayOf(todayKey()));
   const [viewMode, setViewMode] = useState("5day");
+  const [selectedMobileDay, setSelectedMobileDay] = useState(dayOfWeekKey(todayKey()) || "mon");
   const [editingSlot, setEditingSlot] = useState(null);
   const [showThemePicker, setShowThemePicker] = useState(null);
   const [showSomedayDrawer, setShowSomedayDrawer] = useState(true);
@@ -6852,49 +6874,57 @@ function WeeklyView({ data, patch }){
   return (
     <div className="space-y-4">
       {/* 1. Header Navigation & Control Center */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-slate-200 bg-white p-3.5 shadow-xs">
         <div className="flex items-center gap-2">
-          <button onClick={() => setWk(shiftDay(wk, -7))} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition shadow-2xs">
+          <button onClick={() => setWk(shiftDay(wk, -7))} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-700 hover:bg-slate-100 transition shadow-2xs font-bold">
             <Ic n="left"/>
           </button>
           <div>
-            <div className="font-extrabold text-sm sm:text-base text-slate-900 flex items-center gap-2">
+            <div className="font-black text-sm sm:text-base text-slate-950 flex items-center gap-2">
               <span>🗓️</span>
               <span>Week of {weekLabel()}</span>
             </div>
             {wk !== mondayOf(todayKey()) && (
-              <button onClick={() => setWk(mondayOf(todayKey()))} className="text-xs font-bold text-amber-600 hover:underline flex items-center gap-1">
+              <button onClick={() => setWk(mondayOf(todayKey()))} className="text-xs font-black text-amber-600 hover:underline flex items-center gap-1">
                 <span>⚡</span> jump to this week
               </button>
             )}
           </div>
-          <button onClick={() => setWk(shiftDay(wk, 7))} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-600 hover:bg-slate-100 transition shadow-2xs">
+          <button onClick={() => setWk(shiftDay(wk, 7))} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-700 hover:bg-slate-100 transition shadow-2xs font-bold">
             <Ic n="right"/>
           </button>
         </div>
 
-        {/* View Switcher & Automation Tools */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* 5-Day / 7-Day Toggle */}
-          <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5 text-xs font-bold shadow-2xs">
-            <button
-              onClick={() => setViewMode("5day")}
-              className={"rounded-lg px-3 py-1.5 transition " + (viewMode === "5day" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900")}
-            >
-              5-Day (Mon–Fri)
-            </button>
-            <button
-              onClick={() => setViewMode("7day")}
-              className={"rounded-lg px-3 py-1.5 transition " + (viewMode === "7day" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900")}
-            >
-              7-Day (Full Week)
-            </button>
-          </div>
+        {/* 5-Day vs 7-Day Segmented Control (Large & High-Contrast) */}
+        <div className="flex items-center rounded-2xl border-2 border-slate-200 bg-slate-100 p-1 shadow-inner">
+          <button
+            onClick={() => setViewMode("5day")}
+            className={`rounded-xl px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-black transition-all ${
+              viewMode === "5day"
+                ? "bg-slate-950 text-white shadow-md scale-[1.02]"
+                : "text-slate-600 hover:text-slate-950 font-bold"
+            }`}
+          >
+            💼 5-Day (Mon–Fri)
+          </button>
+          <button
+            onClick={() => setViewMode("7day")}
+            className={`rounded-xl px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-black transition-all ${
+              viewMode === "7day"
+                ? "bg-slate-950 text-white shadow-md scale-[1.02]"
+                : "text-slate-600 hover:text-slate-950 font-bold"
+            }`}
+          >
+            🗓️ 7-Day (Full Week)
+          </button>
+        </div>
 
+        {/* Automation Tools */}
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={copyLastWeek}
             title="Duplicate previous week's recurring blocks"
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs"
+            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-2 text-xs font-bold transition shadow-2xs"
           >
             <span>🔄</span>
             <span className="hidden sm:inline">Copy Last Week</span>
@@ -6903,7 +6933,7 @@ function WeeklyView({ data, patch }){
           <button
             onClick={pushToDaily}
             title="Sync all weekly time blocks to daily cockpit schedules"
-            className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3 py-1.5 text-xs font-bold transition shadow-2xs"
+            className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-2 text-xs font-black transition shadow-2xs"
           >
             <span>⚡</span>
             <span>Sync to Daily</span>
@@ -6911,10 +6941,12 @@ function WeeklyView({ data, patch }){
 
           <button
             onClick={() => setShowSomedayDrawer(!showSomedayDrawer)}
-            className={"flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition shadow-2xs " + (showSomedayDrawer ? "border-amber-300 bg-amber-50 text-amber-950" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100")}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition shadow-2xs ${
+              showSomedayDrawer ? "border-amber-300 bg-amber-50 text-amber-950" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+            }`}
           >
             <span>📥</span>
-            <span>Backup Tray ({otherSomeday.length})</span>
+            <span>Backup ({otherSomeday.length})</span>
           </button>
         </div>
       </div>
@@ -6928,7 +6960,7 @@ function WeeklyView({ data, patch }){
             <span>📌</span>
             <span>Due This Week ({dueByDay.reduce((acc, d) => acc + d.items.length, 0)})</span>
           </div>
-          <div className={"grid gap-2 text-xs sm:grid-cols-" + activeDayKeys.length}>
+          <div className={`grid gap-2 text-xs sm:grid-cols-${activeDayKeys.length}`}>
             {dueByDay.map(({ dayKey, date, items }) => items.length > 0 && (
               <div key={dayKey} className="rounded-xl border border-sky-200 bg-white p-2 shadow-2xs">
                 <div className="font-bold text-slate-700 mb-1">{DAY_LABEL[dayKey]} <span className="font-normal text-slate-400">{date.slice(8,10)}</span></div>
@@ -6965,8 +6997,168 @@ function WeeklyView({ data, patch }){
         </div>
       </div>
 
-      {/* 4. Main Time-Blocking Grid + Someday Tray Dock */}
-      <div className={"grid grid-cols-1 gap-4 " + (showSomedayDrawer ? "lg:grid-cols-[minmax(0,1fr)_280px]" : "grid-cols-1")}>
+      {/* 4. Mobile Day Selector Bar (Visible on Mobile Screens < md) */}
+      <div className="block md:hidden">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {activeDayKeys.map((dayKey, i) => {
+            const colDate = shiftDay(wk, i);
+            const isToday = colDate === todayKey();
+            const isSelected = (selectedMobileDay || "mon") === dayKey;
+            const colMonthObj = data.monthly?.[colDate.slice(0, 7)] || {};
+            const colIsBuffer = (colMonthObj.buffers || []).includes(parseInt(colDate.slice(8, 10), 10));
+            return (
+              <button
+                key={dayKey}
+                onClick={() => setSelectedMobileDay(dayKey)}
+                className={`shrink-0 rounded-2xl px-4 py-2 text-center transition-all border ${
+                  isSelected
+                    ? "border-slate-950 bg-slate-950 text-white shadow-md scale-[1.02]"
+                    : isToday
+                    ? "border-amber-400 bg-amber-50 text-amber-950 font-bold"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <div className="text-[10px] font-black uppercase flex items-center justify-center gap-1">
+                  <span>{DAY_LABEL[dayKey]}</span>
+                  {colIsBuffer && <span>⭐</span>}
+                </div>
+                <div className="text-xs font-extrabold">{colDate.slice(8, 10)}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 5. Mobile Single-Day Focused Timeline (< md) */}
+      <div className="block md:hidden space-y-3">
+        {(() => {
+          const d = selectedMobileDay || "mon";
+          const dIdx = activeDayKeys.indexOf(d) >= 0 ? activeDayKeys.indexOf(d) : 0;
+          const colDate = shiftDay(wk, dIdx);
+          const isToday = colDate === todayKey();
+          const colMonthObj = data.monthly?.[colDate.slice(0, 7)] || {};
+          const colDom = parseInt(colDate.slice(8, 10), 10);
+          const colMonthlyText = colMonthObj.days?.[colDom] || colMonthObj.days?.[String(colDom)] || "";
+          const colIsBuffer = (colMonthObj.buffers || []).includes(colDom);
+          const colRecurring = (data.recurringMonthly || []).filter(r => r.day === colDom);
+
+          return (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-black text-slate-900 flex items-center gap-2">
+                    <span>{DAY_LABEL[d]}</span>
+                    <span>·</span>
+                    <span className="text-slate-600">{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(colDate + "T00:00:00"))}</span>
+                  </div>
+                  {colIsBuffer && <div className="text-xs font-black text-emerald-700 mt-0.5">⭐ Protected Buffer Day (Zero Meetings)</div>}
+                </div>
+                {isToday && <span className="rounded-full bg-amber-400 text-slate-950 px-2.5 py-0.5 text-xs font-black">TODAY</span>}
+              </div>
+
+              {/* Day Theme */}
+              <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs font-bold text-amber-950">
+                <span>🏷️ Theme:</span>
+                <input
+                  value={data.dayThemes[d] || ""}
+                  onChange={e => setTheme(d, e.target.value)}
+                  placeholder="Set day focus theme..."
+                  className="w-full bg-transparent outline-none placeholder:text-amber-400"
+                />
+              </div>
+
+              {/* Monthly Blueprint & Tax Badges */}
+              {colMonthlyText && (
+                <div className="rounded-xl border border-amber-300 bg-amber-100/90 px-3 py-1.5 text-xs font-bold text-amber-950">
+                  📅 Monthly Blueprint: {colMonthlyText}
+                </div>
+              )}
+              {colRecurring.map(r => (
+                <div key={r.id} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-950">
+                  🔁 Monthly Rule: {r.text}
+                </div>
+              ))}
+
+              {/* Hourly Timeline for Selected Day */}
+              <div className="divide-y divide-slate-100 pt-2">
+                {WEEK_SLOTS.map((s, si) => {
+                  const kk = `${s}|${d}`;
+                  const val = week.grid[kk] || "";
+                  const badges = slotMap[`${si}|${d}`] || [];
+                  const cat = getBlockCategoryStyle(val);
+                  const isEditing = editingSlot === kk;
+
+                  return (
+                    <div key={s} className="py-2.5 flex items-start gap-3">
+                      <span className="w-16 shrink-0 font-mono text-[11px] font-bold text-slate-500 pt-1">{s}</span>
+                      <div className="flex-1 space-y-1.5">
+                        {isEditing ? (
+                          <div className="rounded-xl border-2 border-amber-400 bg-white p-2 shadow-md space-y-2">
+                            <input
+                              autoFocus
+                              value={val}
+                              onChange={e => upd(x => { x.grid[kk] = e.target.value; })}
+                              onBlur={() => setEditingSlot(null)}
+                              onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setEditingSlot(null); }}
+                              placeholder="Focus block or meeting..."
+                              className="w-full bg-transparent text-xs font-bold text-slate-900 outline-none"
+                            />
+                            <div className="flex flex-wrap gap-1">
+                              {["Deep Focus", "Meeting", "Finance", "Admin", "Family"].map(preset => (
+                                <button
+                                  key={preset}
+                                  onMouseDown={e => {
+                                    e.preventDefault();
+                                    upd(x => { x.grid[kk] = `[${preset}] ${val.replace(/^\[[^\]]+\]\s*/, "")}`; });
+                                    setEditingSlot(null);
+                                  }}
+                                  className="rounded bg-slate-100 hover:bg-amber-100 hover:text-amber-950 px-2 py-0.5 text-[10px] font-bold text-slate-700"
+                                >
+                                  {preset}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : val ? (
+                          <div 
+                            onClick={() => setEditingSlot(kk)}
+                            className={`rounded-xl border p-2.5 text-xs font-bold transition shadow-2xs flex items-center justify-between gap-2 ${cat.bg} ${cat.border} ${cat.text}`}
+                          >
+                            <span>{val}</span>
+                            <button
+                              onClick={e => { e.stopPropagation(); upd(x => { delete x.grid[kk]; }); }}
+                              className="text-slate-400 hover:text-rose-600 font-black text-sm px-1"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditingSlot(kk)}
+                            className="w-full rounded-xl border border-dashed border-slate-200 hover:border-slate-300 py-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-700 text-left px-3 transition"
+                          >
+                            + Add focus block or meeting
+                          </button>
+                        )}
+
+                        {/* Due task badges */}
+                        {badges.map((b, idx) => (
+                          <div key={idx} className="rounded-xl bg-sky-50 border border-sky-200 px-3 py-1 text-xs font-bold text-sky-900 shadow-2xs">
+                            📌 {b.time ? `${b.time} · ` : ""}{b.text}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* 6. Desktop Multi-Column Grid Canvas (Visible on Tablet & Desktop >= md) */}
+      <div className={`hidden md:grid grid-cols-1 gap-4 ${showSomedayDrawer ? "lg:grid-cols-[minmax(0,1fr)_280px]" : "grid-cols-1"}`}>
         {/* Weekly Grid Canvas */}
         <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
           <table className="w-full border-collapse text-sm min-w-[640px]">
@@ -6987,14 +7179,14 @@ function WeeklyView({ data, patch }){
                   const colRecurring = (data.recurringMonthly || []).filter(r => r.day === colDom);
 
                   return (
-                    <th key={d} className={"p-2.5 align-top border-r border-slate-200 last:border-r-0 transition-colors " + (isToday ? "bg-amber-50/50" : "")}>
+                    <th key={d} className={`p-2.5 align-top border-r border-slate-200 last:border-r-0 transition-colors ${isToday ? "bg-amber-50/50" : ""}`}>
                       {/* Day Header Top */}
                       <div className="flex items-center justify-between gap-1 mb-1.5">
                         <div className="flex items-baseline gap-1.5">
-                          <span className={"text-xs font-black uppercase tracking-wider " + (isToday ? "text-amber-900" : "text-slate-900")}>
+                          <span className={`text-xs font-black uppercase tracking-wider ${isToday ? "text-amber-900" : "text-slate-900"}`}>
                             {DAY_LABEL[d]}
                           </span>
-                          <span className={"text-[11px] font-bold " + (isToday ? "text-amber-700" : "text-slate-500")}>
+                          <span className={`text-[11px] font-bold ${isToday ? "text-amber-700" : "text-slate-500"}`}>
                             {new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(colDate + "T00:00:00"))}
                           </span>
                         </div>
@@ -7138,9 +7330,10 @@ function WeeklyView({ data, patch }){
                           </div>
                         )}
 
+                        {/* All Tasks with Time & Pinned Badges */}
                         {badges.map((b, idx) => (
                           <div key={idx} className="mt-1 break-words rounded-lg bg-sky-50 border border-sky-200 px-2 py-0.5 text-[10px] font-bold text-sky-800 shadow-2xs" title={b.text}>
-                            📌 {b.text}
+                            📌 {b.time ? `${b.time} · ` : ""}{b.text}
                           </div>
                         ))}
                       </td>
@@ -7152,7 +7345,7 @@ function WeeklyView({ data, patch }){
           </table>
         </div>
 
-        {/* 5. Someday / Backup Tray Dock */}
+        {/* 7. Someday / Backup Tray Dock */}
         {showSomedayDrawer && (
           <div className="space-y-4">
             {recurringWeekly.length > 0 && (
@@ -7231,7 +7424,6 @@ function WeeklyView({ data, patch }){
 /* ================================================================== */
 function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
   const [activeTab, setActiveTab] = useState("holidays"); // "holidays" | "tax"
-
   const importHolidays = () => {
     let added = 0;
     const tz = data?.settings?.timezone || "Asia/Kolkata";
@@ -7426,70 +7618,88 @@ function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
 /*  4 · MONTHLY                                                        */
 /* ================================================================== */
 function MonthlyView({ data, patch, onGoToDay }){
-  const now=new Date();
-  const [y,setY]=useState(now.getFullYear());
-  const [m,setM]=useState(now.getMonth()+1);
+  const now = new Date();
+  const [y, setY] = useState(now.getFullYear());
+  const [m, setM] = useState(now.getMonth() + 1);
+  const [selectedDay, setSelectedDay] = useState(now.getDate());
   const [showComplianceModal, setShowComplianceModal] = useState(false);
   const [notice, setNotice] = useState("");
   const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 4500); };
 
-  const mk=`${y}-${m}`;
-  const month=data.monthly[mk]||{days:{},buffers:[]};
-  const upd=(fn)=>patch(d=>{ if(!d.monthly[mk]) d.monthly[mk]={days:{},buffers:[]}; fn(d.monthly[mk]); });
-  const daysInMonth=new Date(y,m,0).getDate();
-  const firstDow=(new Date(y,m-1,1).getDay()+6)%7;
-  const nav=(n)=>{let nm=m+n,ny=y;if(nm>12){nm=1;ny++;}if(nm<1){nm=12;ny--;}setM(nm);setY(ny);};
-  const toggleBuffer=(n)=>upd(x=>{x.buffers=x.buffers.includes(n)?x.buffers.filter(b=>b!==n):[...x.buffers,n];});
-  const cells=[]; for(let i=0;i<firstDow;i++)cells.push(null); for(let n=1;n<=daysInMonth;n++)cells.push(n);
-  const place=(item,n)=>patch(d=>{
-    if(!d.monthly[mk])d.monthly[mk]={days:{},buffers:[]};
-    const prev=d.monthly[mk].days[n]||"";
-    d.monthly[mk].days[n]=prev?prev+" · "+item.text:item.text;
-    d.monthlyTray=d.monthlyTray.filter(t=>t.id!==item.id);
-    if(!d.recurringMonthly) d.recurringMonthly=[];
-    d.recurringMonthly.push({id:item.id,text:item.text,tag:item.tag,day:n,time:item.time||""});
+  const mk = `${y}-${m}`;
+  const month = data.monthly[mk] || { days: {}, buffers: [] };
+  const upd = (fn) => patch(d => { if (!d.monthly[mk]) d.monthly[mk] = { days: {}, buffers: [] }; fn(d.monthly[mk]); });
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const nav = (n) => { let nm = m + n, ny = y; if (nm > 12) { nm = 1; ny++; } if (nm < 1) { nm = 12; ny--; } setM(nm); setY(ny); };
+  const toggleBuffer = (n) => upd(x => { x.buffers = x.buffers.includes(n) ? x.buffers.filter(b => b !== n) : [...x.buffers, n]; });
+  const cells = []; for (let i = 0; i < firstDow; i++) cells.push(null); for (let n = 1; n <= daysInMonth; n++) cells.push(n);
+  const place = (item, n) => patch(d => {
+    if (!d.monthly[mk]) d.monthly[mk] = { days: {}, buffers: [] };
+    const prev = d.monthly[mk].days[n] || "";
+    d.monthly[mk].days[n] = prev ? prev + " · " + item.text : item.text;
+    d.monthlyTray = d.monthlyTray.filter(t => t.id !== item.id);
+    if (!d.recurringMonthly) d.recurringMonthly = [];
+    d.recurringMonthly.push({ id: item.id, text: item.text, tag: item.tag, day: n, time: item.time || "" });
   });
-  const dropTray=(id)=>{ if(!confirm("Delete this item? This can't be undone.")) return; patch(d=>{d.monthlyTray=d.monthlyTray.filter(t=>t.id!==id);}); };
-  const stopRecurring=(id)=>patch(d=>{d.recurringMonthly=(d.recurringMonthly||[]).filter(r=>r.id!==id);});
-  const updateTrayField=(id,field,value)=>patch(d=>{const t=d.monthlyTray.find(x=>x.id===id); if(t) t[field]=value;});
-  const updateRecurringField=(id,field,value)=>patch(d=>{const r=(d.recurringMonthly||[]).find(x=>x.id===id); if(r) r[field]=value;});
+  const dropTray = (id) => { if (!confirm("Delete this item? This can't be undone.")) return; patch(d => { d.monthlyTray = d.monthlyTray.filter(t => t.id !== id); }); };
+  const stopRecurring = (id) => patch(d => { d.recurringMonthly = (d.recurringMonthly || []).filter(r => r.id !== id); });
+  const updateTrayField = (id, field, value) => patch(d => { const t = d.monthlyTray.find(x => x.id === id); if (t) t[field] = value; });
+  const updateRecurringField = (id, field, value) => patch(d => { const r = (d.recurringMonthly || []).find(x => x.id === id); if (r) r[field] = value; });
   const dueMap = dueItemsByDate(data);
 
   useEffect(() => {
-    const recurring=data.recurringMonthly||[];
-    if(recurring.length===0) return;
-    const monthDays=(data.monthly[mk]||{days:{}}).days||{};
-    const additions=recurring.filter(r=>r.day<=daysInMonth && !(monthDays[r.day]||"").includes(r.text));
-    if(additions.length===0) return;
-    patch(d=>{
-      if(!d.monthly[mk]) d.monthly[mk]={days:{},buffers:[]};
-      additions.forEach(r=>{
-        const cur=d.monthly[mk].days[r.day]||"";
-        if(!cur.includes(r.text)) d.monthly[mk].days[r.day]=cur?cur+" · "+r.text:r.text;
+    const recurring = data.recurringMonthly || [];
+    if (recurring.length === 0) return;
+    const monthDays = (data.monthly[mk] || { days: {} }).days || {};
+    const additions = recurring.filter(r => r.day <= daysInMonth && !(monthDays[r.day] || "").includes(r.text));
+    if (additions.length === 0) return;
+    patch(d => {
+      if (!d.monthly[mk]) d.monthly[mk] = { days: {}, buffers: [] };
+      additions.forEach(r => {
+        const cur = d.monthly[mk].days[r.day] || "";
+        if (!cur.includes(r.text)) d.monthly[mk].days[r.day] = cur ? cur + " · " + r.text : r.text;
       });
     });
   }, [mk]);
 
+  const activeMobileDateKey = `${y}-${pad2(m)}-${pad2(selectedDay || 1)}`;
+  const activeMobileDue = dueMap[activeMobileDateKey] || [];
+  const activeMobileIsBuffer = month.buffers.includes(selectedDay);
+
   return (
-    <div>
+    <div className="space-y-4">
       <Callout>Only what is FIXED — deliveries, GST, payments, family, health. Not goals. Mark exactly 2 buffer days (click the star).</Callout>
 
       {notice && (
-        <div className="mb-4 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-900 shadow-xs">
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-900 shadow-xs">
           {notice}
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+      {/* Header Month Control */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-slate-200 bg-white p-3.5 shadow-xs">
         <div className="flex items-center gap-2">
-          <button onClick={()=>nav(-1)} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
-          <div className="font-semibold text-slate-800">{MONTHS[m-1]} {y} <span className="ml-2 text-xs font-normal text-slate-400">buffers: {month.buffers.length}/2</span></div>
-          <button onClick={()=>nav(1)} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
+          <button onClick={() => nav(-1)} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-700 hover:bg-slate-100 transition shadow-2xs font-bold">
+            <Ic n="left"/>
+          </button>
+          <div>
+            <div className="font-black text-sm sm:text-base text-slate-950 flex items-center gap-2">
+              <span>📅</span>
+              <span>{MONTHS[m - 1]} {y}</span>
+            </div>
+            <div className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+              <span>⭐</span> Buffer Days: {month.buffers.length} / 2 reserved
+            </div>
+          </div>
+          <button onClick={() => nav(1)} className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-slate-700 hover:bg-slate-100 transition shadow-2xs font-bold">
+            <Ic n="right"/>
+          </button>
         </div>
 
         <button 
           onClick={() => setShowComplianceModal(true)}
-          className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1.5"
+          className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3.5 py-2 text-xs font-bold transition shadow-2xs flex items-center gap-1.5"
         >
           <span>🏛️</span>
           <span>Tax &amp; Holiday Calendars</span>
@@ -7504,54 +7714,192 @@ function MonthlyView({ data, patch, onGoToDay }){
           onNotice={say} 
         />
       )}
-      {data.monthlyTray.length>0 && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-700">To place on a date</div>
-          <p className="mb-2 text-xs text-amber-700/70">Placing it registers the day-of-month — it'll auto-fill on this day every future month too.</p>
+
+      {data.monthlyTray.length > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-xs">
+          <div className="mb-1 text-xs font-black uppercase tracking-wider text-amber-800">To Place on a Date</div>
+          <p className="mb-3 text-xs text-amber-900/80">Placing it registers the day-of-month — it auto-fills on this day every future month too.</p>
           <div className="space-y-2">
-            {data.monthlyTray.map(t=>(
+            {data.monthlyTray.map(t => (
               <BackupItemRow key={t.id} item={t} data={data}
-                onUpdate={(f,v)=>updateTrayField(t.id,f,v)} onRemove={()=>dropTray(t.id)}
-                onToggleDone={()=>updateTrayField(t.id,"done",!t.done)}
-                extra={<PlaceControl max={daysInMonth} onPlace={n=>place(t,n)} />} />
+                onUpdate={(f, v) => updateTrayField(t.id, f, v)} onRemove={() => dropTray(t.id)}
+                onToggleDone={() => updateTrayField(t.id, "done", !t.done)}
+                extra={<PlaceControl max={daysInMonth} onPlace={n => place(t, n)} />} />
             ))}
           </div>
         </div>
       )}
-      {(data.recurringMonthly||[]).length>0 && (
-        <details className="mb-4 rounded-lg border border-slate-200 bg-white p-3">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">Recurring every month ({data.recurringMonthly.length})</summary>
-          <div className="mt-2 space-y-1">
-            {data.recurringMonthly.map(r=>(
+
+      {(data.recurringMonthly || []).length > 0 && (
+        <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+          <summary className="cursor-pointer text-xs font-black uppercase tracking-wider text-slate-700">
+            🔁 Recurring Every Month ({data.recurringMonthly.length})
+          </summary>
+          <div className="mt-3 space-y-1.5">
+            {data.recurringMonthly.map(r => (
               <RecurringMonthlyRow key={r.id} item={r} daysInMonth={daysInMonth}
-                onUpdate={(f,v)=>updateRecurringField(r.id,f,v)} onStop={()=>stopRecurring(r.id)} />
+                onUpdate={(f, v) => updateRecurringField(r.id, f, v)} onStop={() => stopRecurring(r.id)} />
             ))}
           </div>
         </details>
       )}
-      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white p-3">
-        <div className="grid grid-cols-7 gap-1">
-          {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=><div key={d} className="pb-1 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">{d}</div>)}
-          {cells.map((n,i)=>{
-            if(n===null) return <div key={"e"+i} className="rounded-md bg-stone-50" style={{minHeight:"86px"}} />;
-            const isBuffer=month.buffers.includes(n);
-            const isToday=now.getFullYear()===y&&now.getMonth()+1===m&&now.getDate()===n;
-            const dueOnDay = dueMap[`${y}-${pad2(m)}-${pad2(n)}`]||[];
-            return (
-              <div key={n} className={"rounded-md border p-1 "+(isBuffer?"border-emerald-300 bg-emerald-50":"border-slate-100 bg-white")} style={{minHeight:"86px"}}>
-                <div className="flex items-center justify-between">
-                  <button onClick={()=>onGoToDay(`${y}-${pad2(m)}-${pad2(n)}`)} title="Open this day"
-                    className={"mono rounded px-1 text-xs hover:underline "+(isToday?"bg-amber-400 font-bold text-slate-900":"text-slate-400 hover:text-amber-600")}>{n}</button>
-                  <button onClick={()=>toggleBuffer(n)} title="Mark buffer day" className={isBuffer?"text-emerald-500":"text-slate-300 hover:text-emerald-500"}><Ic n={isBuffer?"star":"starO"}/></button>
-                </div>
-                <textarea value={month.days[n]||""} onChange={e=>upd(x=>{x.days[n]=e.target.value;})} rows={3}
-                  className="mt-0.5 w-full resize-none rounded bg-transparent text-xs leading-tight text-slate-700 outline-none focus:bg-amber-50" />
-                {dueOnDay.map((it,idx)=>(
-                  <div key={idx} className="mt-0.5 truncate rounded bg-sky-50 px-1 text-[10px] text-sky-700" title={it.text}>
-                    📌 {it.time?it.time+" ":""}{it.text}
+
+      {/* 1. Mobile Compact Calendar & Selected Day Inspector (< md) */}
+      <div className="block md:hidden space-y-3">
+        {/* Compact 7-Column Date Matrix */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {["M","T","W","T","F","S","S"].map((d, i) => (
+              <div key={i} className="pb-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                {d}
+              </div>
+            ))}
+            {cells.map((n, i) => {
+              if (n === null) return <div key={"me" + i} className="h-9 rounded-xl bg-slate-50/50" />;
+              const isBuffer = month.buffers.includes(n);
+              const isToday = now.getFullYear() === y && now.getMonth() + 1 === m && now.getDate() === n;
+              const isSelected = selectedDay === n;
+              const hasText = !!month.days[n];
+              const dueCount = (dueMap[`${y}-${pad2(m)}-${pad2(n)}`] || []).length;
+
+              return (
+                <button
+                  key={n}
+                  onClick={() => setSelectedDay(n)}
+                  className={`h-10 rounded-xl flex flex-col items-center justify-center relative transition-all border ${
+                    isSelected
+                      ? "border-slate-950 bg-slate-950 text-white shadow-sm font-extrabold"
+                      : isToday
+                      ? "border-amber-400 bg-amber-50 text-amber-950 font-black"
+                      : isBuffer
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-950 font-bold"
+                      : "border-slate-100 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span className="text-xs">{n}</span>
+                  <div className="flex items-center gap-0.5 mt-0.5">
+                    {isBuffer && <span className="h-1 w-1 rounded-full bg-emerald-500"></span>}
+                    {hasText && <span className="h-1 w-1 rounded-full bg-amber-500"></span>}
+                    {dueCount > 0 && <span className="h-1 w-1 rounded-full bg-blue-500"></span>}
                   </div>
-                ))}
-                {isBuffer && <span className="text-xs font-semibold uppercase text-emerald-600">buffer</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Selected Day Agenda Detail Inspector */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-black text-slate-900">
+                {new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(activeMobileDateKey + "T00:00:00"))}
+              </div>
+              {activeMobileIsBuffer && (
+                <div className="text-xs font-black text-emerald-700 mt-0.5">
+                  ⭐ Reserved Buffer Day (Zero Meetings)
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => toggleBuffer(selectedDay)}
+                className={`rounded-xl border px-3 py-1 text-xs font-bold transition shadow-2xs ${
+                  activeMobileIsBuffer ? "border-emerald-300 bg-emerald-100 text-emerald-900 font-black" : "border-slate-200 bg-slate-50 text-slate-700"
+                }`}
+              >
+                {activeMobileIsBuffer ? "⭐ Buffer Active" : "☆ Mark Buffer"}
+              </button>
+              <button
+                onClick={() => onGoToDay(activeMobileDateKey)}
+                className="rounded-xl bg-amber-400 text-slate-950 px-3 py-1 text-xs font-black transition shadow-2xs"
+              >
+                Open Day →
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-black uppercase tracking-wider text-slate-500 mb-1">
+              Monthly Blueprint Fixed Deliverable
+            </label>
+            <textarea
+              value={month.days[selectedDay] || ""}
+              onChange={e => upd(x => { x.days[selectedDay] = e.target.value; })}
+              rows={3}
+              placeholder="Add key deliverable, launch date, or fixed commitment..."
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-amber-400 focus:bg-white transition"
+            />
+          </div>
+
+          {activeMobileDue.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <div className="text-[11px] font-black uppercase tracking-wider text-sky-800">
+                📌 Statutory &amp; Scheduled Tasks ({activeMobileDue.length})
+              </div>
+              {activeMobileDue.map((it, idx) => (
+                <div key={idx} className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-950">
+                  {it.time ? `${it.time} · ` : ""}{it.text}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2. Desktop Full 7-Column Grid (Visible on Desktop/Tablet >= md) */}
+      <div className="hidden md:block overflow-x-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-xs">
+        <div className="grid grid-cols-7 gap-1.5">
+          {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d => (
+            <div key={d} className="pb-1.5 text-center text-xs font-black uppercase tracking-wider text-slate-500">
+              {d}
+            </div>
+          ))}
+          {cells.map((n, i) => {
+            if (n === null) return <div key={"e" + i} className="rounded-xl bg-slate-50/50 min-h-[96px]" />;
+            const isBuffer = month.buffers.includes(n);
+            const isToday = now.getFullYear() === y && now.getMonth() + 1 === m && now.getDate() === n;
+            const dueOnDay = dueMap[`${y}-${pad2(m)}-${pad2(n)}`] || [];
+            return (
+              <div key={n} className={`rounded-xl border p-2 min-h-[96px] transition-all flex flex-col justify-between ${
+                isBuffer ? "border-emerald-300 bg-emerald-50/70" : isToday ? "border-amber-300 bg-amber-50/30" : "border-slate-100 bg-white hover:border-slate-300"
+              }`}>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <button 
+                      onClick={() => onGoToDay(`${y}-${pad2(m)}-${pad2(n)}`)} 
+                      title="Open Daily Cockpit"
+                      className={`mono rounded-lg px-1.5 py-0.5 text-xs font-bold transition hover:underline ${
+                        isToday ? "bg-amber-400 font-black text-slate-950 shadow-2xs" : "text-slate-700 hover:text-amber-700"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                    <button 
+                      onClick={() => toggleBuffer(n)} 
+                      title="Mark Buffer Day" 
+                      className={isBuffer ? "text-emerald-600 font-bold" : "text-slate-300 hover:text-emerald-500"}
+                    >
+                      <Ic n={isBuffer ? "star" : "starO"}/>
+                    </button>
+                  </div>
+                  <textarea 
+                    value={month.days[n] || ""} 
+                    onChange={e => upd(x => { x.days[n] = e.target.value; })} 
+                    rows={2}
+                    placeholder="Focus..."
+                    className="w-full resize-none rounded-lg bg-transparent text-[11px] font-semibold leading-tight text-slate-800 outline-none placeholder:text-slate-300 focus:bg-amber-50" 
+                  />
+                </div>
+                <div className="space-y-0.5 mt-1">
+                  {dueOnDay.map((it, idx) => (
+                    <div key={idx} className="truncate rounded-md bg-sky-50 border border-sky-200 px-1 py-0.2 text-[9px] font-bold text-sky-800" title={it.text}>
+                      📌 {it.time ? it.time + " " : ""}{it.text}
+                    </div>
+                  ))}
+                  {isBuffer && <span className="text-[10px] font-black uppercase text-emerald-700 block">⭐ Buffer</span>}
+                </div>
               </div>
             );
           })}
