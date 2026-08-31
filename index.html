@@ -10694,6 +10694,48 @@ const quarterOfMonth = (mp) => {
   return m ? `${m[1]}-Q${Math.floor((+m[2]-1)/3)+1}` : mp;
 };
 
+const AVIATION_KRA_TEMPLATES = [
+  {
+    roleCategory: "Operations & Flight Dispatch",
+    title: "Flight Operations & Schedule Integrity",
+    description: "Ensure zero-delay dispatch, strict crew FDTL compliance, and rapid aircraft turnaround.",
+    kpis: [
+      { name: "On-Time Dispatch Rate (OTP)", target: 95, unit: "%", direction: "up", cadence: "monthly" },
+      { name: "AOG (Aircraft On Ground) Downtime", target: 4, unit: "hours", direction: "down", cadence: "monthly" },
+      { name: "DGCA / FDTL Regulatory Violations", target: 0, unit: "incidents", direction: "down", cadence: "monthly" }
+    ]
+  },
+  {
+    roleCategory: "Sales & Revenue",
+    title: "Charter Sales & Commercial Revenue",
+    description: "Drive aircraft charter bookings, expand corporate accounts, and maximize hourly yields.",
+    kpis: [
+      { name: "Monthly Charter Revenue", target: 5000000, unit: "₹", direction: "up", cadence: "monthly" },
+      { name: "Lead-to-Booking Conversion", target: 30, unit: "%", direction: "up", cadence: "monthly" },
+      { name: "Repeat Client Retention", target: 80, unit: "%", direction: "up", cadence: "quarterly" }
+    ]
+  },
+  {
+    roleCategory: "Executive & Founder Oversight",
+    title: "Company Scalability & Cashflow Health",
+    description: "Expand operating margin, maintain financial runway, and eliminate low-value executive drag.",
+    kpis: [
+      { name: "Net Operating Margin", target: 20, unit: "%", direction: "up", cadence: "quarterly" },
+      { name: "Cash Runway", target: 6, unit: "months", direction: "up", cadence: "quarterly" },
+      { name: "Company-Wide Delegation Ratio", target: 85, unit: "%", direction: "up", cadence: "monthly" }
+    ]
+  },
+  {
+    roleCategory: "Maintenance, Quality & CAMO",
+    title: "Airworthiness & Quality Compliance",
+    description: "Ensure aircraft compliance, zero safety audit findings, and timely component overhaul.",
+    kpis: [
+      { name: "Safety & Quality Audit Non-Conformances", target: 0, unit: "findings", direction: "down", cadence: "monthly" },
+      { name: "MEL Rectification Compliance", target: 98, unit: "%", direction: "up", cadence: "monthly" }
+    ]
+  }
+];
+
 function GoalsView({ orgCtx, meId }){
   const myRole = orgCtx.membership?.role || "employee";
   const myRank = getRoleRank(myRole);
@@ -10703,6 +10745,7 @@ function GoalsView({ orgCtx, meId }){
   const [period, setPeriod] = useState(monthPeriod());
   const [goals, setGoals] = useState(null);
   const [msg, setMsg] = useState("");
+  const [showGuide, setShowGuide] = useState(false);
   const [kraDraft, setKraDraft] = useState(null); // {id?, title, description}
   const [kpiDraft, setKpiDraft] = useState(null); // {id?, kra_id, name, unit, target, direction, cadence}
 
@@ -10723,7 +10766,7 @@ function GoalsView({ orgCtx, meId }){
   // Strict role and department filtering
   const visible = filterVisibleTeamMembers(members || [], meId, myRole, myDept);
   const targetMember = (members || []).find(m => m.user_id === who);
-  const canManage = myRank >= 5 || (myRank >= 3 && targetMember && targetMember.user_id !== meId && getRoleRank(targetMember.role) < myRank);
+  const canManage = myRank >= 5 || (myRank >= 3 && targetMember && (targetMember.user_id === meId || getRoleRank(targetMember.role) < myRank)) || (who === meId);
 
   const act = async (fn) => {
     setMsg("");
@@ -10731,7 +10774,40 @@ function GoalsView({ orgCtx, meId }){
     catch (e) { setMsg(e.message || "That didn't work."); }
   };
 
-  if (goals === null) return <Ghost>Loading goals…</Ghost>;
+  const handleApplyTemplate = async (template) => {
+    if (!confirm(`Apply the "${template.title}" template to ${who === meId ? "your profile" : (targetMember?.name || "this member")}? This will create the KRA and its key metric KPIs.`)) return;
+    try {
+      setMsg("");
+      const kraRes = await saveKra({
+        org_id: orgCtx.org.id,
+        user_id: who,
+        created_by: meId,
+        title: template.title,
+        description: template.description
+      });
+      if (kraRes && kraRes.id && Array.isArray(template.kpis)) {
+        for (const k of template.kpis) {
+          await saveKpi({
+            org_id: orgCtx.org.id,
+            user_id: who,
+            created_by: meId,
+            kra_id: kraRes.id,
+            name: k.name,
+            unit: k.unit,
+            target: k.target,
+            direction: k.direction,
+            cadence: k.cadence
+          });
+        }
+      }
+      await refresh();
+      setMsg(`✓ Template "${template.title}" applied successfully!`);
+    } catch (e) {
+      setMsg(e.message || "Couldn't apply template.");
+    }
+  };
+
+  if (goals === null) return <Ghost>Loading goals and scorecard…</Ghost>;
 
   // A KPI is measured against the selected month, or the quarter containing it.
   const valueOf = (kpi) => (goals.values || [])
@@ -10744,104 +10820,276 @@ function GoalsView({ orgCtx, meId }){
     setKpiActual(kpi.id, kpi.cadence === "quarterly" ? quarter : period, raw, meId));
 
   return (
-    <div>
-      <Callout>
-        {canManage && who !== meId
-          ? "Set a few responsibility areas, and one number per area that says whether it's working. Resist adding more than a handful — a scoreboard nobody reads is worse than none."
-          : "Your responsibility areas and the numbers attached to them. Fill in the actual as you go — the target was set for you, the number is yours to report."}
-      </Callout>
-      {msg && <p className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">{msg}</p>}
-
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-2">
-        {role !== "employee" && visible.length > 1 && (
-          <select value={who} onChange={e=>{ setWho(e.target.value); setKraDraft(null); setKpiDraft(null); }}
-            className="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none">
-            {visible.map(m => <option key={m.user_id} value={m.user_id}>
-              {m.name}{m.user_id===meId ? " (you)" : ""}
-            </option>)}
-          </select>
-        )}
-        <div className="flex items-center gap-1">
-          <button onClick={()=>setPeriod(shiftPeriod(period,-1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
-          <span className="min-w-[9rem] text-center text-sm font-semibold text-slate-800">
-            {prettyPeriod(period)} <span className="font-normal text-slate-400">· {quarter.split("-")[1]}</span>
-          </span>
-          <button onClick={()=>setPeriod(shiftPeriod(period,1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
-          {period !== monthPeriod() &&
-            <button onClick={()=>setPeriod(monthPeriod())} className="text-xs text-amber-600 hover:underline">this month</button>}
+    <div className="space-y-6">
+      {/* Header Banner */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-amber-100 text-amber-900 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider">
+              🎯 OKR, KRA &amp; KPI SCORECARD
+            </span>
+            <span className="text-xs text-slate-400">· Monthly &amp; Quarterly Tracking</span>
+          </div>
+          <h2 className="text-2xl font-black text-slate-950">
+            Responsibility Areas &amp; Key Performance Indicators
+          </h2>
+          <p className="text-xs text-slate-600">
+            Define high-impact outcomes for each seat. Daily standups and delegated tasks link directly back to these numbers.
+          </p>
         </div>
+
+        <button
+          onClick={() => setShowGuide(!showGuide)}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3.5 py-2 text-xs font-bold text-slate-700 transition shadow-2xs"
+        >
+          <span>💡</span>
+          <span>{showGuide ? "Hide Framework Guide" : "How OKR / KRA Works"}</span>
+        </button>
+      </div>
+
+      {/* Explainer Framework Guide Banner */}
+      {showGuide && (
+        <div className="rounded-3xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-6 space-y-4 shadow-sm animate-fade-in">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-black text-amber-950 flex items-center gap-2">
+              <span>🧭</span>
+              <span>How the OKR &amp; KRA Hierarchy Works in FlowDirector</span>
+            </h3>
+            <button onClick={() => setShowGuide(false)} className="text-amber-800 hover:text-amber-950 text-xs font-bold">✕ Close</button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-800">
+            <div className="bg-white/80 backdrop-blur rounded-2xl p-4 border border-amber-200 space-y-1.5">
+              <span className="inline-block px-2 py-0.5 rounded-md bg-amber-200 text-amber-900 font-black text-[10px] uppercase">1. KRA (Key Responsibility Area)</span>
+              <h4 className="font-extrabold text-slate-950 text-sm">The "What &amp; Why" (Objective)</h4>
+              <p className="text-slate-600 leading-relaxed font-medium">
+                The primary domain of ownership for a role. For example: <b>"Flight Operations Reliability"</b> or <b>"Charter Revenue Generation"</b>.
+              </p>
+            </div>
+
+            <div className="bg-white/80 backdrop-blur rounded-2xl p-4 border border-amber-200 space-y-1.5">
+              <span className="inline-block px-2 py-0.5 rounded-md bg-emerald-200 text-emerald-900 font-black text-[10px] uppercase">2. KPI (Key Performance Indicator)</span>
+              <h4 className="font-extrabold text-slate-950 text-sm">The "Target &amp; Score" (Key Result)</h4>
+              <p className="text-slate-600 leading-relaxed font-medium">
+                The measurable number that proves success. For example: <b>"On-Time Dispatch ≥ 95%"</b> or <b>"Charter Revenue ≥ ₹50 Lakhs/mo"</b>.
+              </p>
+            </div>
+
+            <div className="bg-white/80 backdrop-blur rounded-2xl p-4 border border-amber-200 space-y-1.5">
+              <span className="inline-block px-2 py-0.5 rounded-md bg-blue-200 text-blue-900 font-black text-[10px] uppercase">3. Daily Standup Tasks</span>
+              <h4 className="font-extrabold text-slate-950 text-sm">The "Execution &amp; Action"</h4>
+              <p className="text-slate-600 leading-relaxed font-medium">
+                Every morning, employees commit their Top 3 Deliverables and link them directly to their assigned KRA, ensuring zero wasted hours.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {msg && (
+        <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-bold text-slate-900 shadow-2xs">
+          {msg}
+        </div>
+      )}
+
+      {/* Control Strip (Person Selector, Month/Quarter Picker, Add KRA, Apply Template) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {myRank > 1 && visible.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-slate-500">Person:</span>
+              <select 
+                value={who} 
+                onChange={e => { setWho(e.target.value); setKraDraft(null); setKpiDraft(null); }}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-800 outline-none"
+              >
+                {visible.map(m => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.name || m.email}{m.user_id === meId ? " (You)" : ""} — {ROLE_LABEL[m.role] || m.role}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
+            <button onClick={() => setPeriod(shiftPeriod(period, -1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-200 transition font-bold">←</button>
+            <span className="min-w-[8rem] text-center text-xs font-black text-slate-900">
+              {prettyPeriod(period)} <span className="font-normal text-slate-400">· {quarter.split("-")[1]}</span>
+            </span>
+            <button onClick={() => setPeriod(shiftPeriod(period, 1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-200 transition font-bold">→</button>
+            {period !== monthPeriod() && (
+              <button onClick={() => setPeriod(monthPeriod())} className="text-[11px] text-amber-600 font-bold hover:underline ml-1">
+                Today
+              </button>
+            )}
+          </div>
+        </div>
+
         {canManage && (
-          <button onClick={()=>setKraDraft({ title:"", description:"" })}
-            className="ml-auto flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700">
-            <Ic n="plus"/> Responsibility area
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Quick Aviation / Business Templates Dropdown */}
+            <select
+              onChange={e => {
+                const idx = Number(e.target.value);
+                if (!isNaN(idx) && AVIATION_KRA_TEMPLATES[idx]) {
+                  handleApplyTemplate(AVIATION_KRA_TEMPLATES[idx]);
+                  e.target.value = "";
+                }
+              }}
+              defaultValue=""
+              className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-950 outline-none hover:bg-amber-100 transition shadow-2xs"
+            >
+              <option value="" disabled>⚡ Load Pre-built Template...</option>
+              {AVIATION_KRA_TEMPLATES.map((tpl, i) => (
+                <option key={i} value={i}>
+                  [{tpl.roleCategory}] {tpl.title}
+                </option>
+              ))}
+            </select>
+
+            <button 
+              onClick={() => setKraDraft({ title: "", description: "" })}
+              className="flex items-center gap-1.5 rounded-xl bg-slate-950 text-white hover:bg-slate-800 px-3.5 py-1.5 text-xs font-black transition shadow-xs"
+            >
+              <span>+</span>
+              <span>New Responsibility Area (KRA)</span>
+            </button>
+          </div>
         )}
       </div>
 
+      {/* KRA Form Draft */}
       {kraDraft && (
-        <KraEditor draft={kraDraft} onCancel={()=>setKraDraft(null)}
-          onSave={(d)=>act(async ()=>{
-            await saveKra(d.id ? d : { ...d, org_id:orgCtx.org.id, user_id:who, created_by:meId });
+        <KraEditor 
+          draft={kraDraft} 
+          onCancel={() => setKraDraft(null)}
+          onSave={d => act(async () => {
+            await saveKra(d.id ? d : { ...d, org_id: orgCtx.org.id, user_id: who, created_by: meId });
             setKraDraft(null);
-          })} />
+          })} 
+        />
       )}
 
+      {/* Empty State */}
       {goals.kras.length === 0 && looseKpis.length === 0 && !kraDraft && (
-        <Ghost>{canManage
-          ? "No responsibility areas set yet. Add one, then hang a number off it."
-          : "Nothing has been set for you yet."}</Ghost>
+        <div className="rounded-3xl border-2 border-dashed border-slate-200 bg-white p-12 text-center space-y-4">
+          <span className="text-4xl block">🎯</span>
+          <div className="space-y-1">
+            <h3 className="text-base font-extrabold text-slate-900">
+              No Responsibility Areas (KRAs) Set Yet
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+              Every position requires 2–4 clear responsibility areas and a single target metric (KPI) per area. Choose a template above or create your first KRA.
+            </p>
+          </div>
+
+          {canManage && (
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              {AVIATION_KRA_TEMPLATES.map((tpl, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleApplyTemplate(tpl)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-amber-50 hover:border-amber-300 p-3 text-left transition space-y-1 max-w-xs text-xs"
+                >
+                  <span className="font-extrabold text-slate-900 block">{tpl.title}</span>
+                  <span className="text-[11px] text-slate-500 line-clamp-2">{tpl.description}</span>
+                  <span className="text-[10px] font-bold text-amber-700 block pt-1">Includes {tpl.kpis.length} KPIs →</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
+      {/* KRAs and KPIs List */}
       <div className="space-y-4">
-        {goals.kras.sort((a,b)=>a.sort_order-b.sort_order).map(kra => (
-          <div key={kra.id} className="rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <h3 className="font-semibold text-slate-800">{kra.title}</h3>
-                {kra.description && <p className="mt-0.5 text-xs text-slate-500">{kra.description}</p>}
+        {goals.kras.sort((a, b) => a.sort_order - b.sort_order).map(kra => (
+          <div key={kra.id} className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-slate-900 text-white px-2 py-0.5 text-[10px] font-black uppercase">
+                    KRA
+                  </span>
+                  <h3 className="text-base font-black text-slate-950">{kra.title}</h3>
+                </div>
+                {kra.description && <p className="text-xs text-slate-600 font-medium">{kra.description}</p>}
               </div>
+
               {canManage && (
-                <div className="flex shrink-0 items-center gap-1">
-                  <button onClick={()=>setKpiDraft({ kra_id:kra.id, name:"", unit:"", target:"", direction:"up", cadence:"monthly" })}
-                    className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50">+ KPI</button>
-                  <button onClick={()=>setKraDraft({ id:kra.id, title:kra.title, description:kra.description||"" })}
-                    title="Edit" className="text-slate-300 hover:text-amber-600">✎</button>
-                  <button onClick={()=>{ if(confirm(`Delete "${kra.title}"? Its KPIs stay but become unfiled.`)) act(()=>deleteKra(kra.id)); }}
-                    className="text-slate-300 hover:text-rose-500"><Ic n="trash"/></button>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button 
+                    onClick={() => setKpiDraft({ kra_id: kra.id, name: "", unit: "", target: "", direction: "up", cadence: "monthly" })}
+                    className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs"
+                  >
+                    + Add KPI
+                  </button>
+                  <button 
+                    onClick={() => setKraDraft({ id: kra.id, title: kra.title, description: kra.description || "" })}
+                    title="Edit KRA" 
+                    className="rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 px-2.5 py-1.5 text-xs font-bold transition"
+                  >
+                    ✎
+                  </button>
+                  <button 
+                    onClick={() => { if (confirm(`Delete responsibility area "${kra.title}"? Its KPIs will stay unfiled.`)) act(() => deleteKra(kra.id)); }}
+                    className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-600 px-2.5 py-1.5 text-xs font-bold transition"
+                  >
+                    ✕
+                  </button>
                 </div>
               )}
             </div>
-            <KpiList kpis={kpisOfKra(kra.id)} valueOf={valueOf} canManage={canManage}
-              onActual={saveActual} onEdit={setKpiDraft}
-              onDelete={(k)=>{ if(confirm(`Delete KPI "${k.name}"?`)) act(()=>deleteKpi(k.id)); }} />
+
+            <KpiList 
+              kpis={kpisOfKra(kra.id)} 
+              valueOf={valueOf} 
+              canManage={canManage}
+              onActual={saveActual} 
+              onEdit={setKpiDraft}
+              onDelete={k => { if (confirm(`Delete KPI "${k.name}"?`)) act(() => deleteKpi(k.id)); }} 
+            />
           </div>
         ))}
 
         {looseKpis.length > 0 && (
-          <div className="rounded-lg border border-slate-200 bg-white p-4">
-            <h3 className="font-semibold text-slate-800">Other KPIs</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Not filed under a responsibility area.</p>
-            <KpiList kpis={looseKpis} valueOf={valueOf} canManage={canManage}
-              onActual={saveActual} onEdit={setKpiDraft}
-              onDelete={(k)=>{ if(confirm(`Delete KPI "${k.name}"?`)) act(()=>deleteKpi(k.id)); }} />
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-2">
+              <h3 className="font-extrabold text-slate-900 text-sm">Other Organization KPIs</h3>
+              <p className="text-xs text-slate-500">Standalone metrics not attached to a specific responsibility area.</p>
+            </div>
+            <KpiList 
+              kpis={looseKpis} 
+              valueOf={valueOf} 
+              canManage={canManage}
+              onActual={saveActual} 
+              onEdit={setKpiDraft}
+              onDelete={k => { if (confirm(`Delete KPI "${k.name}"?`)) act(() => deleteKpi(k.id)); }} 
+            />
           </div>
         )}
       </div>
 
       {canManage && goals.kras.length > 0 && !kpiDraft && (
-        <button onClick={()=>setKpiDraft({ kra_id:null, name:"", unit:"", target:"", direction:"up", cadence:"monthly" })}
-          className="mt-4 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-          + KPI without a responsibility area
+        <button 
+          onClick={() => setKpiDraft({ kra_id: null, name: "", unit: "", target: "", direction: "up", cadence: "monthly" })}
+          className="rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 px-4 py-2 text-xs font-bold text-slate-700 transition shadow-2xs"
+        >
+          + Add Standalone KPI (Unfiled)
         </button>
       )}
 
       {kpiDraft && (
-        <KpiEditor draft={kpiDraft} kras={goals.kras} onCancel={()=>setKpiDraft(null)}
-          onSave={(d)=>act(async ()=>{
-            await saveKpi(d.id ? d : { ...d, org_id:orgCtx.org.id, user_id:who, created_by:meId,
-                                       target:Number(d.target)||0 });
+        <KpiEditor 
+          draft={kpiDraft} 
+          kras={goals.kras} 
+          onCancel={() => setKpiDraft(null)}
+          onSave={d => act(async () => {
+            await saveKpi(d.id ? d : { ...d, org_id: orgCtx.org.id, user_id: who, created_by: meId, target: Number(d.target) || 0 });
             setKpiDraft(null);
-          })} />
+          })} 
+        />
       )}
     </div>
   );
@@ -10849,41 +11097,71 @@ function GoalsView({ orgCtx, meId }){
 
 function KpiList({ kpis, valueOf, canManage, onActual, onEdit, onDelete }){
   if (kpis.length === 0)
-    return <p className="mt-3 text-xs text-slate-400">No KPI attached yet.</p>;
+    return <p className="text-xs text-slate-400 italic py-2">No KPIs attached to this responsibility area yet. Click "+ Add KPI" above.</p>;
+
   return (
-    <div className="mt-3 space-y-2">
+    <div className="space-y-2.5">
       {kpis.map(kpi => {
         const v = valueOf(kpi);
         const attain = kpiAttainment(kpi, v && v.actual);
         const tone = kpiTone(attain);
+
         return (
-          <div key={kpi.id} className={"flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border px-3 py-2 "+TONE_CLS[tone]}>
-            <div className="min-w-[9rem] flex-1">
-              <div className="text-sm font-medium text-slate-800">{kpi.name}</div>
-              <div className="text-[11px] text-slate-500">
-                target {kpi.direction === "down" ? "≤" : "≥"} {kpi.target}{kpi.unit ? " "+kpi.unit : ""} · {kpi.cadence}
+          <div key={kpi.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5 transition shadow-2xs ${TONE_CLS[tone]}`}>
+            <div className="min-w-[140px] flex-1 space-y-1">
+              <div className="text-sm font-black text-slate-950">{kpi.name}</div>
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 font-medium">
+                <span className="rounded bg-white/70 px-1.5 py-0.5 border border-slate-200">
+                  Target: {kpi.direction === "down" ? "≤" : "≥"} <b>{kpi.target} {kpi.unit || ""}</b>
+                </span>
+                <span>· Cadence: <b>{kpi.cadence === "quarterly" ? "Quarterly" : "Monthly"}</b></span>
               </div>
             </div>
-            <label className="flex items-center gap-1 text-xs text-slate-500">
-              actual
-              <input type="number" step="any" defaultValue={v && v.actual !== null ? v.actual : ""}
-                onBlur={e => { const raw = e.target.value;
-                  const cur = v && v.actual !== null && v.actual !== undefined ? String(v.actual) : "";
-                  if (raw !== cur) onActual(kpi, raw); }}
-                onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
-                className="w-24 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-sm text-slate-800 outline-none focus:border-amber-400" />
-            </label>
-            <span className="mono min-w-[3.5rem] text-right text-sm font-bold">
-              {attain === null ? "—" : attain + "%"}
-            </span>
-            {canManage && (
-              <span className="flex shrink-0 items-center gap-1">
-                <button onClick={()=>onEdit({ id:kpi.id, kra_id:kpi.kra_id, name:kpi.name, unit:kpi.unit||"",
-                                              target:kpi.target, direction:kpi.direction, cadence:kpi.cadence })}
-                  title="Edit" className="text-slate-300 hover:text-amber-600">✎</button>
-                <button onClick={()=>onDelete(kpi)} className="text-slate-300 hover:text-rose-500"><Ic n="x"/></button>
-              </span>
-            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                <span>Actual Reported:</span>
+                <input 
+                  type="number" 
+                  step="any" 
+                  defaultValue={v && v.actual !== null && v.actual !== undefined ? v.actual : ""}
+                  onBlur={e => { 
+                    const raw = e.target.value;
+                    const cur = v && v.actual !== null && v.actual !== undefined ? String(v.actual) : "";
+                    if (raw !== cur) onActual(kpi, raw); 
+                  }}
+                  onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                  placeholder="Enter actual"
+                  className="w-28 rounded-xl border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-400" 
+                />
+              </label>
+
+              <div className="text-right min-w-[70px]">
+                <span className={`text-sm font-black block ${tone === "emerald" ? "text-emerald-700" : tone === "rose" ? "text-rose-700" : "text-amber-700"}`}>
+                  {attain === null ? "—" : attain + "%"}
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Attainment</span>
+              </div>
+
+              {canManage && (
+                <div className="flex shrink-0 items-center gap-1 ml-1">
+                  <button 
+                    onClick={() => onEdit({ id: kpi.id, kra_id: kpi.kra_id, name: kpi.name, unit: kpi.unit || "", target: kpi.target, direction: kpi.direction, cadence: kpi.cadence })}
+                    title="Edit KPI Target" 
+                    className="rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 px-2 py-1 text-xs font-bold transition"
+                  >
+                    ✎
+                  </button>
+                  <button 
+                    onClick={() => onDelete(kpi)} 
+                    title="Delete KPI"
+                    className="rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-600 px-2 py-1 text-xs font-bold transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         );
       })}
@@ -10893,22 +11171,40 @@ function KpiList({ kpis, valueOf, canManage, onActual, onEdit, onDelete }){
 
 function KraEditor({ draft, onSave, onCancel }){
   const [d, setD] = useState(draft);
-  useEffect(()=>setD(draft), [draft.id, draft.title]);
+  useEffect(() => setD(draft), [draft.id, draft.title]);
+
   return (
-    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
-      <h3 className="mb-2 text-sm font-semibold text-slate-800">
-        {d.id ? "Edit responsibility area" : "New responsibility area"}
+    <div className="rounded-3xl border-2 border-amber-300 bg-amber-50/70 p-5 sm:p-6 space-y-4 shadow-sm">
+      <h3 className="text-sm font-black text-amber-950 uppercase tracking-wider">
+        {d.id ? "Edit Responsibility Area (KRA)" : "Define New Responsibility Area (KRA)"}
       </h3>
-      <input value={d.title} onChange={e=>setD({...d, title:e.target.value})}
-        placeholder="e.g. Charter operations reliability"
-        className="mb-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400" />
-      <input value={d.description||""} onChange={e=>setD({...d, description:e.target.value})}
-        placeholder="One line on what good looks like (optional)"
-        className="mb-3 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400" />
+      <div className="space-y-2">
+        <input 
+          value={d.title} 
+          onChange={e => setD({ ...d, title: e.target.value })}
+          placeholder="e.g. Flight Dispatch & Schedule Integrity (or Charter Sales Velocity)"
+          className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:border-amber-500" 
+        />
+        <input 
+          value={d.description || ""} 
+          onChange={e => setD({ ...d, description: e.target.value })}
+          placeholder="One line explaining what world-class execution looks like for this area"
+          className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 outline-none focus:border-amber-500" 
+        />
+      </div>
       <div className="flex gap-2">
-        <button onClick={()=>d.title.trim() && onSave({...d, title:d.title.trim()})}
-          className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700">Save</button>
-        <button onClick={onCancel} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-white">Cancel</button>
+        <button 
+          onClick={() => d.title.trim() && onSave({ ...d, title: d.title.trim() })}
+          className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 transition shadow-xs"
+        >
+          Save KRA
+        </button>
+        <button 
+          onClick={onCancel} 
+          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );
@@ -10916,40 +11212,87 @@ function KraEditor({ draft, onSave, onCancel }){
 
 function KpiEditor({ draft, kras, onSave, onCancel }){
   const [d, setD] = useState(draft);
-  useEffect(()=>setD(draft), [draft.id, draft.kra_id, draft.name]);
+  useEffect(() => setD(draft), [draft.id, draft.kra_id, draft.name]);
+
   return (
-    <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
-      <h3 className="mb-2 text-sm font-semibold text-slate-800">{d.id ? "Edit KPI" : "New KPI"}</h3>
-      <input value={d.name} onChange={e=>setD({...d, name:e.target.value})}
-        placeholder="e.g. On-time departures"
-        className="mb-2 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400" />
-      <div className="mb-3 flex flex-wrap gap-2">
-        <label className="flex items-center gap-1 text-xs text-slate-600">Target
-          <input type="number" step="any" value={d.target} onChange={e=>setD({...d, target:e.target.value})}
-            className="w-24 rounded border border-slate-200 bg-white px-2 py-1 text-sm outline-none" />
-        </label>
-        <input value={d.unit||""} onChange={e=>setD({...d, unit:e.target.value})} placeholder="unit (%, ₹, count)"
-          className="w-32 rounded border border-slate-200 bg-white px-2 py-1 text-sm outline-none" />
-        <select value={d.direction} onChange={e=>setD({...d, direction:e.target.value})}
-          className="rounded border border-slate-200 bg-white px-2 py-1 text-sm outline-none">
-          <option value="up">Higher is better</option>
-          <option value="down">Lower is better</option>
-        </select>
-        <select value={d.cadence} onChange={e=>setD({...d, cadence:e.target.value})}
-          className="rounded border border-slate-200 bg-white px-2 py-1 text-sm outline-none">
-          <option value="monthly">Monthly</option>
-          <option value="quarterly">Quarterly</option>
-        </select>
-        <select value={d.kra_id || ""} onChange={e=>setD({...d, kra_id:e.target.value || null})}
-          className="rounded border border-slate-200 bg-white px-2 py-1 text-sm outline-none">
-          <option value="">— No responsibility area —</option>
-          {kras.map(k => <option key={k.id} value={k.id}>{k.title}</option>)}
-        </select>
+    <div className="rounded-3xl border-2 border-amber-300 bg-amber-50/70 p-5 sm:p-6 space-y-4 shadow-sm">
+      <h3 className="text-sm font-black text-amber-950 uppercase tracking-wider">
+        {d.id ? "Edit Key Performance Indicator (KPI)" : "Define New Key Performance Indicator (KPI)"}
+      </h3>
+      <input 
+        value={d.name} 
+        onChange={e => setD({ ...d, name: e.target.value })}
+        placeholder="e.g. On-Time Dispatch Rate (or Monthly Gross Margin)"
+        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:border-amber-500" 
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+        <div>
+          <label className="text-[11px] font-bold text-slate-600 block mb-1">Target Number</label>
+          <input 
+            type="number" 
+            step="any" 
+            value={d.target} 
+            onChange={e => setD({ ...d, target: e.target.value })}
+            placeholder="95"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none" 
+          />
+        </div>
+        <div>
+          <label className="text-[11px] font-bold text-slate-600 block mb-1">Unit</label>
+          <input 
+            value={d.unit || ""} 
+            onChange={e => setD({ ...d, unit: e.target.value })} 
+            placeholder="%, ₹, hours, count"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none" 
+          />
+        </div>
+        <div>
+          <label className="text-[11px] font-bold text-slate-600 block mb-1">Direction</label>
+          <select 
+            value={d.direction} 
+            onChange={e => setD({ ...d, direction: e.target.value })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+          >
+            <option value="up">Higher is better (≥)</option>
+            <option value="down">Lower is better (≤)</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[11px] font-bold text-slate-600 block mb-1">Cadence</label>
+          <select 
+            value={d.cadence} 
+            onChange={e => setD({ ...d, cadence: e.target.value })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+          >
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[11px] font-bold text-slate-600 block mb-1">Linked Responsibility Area</label>
+          <select 
+            value={d.kra_id || ""} 
+            onChange={e => setD({ ...d, kra_id: e.target.value || null })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+          >
+            <option value="">— No KRA (Unfiled) —</option>
+            {kras.map(k => <option key={k.id} value={k.id}>{k.title}</option>)}
+          </select>
+        </div>
       </div>
-      <div className="flex gap-2">
-        <button onClick={()=>d.name.trim() && onSave({...d, name:d.name.trim()})}
-          className="rounded-md bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700">Save</button>
-        <button onClick={onCancel} className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-white">Cancel</button>
+      <div className="flex gap-2 pt-1">
+        <button 
+          onClick={() => d.name.trim() && onSave({ ...d, name: d.name.trim() })}
+          className="rounded-xl bg-slate-950 px-4 py-2 text-xs font-black text-white hover:bg-slate-800 transition shadow-xs"
+        >
+          Save KPI
+        </button>
+        <button 
+          onClick={onCancel} 
+          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   );
