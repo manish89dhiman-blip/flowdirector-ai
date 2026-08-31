@@ -100,12 +100,13 @@ Deno.serve(async (req) => {
     // --- is email switched on? ----------------------------------------------
     const apiKey = Deno.env.get("RESEND_API_KEY");
     const from = Deno.env.get("INVITE_FROM") ?? "FlowDirector <hello@flowdirector.co>";
-    const origin = Deno.env.get("APP_ORIGIN") ?? req.headers.get("origin") ?? "https://flowdirector.co";
+    const origin = Deno.env.get("APP_ORIGIN") ?? req.headers.get("origin") ?? "https://flowdirector.web.app";
+    const inviteLink = `${origin}/signup?email=${encodeURIComponent(invite.email)}&invite=${invite.id}`;
 
     if (!apiKey) {
       // Not an error. The invite is valid and usable; there's just no sender
       // configured, so the app tells the owner to pass the link along.
-      return json({ sent: false, reason: "not_configured", link: origin });
+      return json({ sent: false, reason: "not_configured", link: inviteLink });
     }
 
     const { data: org } = await admin
@@ -117,9 +118,7 @@ Deno.serve(async (req) => {
     const fromName  = inviter?.full_name || inviter?.email || "The owner";
     const roleWord  = ROLE_WORD[invite.role] ?? "a team member";
 
-    // Deliberately plain. The invitee signs in with THIS address and the
-    // invite is waiting for them — there is no token in the link, because
-    // acceptance is authorised by their email matching the invite row.
+    // Direct invitation email template with 1-click account setup link
     const html = `
       <div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:520px;margin:0 auto;color:#1e293b">
         <p style="font-size:15px">Hello,</p>
@@ -128,22 +127,22 @@ Deno.serve(async (req) => {
           on FlowDirector as ${esc(roleWord)}.
         </p>
         <p style="font-size:15px">
-          FlowDirector is a planning tool for running your day, your week and your month.
-          You keep your own plan — your manager can see it, but only you can change it.
+          FlowDirector is a premier executive planning workspace for running your day, your week and your month.
+          Your seat is fully covered by ${esc(orgName)}.
         </p>
         <p style="margin:28px 0">
-          <a href="${esc(origin)}"
+          <a href="${esc(inviteLink)}"
              style="background:#0f172a;color:#fff;padding:12px 22px;border-radius:8px;
-                    text-decoration:none;font-size:15px;display:inline-block">
-            Set up your account
+                    text-decoration:none;font-size:15px;display:inline-block;font-weight:bold">
+            Accept Invitation &amp; Join ${esc(orgName)}
           </a>
         </p>
         <p style="font-size:14px;color:#475569">
-          Sign up using <b>${esc(invite.email)}</b> — this exact address — and the invite
-          will be waiting for you. If you already have an account, just sign in.
+          Sign up using <b>${esc(invite.email)}</b> — this exact address — and your workspace
+          will be waiting for you. If you already have an account, simply sign in.
         </p>
         <p style="font-size:12px;color:#94a3b8;margin-top:28px">
-          Not expecting this? You can ignore this email — nothing has been created for you.
+          Not expecting this? You can ignore this email — nothing has been charged or created for you.
         </p>
       </div>`;
 
