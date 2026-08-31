@@ -2212,7 +2212,11 @@ function Root(){
   if (recovery) return <ResetPasswordScreen onDone={()=>setRecovery(false)} />;
 
   if (!session) {
-    if (path === "/signup" || path === "/trial") {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const hasInviteParam = !!(urlParams.get("email") || urlParams.get("invite") || hashParams.get("email") || hashParams.get("invite"));
+
+    if (path === "/signup" || path === "/trial" || hasInviteParam) {
       return <AuthScreen initialMode="up" initialPlan={selectedPlan} initialCycle={selectedCycle} onBack={() => navigate("/")} />;
     }
     if (path === "/login" || path === "/signin") {
@@ -3400,28 +3404,43 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", initialCycle = "
 
   // Check if current email has a pending invite in the workspace
   useEffect(() => {
+    let active = true;
     const checkInvite = async () => {
       const e = (email || "").trim().toLowerCase();
       if (!e || !e.includes("@")) {
-        setInviteInfo(null);
+        if (active) setInviteInfo(null);
         return;
       }
       try {
-        const { data: invites } = await sb.from("invites").select("id, org_id, email, role").eq("email", e).is("accepted_at", null);
-        if (invites && invites.length > 0) {
-          const inv = invites[0];
-          const { data: org } = await sb.from("organizations").select("id, name").eq("id", inv.org_id).maybeSingle();
-          setInviteInfo({ ...inv, orgName: org?.name || "your company workspace" });
-        } else {
-          setInviteInfo(null);
+        const { data: invites } = await sb.rpc("lookup_invite", {
+          p_email: e,
+          p_invite_id: paramInvite && /^[0-9a-fA-F-]{36}$/.test(paramInvite) ? paramInvite : null
+        });
+        if (active) {
+          if (invites && invites.length > 0) {
+            const inv = invites[0];
+            setInviteInfo({
+              id: inv.id,
+              org_id: inv.org_id,
+              email: inv.email,
+              role: inv.role,
+              orgName: inv.org_name || "your company workspace"
+            });
+            if (mode !== "up" && (paramEmail || paramInvite)) {
+              setMode("up");
+            }
+          } else {
+            setInviteInfo(null);
+          }
         }
       } catch (err) {
-        setInviteInfo(null);
+        console.warn("lookup_invite notice:", err);
+        if (active) setInviteInfo(null);
       }
     };
-    const timer = setTimeout(checkInvite, 300);
-    return () => clearTimeout(timer);
-  }, [email]);
+    checkInvite();
+    return () => { active = false; };
+  }, [email, paramInvite, mode]);
 
   const submit = async () => {
     setBusy(true); setMsg("");
@@ -3434,8 +3453,25 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", initialCycle = "
         if (!cleanEmail || !cleanEmail.includes("@")) throw new Error("Please enter a valid email address.");
         if (!pw || pw.length < 6) throw new Error("Password must be at least 6 characters.");
         
+        // Double check invite on the fly before making any subscription decisions
+        let activeInvite = inviteInfo;
+        if (!activeInvite) {
+          try {
+            const { data: invRows } = await sb.rpc("lookup_invite", {
+              p_email: cleanEmail,
+              p_invite_id: paramInvite && /^[0-9a-fA-F-]{36}$/.test(paramInvite) ? paramInvite : null
+            });
+            if (invRows && invRows.length > 0) {
+              activeInvite = { ...invRows[0], orgName: invRows[0].org_name || "your company workspace" };
+              setInviteInfo(activeInvite);
+            }
+          } catch (e) {
+            console.warn("live lookup_invite check:", e);
+          }
+        }
+
         // --- CASE 1: USER IS JOINING VIA PENDING INVITATION ---
-        if (inviteInfo) {
+        if (activeInvite) {
           window.__FD_CREATING_ORG = false;
           writeSolo(false);
           let { data, error } = await sb.auth.signUp({ email: cleanEmail, password: pw });
@@ -3456,9 +3492,9 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", initialCycle = "
           }
 
           if (data && data.session) {
-            setMsg(`Joining ${inviteInfo.orgName}...`);
-            await acceptInvite(inviteInfo, data.session.user.id);
-            setMsg(`🎉 Joined ${inviteInfo.orgName}! Loading workspace...`);
+            setMsg(`Joining ${activeInvite.orgName}...`);
+            await acceptInvite(activeInvite, data.session.user.id);
+            setMsg(`🎉 Joined ${activeInvite.orgName}! Loading workspace...`);
             setTimeout(() => {
               window.location.href = "/";
             }, 600);
