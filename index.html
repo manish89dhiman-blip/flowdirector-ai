@@ -7532,7 +7532,7 @@ const dueItemsByDate = (data) => {
     if(!map[dateStr]) map[dateStr]=[]; 
     map[dateStr].push(entry); 
   };
-  (data.captures||[]).filter(c=>c.status!=="Transferred"&&c.status!=="Done"&&!isHolidayItem(c)).forEach(c=>push(c.due,{id:c.id,text:c.item,tag:c.category,time:c.time,source:"captures"}));
+  (data.captures||[]).filter(c=>c.status!=="Transferred"&&c.status!=="Done"&&!isHolidayItem(c)).forEach(c=>push(c.due,{id:c.id,text:c.item,tag:c.category,time:c.time,done:c.status==="Done",source:"captures"}));
   (data.dailyBackup||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"dailyBackup"}));
   (data.weeklySomeday||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"weeklySomeday"}));
   (data.monthlyTray||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"monthlyTray"}));
@@ -7606,15 +7606,34 @@ const weeklySlotItems = (data, wk, dueMap) => {
 // Which live array a due-map entry's `source` points at, and how to edit or
 // remove it there. Shared by Daily/Weekly so both can make an overdue or
 // due-today item actionable in place, not just print its name.
-const SOURCE_ARRAY = { dailyBackup:"dailyBackup", weeklySomeday:"weeklySomeday", monthlyTray:"monthlyTray" };
+const SOURCE_ARRAY = { dailyBackup:"dailyBackup", weeklySomeday:"weeklySomeday", monthlyTray:"monthlyTray", captures:"captures" };
 const updateSourceItem = (patch, source, id, field, value) => {
-  const arr = SOURCE_ARRAY[source]; if (!arr) return;
-  patch(d => { const item = d[arr].find(x=>x.id===id); if (item) item[field]=value; });
+  patch(d => {
+    if (source === "captures") {
+      const c = (d.captures || []).find(x => x.id === id);
+      if (c) {
+        if (field === "done") c.status = value ? "Done" : "Open";
+        else if (field === "text") c.item = value;
+        else if (field === "tag") c.category = value;
+        else c[field] = value;
+      }
+      return;
+    }
+    const arr = SOURCE_ARRAY[source]; if (!arr) return;
+    const item = (d[arr] || []).find(x => x.id === id);
+    if (item) item[field] = value;
+  });
 };
 const removeSourceItem = (patch, source, id) => {
-  const arr = SOURCE_ARRAY[source]; if (!arr) return;
   if (!confirm("Delete this item? This can't be undone.")) return;
-  patch(d => { d[arr] = d[arr].filter(x=>x.id!==id); });
+  patch(d => {
+    if (source === "captures") {
+      d.captures = (d.captures || []).filter(c => c.id !== id);
+      return;
+    }
+    const arr = SOURCE_ARRAY[source]; if (!arr) return;
+    d[arr] = (d[arr] || []).filter(x => x.id !== id);
+  });
 };
 
 // Every NOT-DONE item whose due date has already passed, across every source,
