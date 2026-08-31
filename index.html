@@ -4518,9 +4518,9 @@ function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
 /* ================================================================== */
 function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
   const [text, setText] = useState("");
-  const [category, setCategory] = useState("Deep Focus");
-  const [taskType, setTaskType] = useState("SCHEDULE");
-  const [due, setDue] = useState(todayKey());
+  const [category, setCategory] = useState("");
+  const [taskType, setTaskType] = useState(""); // Default to "" which means Inbox (Decide Later)
+  const [due, setDue] = useState("");
   const [time, setTime] = useState("");
   const [assignee, setAssignee] = useState("");
   const [details, setDetails] = useState("");
@@ -4531,14 +4531,14 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
     const payload = {
       id: uid(),
       text: t + (details ? ` — ${details}` : ""),
-      tag: category,
-      taskType: taskType || "SCHEDULE",
+      tag: category || "",
+      taskType: taskType || "",
       due: due || "",
       time: time || "",
       assignee: assignee || ""
     };
     patch(d => {
-      if (["SCHEDULE", "DAILY", "WAITING", "WAITING-FOR", "PROJECT", "DELEGATE"].includes(taskType)) {
+      if (taskType && ["SCHEDULE", "DAILY", "WAITING", "WAITING-FOR", "PROJECT", "DELEGATE"].includes(taskType)) {
         d.dailyBackup = d.dailyBackup || [];
         d.dailyBackup.unshift(payload);
       } else if (taskType === "WEEKLY") {
@@ -4549,13 +4549,25 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
         d.monthlyTray.unshift(payload);
       } else if (taskType === "MAYBE") {
         d.maybe = d.maybe || [];
-        d.maybe.unshift({ id: uid(), added: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }), item: t, category, revisit: "", decision: "" });
+        d.maybe.unshift({ id: uid(), added: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }), item: t, category: category || "", revisit: "", decision: "" });
       } else if (taskType === "REFERENCE" || taskType === "AUTOMATE") {
         d.reference = d.reference || [];
         d.reference.unshift({ id: uid(), text: t, note: details });
       } else {
+        // Default: Capture Inbox ("Decide Later")
         d.captures = d.captures || [];
-        d.captures.unshift({ id: uid(), date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }), item: t, category, taskType, details, status: "Open" });
+        d.captures.unshift({ 
+          id: uid(), 
+          date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }), 
+          item: t, 
+          category: category || "", 
+          taskType: taskType || "", 
+          due: due || "",
+          time: time || "",
+          assignee: assignee || "",
+          details: details || "", 
+          status: "Open" 
+        });
       }
     });
     onClose();
@@ -4568,8 +4580,8 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
           <div className="flex items-center gap-2">
             <span className="text-xl">⚡</span>
             <div>
-              <h3 className="font-extrabold text-base text-slate-950">Quick Capture Task</h3>
-              <p className="text-xs text-slate-500">Dump it instantly so your mind stays free</p>
+              <h3 className="font-extrabold text-base text-slate-950">Quick Capture</h3>
+              <p className="text-xs text-slate-500">Dump it now — decide what to do with it later in Inbox</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 font-bold">✕</button>
@@ -4581,17 +4593,18 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } }}
-            placeholder="What needs to get done?"
+            placeholder="Kuch dimaag mein aaya? Type it here and hit Enter…"
             className="w-full rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-3 text-sm font-bold text-slate-950 outline-none focus:border-amber-500 focus:bg-white transition"
           />
 
-          {/* Quick Category Chips */}
-          <div className="flex flex-wrap gap-1.5">
+          {/* Quick Optional Category Chips (Click to toggle) */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] font-black uppercase text-slate-400 mr-1">Optional Tag:</span>
             {["Deep Focus", "Meeting", "Finance", "Sales", "Ops & Admin", "Personal"].map(cat => (
               <button
                 key={cat}
                 type="button"
-                onClick={() => setCategory(cat)}
+                onClick={() => setCategory(prev => prev === cat ? "" : cat)}
                 className={`rounded-xl px-2.5 py-1 text-xs font-bold transition border ${
                   category === cat ? "bg-slate-950 text-white border-slate-950 shadow-xs" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                 }`}
@@ -4603,12 +4616,13 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Destination Type</label>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Destination</label>
               <select
                 value={taskType}
                 onChange={e => setTaskType(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
+                className="w-full rounded-xl border-2 border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-400"
               >
+                <option value="">📥 Inbox (Decide Later — Default)</option>
                 {TASK_TYPES.map(x => (
                   <option key={x} value={x}>{(data.taskTypeLabels || DEFAULT_TASK_TYPE_LABELS)[x] || x}</option>
                 ))}
@@ -4616,7 +4630,7 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
             </div>
 
             <div>
-              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Due Date</label>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Due Date (Optional)</label>
               <input
                 type="date"
                 value={due}
@@ -4638,13 +4652,13 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
             </div>
 
             <div>
-              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Assign to (Optional)</label>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Assignee (Optional)</label>
               <select
                 value={assignee}
                 onChange={e => setAssignee(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
               >
-                <option value="">Myself</option>
+                <option value="">Myself / Unassigned</option>
                 {(data.team || []).map(m => (
                   <option key={m.id} value={m.name}>{m.name}</option>
                 ))}
@@ -4660,13 +4674,18 @@ function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
           />
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-          <button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
-            Cancel
-          </button>
-          <button onClick={save} className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-black shadow-md transition">
-            ⚡ Save &amp; Dispatch
-          </button>
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+          <span className="text-[11px] text-slate-400 font-semibold">
+            {taskType ? `Routing to ${taskType}` : "Saving to Capture Inbox"}
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
+              Cancel
+            </button>
+            <button onClick={save} className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-black shadow-md transition">
+              ⚡ Capture
+            </button>
+          </div>
         </div>
       </div>
     </div>
