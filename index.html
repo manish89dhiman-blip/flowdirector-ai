@@ -724,31 +724,45 @@ async function loadGoals(userId, periods){
   if (kpiRes.error) throw kpiRes.error;
   const kpis = kpiRes.data || [];
   let values = [];
+  let dailyLogs = [];
   if (kpis.length) {
-    const { data } = await sb.from("kpi_values").select("*")
-      .in("kpi_id", kpis.map(k=>k.id)).in("period", periods);
-    values = data || [];
+    const kpiIds = kpis.map(k => k.id);
+    const [valRes, logRes] = await Promise.all([
+      sb.from("kpi_values").select("*").in("kpi_id", kpiIds).in("period", periods),
+      sb.from("kpi_daily_logs").select("*").in("kpi_id", kpiIds).order("date", { ascending: false }).limit(500)
+    ]);
+    values = valRes.data || [];
+    dailyLogs = logRes.data || [];
   }
-  return { kras: kraRes.data || [], kpis, values };
+  return { kras: kraRes.data || [], kpis, values, dailyLogs };
 }
 
 async function saveKra(row){
-  const { error } = row.id
-    ? await sb.from("kras").update({ title:row.title, description:row.description }).eq("id", row.id)
-    : await sb.from("kras").insert(row);
+  const { data, error } = row.id
+    ? await sb.from("kras").update({ title:row.title, description:row.description }).eq("id", row.id).select().single()
+    : await sb.from("kras").insert(row).select().single();
   if (error) throw error;
+  return data;
 }
 async function deleteKra(id){
   const { error } = await sb.from("kras").delete().eq("id", id);
   if (error) throw error;
 }
 async function saveKpi(row){
-  const patchable = { name:row.name, unit:row.unit, target:row.target,
-                      direction:row.direction, cadence:row.cadence, kra_id:row.kra_id };
-  const { error } = row.id
-    ? await sb.from("kpis").update(patchable).eq("id", row.id)
-    : await sb.from("kpis").insert(row);
+  const patchable = { 
+    name: row.name, 
+    unit: row.unit, 
+    target: row.target,
+    direction: row.direction || "up", 
+    cadence: row.cadence || "monthly", 
+    aggregation: row.aggregation || "sum",
+    kra_id: row.kra_id 
+  };
+  const { data, error } = row.id
+    ? await sb.from("kpis").update(patchable).eq("id", row.id).select().single()
+    : await sb.from("kpis").insert({ ...row, ...patchable }).select().single();
   if (error) throw error;
+  return data;
 }
 async function deleteKpi(id){
   const { error } = await sb.from("kpis").delete().eq("id", id);
@@ -756,11 +770,93 @@ async function deleteKpi(id){
 }
 async function setKpiActual(kpiId, period, actual, userId){
   const { error } = await sb.from("kpi_values").upsert({
-    kpi_id: kpiId, period,
+    kpi_id: kpiId, 
+    period,
     actual: (actual === "" || actual === null) ? null : Number(actual),
-    updated_by: userId, updated_at: new Date().toISOString(),
+    updated_by: userId, 
+    updated_at: new Date().toISOString(),
   }, { onConflict: "kpi_id,period" });
   if (error) throw error;
+}
+
+async function saveKpiDailyLog({ kpi_id, org_id, user_id, date, value, notes, logged_by, logged_by_name, kpiObj }){
+  const numVal = Number(value) || 0;
+  const { data: logEntry, error } = await sb.from("kpi_daily_logs").upsert({
+    kpi_id,
+    org_id,
+    user_id,
+    date,
+    value: numVal,
+    notes: (notes || "").trim(),
+    logged_by: logged_by || user_id,
+    logged_by_name: logged_by_name || "Team Member",
+    updated_at: new Date().toISOString()
+  }, { onConflict: "kpi_id,date" }).select().single();
+
+  if (error) throw error;
+
+  // Automatically recalculate and sync period Actuals (Month & Quarter)
+  try {
+    const monthKey = date.substring(0, 7); // "YYYY-MM"
+    const mMatch = monthKey.match(/^(\d{4})-(\d{2})$/);
+    const quarterKey = mMatch ? `${mMatch[1]}-Q${Math.floor((+mMatch[2]-1)/3)+1}` : monthKey;
+
+    const { data: monthLogs } = await sb
+      .from("kpi_daily_logs")
+      .select("value")
+      .eq("kpi_id", kpi_id)
+      .gte("date", `${monthKey}-01`)
+      .lte("date", `${monthKey}-31`);
+
+    if (monthLogs && monthLogs.length > 0) {
+      const aggMethod = kpiObj?.aggregation || "sum";
+      let monthComputed = 0;
+      if (aggMethod === "avg") {
+        const sum = monthLogs.reduce((acc, l) => acc + (Number(l.value) || 0), 0);
+        monthComputed = Math.round((sum / monthLogs.length) * 10) / 10;
+      } else {
+        // default "sum"
+        monthComputed = Math.round((monthLogs.reduce((acc, l) => acc + (Number(l.value) || 0), 0)) * 100) / 100;
+      }
+      await setKpiActual(kpi_id, monthKey, monthComputed, logged_by || user_id);
+    }
+  } catch (err) {
+    console.warn("Auto-rollup calculation notice:", err);
+  }
+
+  return logEntry;
+}
+
+async function deleteKpiDailyLog(logId, kpi_id, date, userId, kpiObj){
+  const { error } = await sb.from("kpi_daily_logs").delete().eq("id", logId);
+  if (error) throw error;
+
+  // Re-sync monthly actual
+  try {
+    const monthKey = date.substring(0, 7);
+    const { data: monthLogs } = await sb
+      .from("kpi_daily_logs")
+      .select("value")
+      .eq("kpi_id", kpi_id)
+      .gte("date", `${monthKey}-01`)
+      .lte("date", `${monthKey}-31`);
+
+    if (monthLogs) {
+      const aggMethod = kpiObj?.aggregation || "sum";
+      let monthComputed = null;
+      if (monthLogs.length > 0) {
+        if (aggMethod === "avg") {
+          const sum = monthLogs.reduce((acc, l) => acc + (Number(l.value) || 0), 0);
+          monthComputed = Math.round((sum / monthLogs.length) * 10) / 10;
+        } else {
+          monthComputed = Math.round((monthLogs.reduce((acc, l) => acc + (Number(l.value) || 0), 0)) * 100) / 100;
+        }
+      }
+      await setKpiActual(kpi_id, monthKey, monthComputed, userId);
+    }
+  } catch (err) {
+    console.warn("Rollup recalculate error:", err);
+  }
 }
 
 /* ================================================================== */
@@ -7635,11 +7731,20 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab, dbTasks = [
   const [deliverableNote, setDeliverableNote] = useState("");
   const [newCustomTask, setNewCustomTask] = useState("");
   const [kpis, setKpis] = useState([]);
+  const [myGoals, setMyGoals] = useState(null);
   const [copiedStandup, setCopiedStandup] = useState(false);
   const [notice, setNotice] = useState("");
   const [taskViewFilter, setTaskViewFilter] = useState("open"); // "open" | "completed"
 
   const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 4000); };
+
+  const refreshMyGoals = () => {
+    loadGoals(meId, [monthPeriod()]).then(setMyGoals).catch(() => setMyGoals({ kras:[], kpis:[], values:[], dailyLogs:[] }));
+  };
+
+  useEffect(() => {
+    refreshMyGoals();
+  }, [meId]);
 
   // Standup state for today
   const standup = data.standups?.[today] || {
@@ -7978,6 +8083,37 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab, dbTasks = [
           </div>
         </div>
       </div>
+
+      {/* Panel 1b: My Key Performance Indicators & Daily Log */}
+      {myGoals && myGoals.kpis && myGoals.kpis.length > 0 && (
+        <div className="rounded-3xl border-2 border-slate-200 bg-white p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">📊</span>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-950">My Key Performance Indicators (KPIs)</h3>
+                <p className="text-xs text-slate-500">Record today's metrics to keep your live monthly scorecard up to date.</p>
+              </div>
+            </div>
+            <span className="rounded-full bg-amber-100 text-amber-900 font-black px-2.5 py-0.5 text-[10px] uppercase">
+              {myGoals.kpis.length} Assigned KPIs
+            </span>
+          </div>
+
+          <KpiList 
+            kpis={myGoals.kpis}
+            valueOf={(kpi) => (myGoals.values || []).find(v => v.kpi_id === kpi.id && v.period === monthPeriod()) || null}
+            canManage={false}
+            onActual={(kpi, raw) => setKpiActual(kpi.id, monthPeriod(), raw, meId).then(refreshMyGoals)}
+            onEdit={() => {}}
+            onDelete={() => {}}
+            dailyLogs={myGoals.dailyLogs || []}
+            orgCtx={orgCtx}
+            meId={meId}
+            onRefresh={refreshMyGoals}
+          />
+        </div>
+      )}
 
       {/* Panel 2: Delegated Tasks & Deliverables Focus Desk */}
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
@@ -11049,6 +11185,10 @@ function GoalsView({ orgCtx, meId }){
               onActual={saveActual} 
               onEdit={setKpiDraft}
               onDelete={k => { if (confirm(`Delete KPI "${k.name}"?`)) act(() => deleteKpi(k.id)); }} 
+              dailyLogs={goals.dailyLogs || []}
+              orgCtx={orgCtx}
+              meId={meId}
+              onRefresh={refresh}
             />
           </div>
         ))}
@@ -11066,6 +11206,10 @@ function GoalsView({ orgCtx, meId }){
               onActual={saveActual} 
               onEdit={setKpiDraft}
               onDelete={k => { if (confirm(`Delete KPI "${k.name}"?`)) act(() => deleteKpi(k.id)); }} 
+              dailyLogs={goals.dailyLogs || []}
+              orgCtx={orgCtx}
+              meId={meId}
+              onRefresh={refresh}
             />
           </div>
         )}
@@ -11095,32 +11239,358 @@ function GoalsView({ orgCtx, meId }){
   );
 }
 
-function KpiList({ kpis, valueOf, canManage, onActual, onEdit, onDelete }){
+function KpiDailyLogModal({ kpi, orgCtx, meId, onUpdate, onClose }){
+  const today = todayKey();
+  const [logDate, setLogDate] = useState(today);
+  const [logValue, setLogValue] = useState("");
+  const [logNotes, setLogNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
+
+  const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 4000); };
+  const myName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Team Member";
+
+  const fetchLogs = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await sb
+        .from("kpi_daily_logs")
+        .select("*")
+        .eq("kpi_id", kpi.id)
+        .order("date", { ascending: false });
+      if (!error && data) setLogs(data);
+    } catch (e) {
+      console.warn("Failed to fetch logs:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLogs();
+  }, [kpi.id]);
+
+  const handleAddLog = async (e) => {
+    e.preventDefault();
+    if (logValue === "" || isNaN(Number(logValue))) {
+      alert("Please enter a valid numeric value.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveKpiDailyLog({
+        kpi_id: kpi.id,
+        org_id: orgCtx?.org?.id || kpi.org_id,
+        user_id: kpi.user_id,
+        date: logDate,
+        value: Number(logValue),
+        notes: logNotes,
+        logged_by: meId,
+        logged_by_name: myName,
+        kpiObj: kpi
+      });
+      setLogValue("");
+      setLogNotes("");
+      say(`✓ Entry for ${logDate} recorded! Scorecard recalculated.`);
+      await fetchLogs();
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      alert(err.message || "Couldn't save daily log.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteLog = async (logItem) => {
+    if (!confirm(`Delete entry for ${logItem.date} (${logItem.value} ${kpi.unit || ""})?`)) return;
+    try {
+      await deleteKpiDailyLog(logItem.id, kpi.id, logItem.date, meId, kpi);
+      say(`✓ Entry deleted and totals updated.`);
+      await fetchLogs();
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      alert(err.message || "Couldn't delete entry.");
+    }
+  };
+
+  // Group by current month and calculate week-by-week subtotals
+  const currentMonthKey = today.substring(0, 7);
+  const currentMonthLogs = logs.filter(l => (l.date || "").startsWith(currentMonthKey));
+
+  const aggMethod = kpi.aggregation || "sum";
+  let monthTotal = 0;
+  if (aggMethod === "avg") {
+    const sum = currentMonthLogs.reduce((a, b) => a + (Number(b.value) || 0), 0);
+    monthTotal = currentMonthLogs.length ? Math.round((sum / currentMonthLogs.length) * 10) / 10 : 0;
+  } else {
+    monthTotal = Math.round((currentMonthLogs.reduce((a, b) => a + (Number(b.value) || 0), 0)) * 100) / 100;
+  }
+
+  const attain = kpiAttainment(kpi, currentMonthLogs.length ? monthTotal : null);
+  const tone = kpiTone(attain);
+
+  // Group into weeks
+  const weeks = [
+    { label: "Week 1 (1st–7th)", filter: (d) => { const day = Number(d.split("-")[2]); return day >= 1 && day <= 7; } },
+    { label: "Week 2 (8th–14th)", filter: (d) => { const day = Number(d.split("-")[2]); return day >= 8 && day <= 14; } },
+    { label: "Week 3 (15th–21st)", filter: (d) => { const day = Number(d.split("-")[2]); return day >= 15 && day <= 21; } },
+    { label: "Week 4 (22nd–28th)", filter: (d) => { const day = Number(d.split("-")[2]); return day >= 22 && day <= 28; } },
+    { label: "Week 5 (29th–31st)", filter: (d) => { const day = Number(d.split("-")[2]); return day >= 29; } },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm animate-fade-in overflow-y-auto">
+      <div className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl space-y-6 my-8 max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-amber-100 text-amber-900 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                📅 DAILY KPI AUDIT LOG
+              </span>
+              <span className="rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                {aggMethod === "avg" ? "⌀ Average Calculation" : "∑ Cumulative Sum"}
+              </span>
+            </div>
+            <h2 className="text-xl font-black text-slate-950">{kpi.name}</h2>
+            <p className="text-xs text-slate-500 font-medium">
+              Target: {kpi.direction === "down" ? "≤" : "≥"} <b>{kpi.target} {kpi.unit || ""}</b> · Cadence: <b>{kpi.cadence}</b>
+            </p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-800 transition text-lg font-bold">
+            ✕
+          </button>
+        </div>
+
+        {notice && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-900 shadow-2xs">
+            {notice}
+          </div>
+        )}
+
+        {/* 4 Scorecard Metrics Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1 text-center">
+            <span className="text-[10px] font-bold uppercase text-slate-400 block">Target</span>
+            <span className="text-base font-black text-slate-900">{kpi.target} {kpi.unit || ""}</span>
+          </div>
+
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-3.5 space-y-1 text-center">
+            <span className="text-[10px] font-bold uppercase text-amber-800 block">This Month Rollup</span>
+            <span className="text-base font-black text-amber-950">
+              {currentMonthLogs.length ? monthTotal : "—"} {kpi.unit || ""}
+            </span>
+          </div>
+
+          <div className={`rounded-2xl border p-3.5 space-y-1 text-center ${TONE_CLS[tone]}`}>
+            <span className="text-[10px] font-bold uppercase block opacity-75">Attainment</span>
+            <span className="text-base font-black block">
+              {attain === null ? "—" : attain + "%"}
+            </span>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1 text-center">
+            <span className="text-[10px] font-bold uppercase text-slate-400 block">Days Logged</span>
+            <span className="text-base font-black text-slate-900">{currentMonthLogs.length} Days</span>
+          </div>
+        </div>
+
+        {/* Form: Add / Log Daily Entry */}
+        <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-4 sm:p-5 space-y-3 shadow-xs">
+          <h3 className="text-xs font-black uppercase text-amber-950 tracking-wider flex items-center gap-1.5">
+            <span>⚡</span>
+            <span>Record Daily Entry</span>
+          </h3>
+          <form onSubmit={handleAddLog} className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+            <div className="sm:col-span-3">
+              <label className="text-[10px] font-bold uppercase text-slate-600 block mb-1">Date</label>
+              <input
+                type="date"
+                value={logDate}
+                onChange={e => setLogDate(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="sm:col-span-3">
+              <label className="text-[10px] font-bold uppercase text-slate-600 block mb-1">Value ({kpi.unit || "number"})</label>
+              <input
+                type="number"
+                step="any"
+                value={logValue}
+                onChange={e => setLogValue(e.target.value)}
+                placeholder={`e.g. ${kpi.target || 10}`}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="sm:col-span-4">
+              <label className="text-[10px] font-bold uppercase text-slate-600 block mb-1">Notes / Flight or Client Reference</label>
+              <input
+                value={logNotes}
+                onChange={e => setLogNotes(e.target.value)}
+                placeholder="e.g. VT-XYZ charter DEL-GOI"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <button
+                type="submit"
+                disabled={busy}
+                className="w-full rounded-xl bg-slate-950 text-white hover:bg-slate-800 py-2 text-xs font-black transition shadow-xs disabled:opacity-60"
+              >
+                {busy ? "Saving…" : "+ Save Log"}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Weekly Subtotals Strip */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider">Weekly Performance Breakdown ({prettyPeriod(currentMonthKey)})</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {weeks.map((wk, idx) => {
+              const wkLogs = currentMonthLogs.filter(l => wk.filter(l.date));
+              let wkVal = 0;
+              if (aggMethod === "avg") {
+                const sum = wkLogs.reduce((a, b) => a + (Number(b.value) || 0), 0);
+                wkVal = wkLogs.length ? Math.round((sum / wkLogs.length) * 10) / 10 : 0;
+              } else {
+                wkVal = Math.round((wkLogs.reduce((a, b) => a + (Number(b.value) || 0), 0)) * 100) / 100;
+              }
+
+              return (
+                <div key={idx} className="rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-center space-y-0.5">
+                  <span className="text-[9px] font-bold text-slate-500 block truncate">{wk.label}</span>
+                  <span className="text-xs font-extrabold text-slate-900 block">
+                    {wkLogs.length ? wkVal : "—"} {wkLogs.length ? (kpi.unit || "") : ""}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-medium block">({wkLogs.length} days)</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Chronological Audit Trail History Table */}
+        <div className="space-y-2">
+          <h4 className="text-xs font-black uppercase text-slate-700 tracking-wider">
+            All Logged Entries ({logs.length})
+          </h4>
+
+          {loading ? (
+            <div className="p-8 text-center text-xs text-slate-400">Loading history audit logs…</div>
+          ) : logs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-xs text-slate-400 italic">
+              No daily entries recorded yet. Use the form above to log your first number.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Logged Value</th>
+                    <th className="p-3">Notes / Context</th>
+                    <th className="p-3">Logged By</th>
+                    <th className="p-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {logs.map(item => (
+                    <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                      <td className="p-3 font-bold text-slate-900 whitespace-nowrap">📅 {item.date}</td>
+                      <td className="p-3 font-black text-slate-950 whitespace-nowrap">
+                        {item.value} <span className="font-normal text-slate-500">{kpi.unit || ""}</span>
+                      </td>
+                      <td className="p-3 text-slate-700 font-medium max-w-xs truncate">{item.notes || "—"}</td>
+                      <td className="p-3 text-slate-500 whitespace-nowrap text-[11px]">{item.logged_by_name || "Member"}</td>
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => handleDeleteLog(item)}
+                          className="rounded-lg px-2 py-1 text-rose-600 hover:bg-rose-50 font-bold transition text-xs"
+                          title="Delete entry"
+                        >
+                          ✕ Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end pt-2">
+          <button
+            onClick={onClose}
+            className="rounded-xl bg-slate-950 text-white px-5 py-2 text-xs font-black hover:bg-slate-800 transition shadow-xs"
+          >
+            Done &amp; Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function KpiList({ kpis, valueOf, canManage, onActual, onEdit, onDelete, dailyLogs = [], orgCtx, meId, onRefresh }){
+  const [activeDailyModal, setActiveDailyModal] = useState(null);
+  const today = todayKey();
+  const myName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Team Member";
+
   if (kpis.length === 0)
     return <p className="text-xs text-slate-400 italic py-2">No KPIs attached to this responsibility area yet. Click "+ Add KPI" above.</p>;
 
   return (
-    <div className="space-y-2.5">
+    <div className="space-y-3">
       {kpis.map(kpi => {
         const v = valueOf(kpi);
         const attain = kpiAttainment(kpi, v && v.actual);
         const tone = kpiTone(attain);
+        const kpiLogs = dailyLogs.filter(l => l.kpi_id === kpi.id);
+        const todayLog = kpiLogs.find(l => l.date === today);
+        const aggMethod = kpi.aggregation || "sum";
 
         return (
-          <div key={kpi.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5 transition shadow-2xs ${TONE_CLS[tone]}`}>
-            <div className="min-w-[140px] flex-1 space-y-1">
-              <div className="text-sm font-black text-slate-950">{kpi.name}</div>
+          <div key={kpi.id} className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 transition shadow-2xs ${TONE_CLS[tone]}`}>
+            <div className="min-w-[160px] flex-1 space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-black text-slate-950">{kpi.name}</span>
+                <span className="rounded-full bg-white/80 px-2 py-0.2 text-[9px] font-extrabold text-slate-700 border border-slate-200">
+                  {aggMethod === "avg" ? "⌀ Average" : "∑ Cumulative"}
+                </span>
+              </div>
+
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 font-medium">
                 <span className="rounded bg-white/70 px-1.5 py-0.5 border border-slate-200">
                   Target: {kpi.direction === "down" ? "≤" : "≥"} <b>{kpi.target} {kpi.unit || ""}</b>
                 </span>
                 <span>· Cadence: <b>{kpi.cadence === "quarterly" ? "Quarterly" : "Monthly"}</b></span>
+                <span>· Logs: <b>{kpiLogs.length} days logged</b></span>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            {/* Quick Logging & Score Strip */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Daily Log Button with Log Count */}
+              <button
+                onClick={() => setActiveDailyModal(kpi)}
+                className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-950 transition shadow-2xs"
+                title="View date-by-date daily breakdown & log entries"
+              >
+                <span>📅</span>
+                <span>Daily Log ({kpiLogs.length})</span>
+              </button>
+
+              {/* Inline Month / Period Total */}
               <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                <span>Actual Reported:</span>
+                <span className="text-slate-500 text-[11px]">Month Total:</span>
                 <input 
                   type="number" 
                   step="any" 
@@ -11131,23 +11601,24 @@ function KpiList({ kpis, valueOf, canManage, onActual, onEdit, onDelete }){
                     if (raw !== cur) onActual(kpi, raw); 
                   }}
                   onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
-                  placeholder="Enter actual"
-                  className="w-28 rounded-xl border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-400" 
+                  placeholder="Total"
+                  className="w-24 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-400" 
                 />
               </label>
 
-              <div className="text-right min-w-[70px]">
-                <span className={`text-sm font-black block ${tone === "emerald" ? "text-emerald-700" : tone === "rose" ? "text-rose-700" : "text-amber-700"}`}>
+              {/* Attainment Percentage Ring / Pill */}
+              <div className="text-right min-w-[65px] bg-white/80 px-2.5 py-1 rounded-xl border border-slate-200">
+                <span className={`text-xs font-black block ${tone === "emerald" ? "text-emerald-700" : tone === "rose" ? "text-rose-700" : "text-amber-700"}`}>
                   {attain === null ? "—" : attain + "%"}
                 </span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">Attainment</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Score</span>
               </div>
 
               {canManage && (
-                <div className="flex shrink-0 items-center gap-1 ml-1">
+                <div className="flex shrink-0 items-center gap-1 ml-0.5">
                   <button 
-                    onClick={() => onEdit({ id: kpi.id, kra_id: kpi.kra_id, name: kpi.name, unit: kpi.unit || "", target: kpi.target, direction: kpi.direction, cadence: kpi.cadence })}
-                    title="Edit KPI Target" 
+                    onClick={() => onEdit({ id: kpi.id, kra_id: kpi.kra_id, name: kpi.name, unit: kpi.unit || "", target: kpi.target, direction: kpi.direction, cadence: kpi.cadence, aggregation: kpi.aggregation || "sum" })}
+                    title="Edit KPI Settings" 
                     className="rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 px-2 py-1 text-xs font-bold transition"
                   >
                     ✎
@@ -11165,6 +11636,16 @@ function KpiList({ kpis, valueOf, canManage, onActual, onEdit, onDelete }){
           </div>
         );
       })}
+
+      {activeDailyModal && (
+        <KpiDailyLogModal
+          kpi={activeDailyModal}
+          orgCtx={orgCtx}
+          meId={meId}
+          onUpdate={onRefresh}
+          onClose={() => setActiveDailyModal(null)}
+        />
+      )}
     </div>
   );
 }
@@ -11225,7 +11706,7 @@ function KpiEditor({ draft, kras, onSave, onCancel }){
         placeholder="e.g. On-Time Dispatch Rate (or Monthly Gross Margin)"
         className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:border-amber-500" 
       />
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-2.5">
         <div>
           <label className="text-[11px] font-bold text-slate-600 block mb-1">Target Number</label>
           <input 
@@ -11258,6 +11739,17 @@ function KpiEditor({ draft, kras, onSave, onCancel }){
           </select>
         </div>
         <div>
+          <label className="text-[11px] font-bold text-slate-600 block mb-1">Calculation Method</label>
+          <select 
+            value={d.aggregation || "sum"} 
+            onChange={e => setD({ ...d, aggregation: e.target.value })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+          >
+            <option value="sum">∑ Cumulative Sum (Revenue, Hours, Counts)</option>
+            <option value="avg">⌀ Average (OTP %, CSAT %, Margins)</option>
+          </select>
+        </div>
+        <div>
           <label className="text-[11px] font-bold text-slate-600 block mb-1">Cadence</label>
           <select 
             value={d.cadence} 
@@ -11269,7 +11761,7 @@ function KpiEditor({ draft, kras, onSave, onCancel }){
           </select>
         </div>
         <div>
-          <label className="text-[11px] font-bold text-slate-600 block mb-1">Linked Responsibility Area</label>
+          <label className="text-[11px] font-bold text-slate-600 block mb-1">Responsibility Area (KRA)</label>
           <select 
             value={d.kra_id || ""} 
             onChange={e => setD({ ...d, kra_id: e.target.value || null })}
@@ -11291,8 +11783,6 @@ function KpiEditor({ draft, kras, onSave, onCancel }){
           onClick={onCancel} 
           className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
         >
-          Cancel
-        </button>
       </div>
     </div>
   );
