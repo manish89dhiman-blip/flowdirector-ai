@@ -4725,13 +4725,31 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       const tz = d?.settings?.timezone || "Asia/Kolkata";
       const t = todayKey(tz);
       let dirty = false;
+
+      // Automated Migration: Completely remove all holiday/festival items from task queues
+      d.holidays = d.holidays || [];
+      const cleanTaskArray = (arr) => {
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(item => {
+          if (isHolidayItem(item)) {
+            dirty = true;
+            if (!d.holidays.some(h => (h.due === item.due || h.date === item.due) && h.text === (item.text || item.item))) {
+              d.holidays.push({ id: item.id || uid(), text: item.text || item.item, due: item.due || item.date || "", tag: "Holiday" });
+            }
+            return false; // Remove from task arrays
+          }
+          return true;
+        });
+      };
+
+      d.dailyBackup = cleanTaskArray(d.dailyBackup);
+      d.captures = cleanTaskArray(d.captures);
+      d.weeklySomeday = cleanTaskArray(d.weeklySomeday);
+      d.monthlyTray = cleanTaskArray(d.monthlyTray);
+
+      // Ensure historical past-due tax deadlines are marked done
       if (Array.isArray(d.dailyBackup)) {
         d.dailyBackup.forEach(b => {
-          if (isHolidayItem(b)) {
-            b.taskType = "HOLIDAY";
-            b.done = true;
-            dirty = true;
-          }
           if (b.due && b.taskType === "DAILY") {
             b.taskType = "DELEGATE";
             dirty = true;
@@ -4742,6 +4760,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
           }
         });
       }
+
       setData(d);
       if (dirty) {
         saveState(userId, d).catch(() => {});
@@ -6041,9 +6060,20 @@ const isHolidayItem = (item) => {
   if (!item) return false;
   if (item.tag === "Holiday" || item.category === "Holiday") return true;
   if (item.taskType === "HOLIDAY") return true;
-  if (typeof item.text === "string" && (item.text.startsWith("🎆") || item.text.includes("National Holiday"))) return true;
-  if (typeof item.item === "string" && (item.item.startsWith("🎆") || item.item.includes("National Holiday"))) return true;
+  const t = (typeof item.text === "string" ? item.text : typeof item.item === "string" ? item.item : "").toLowerCase();
+  if (!t) return false;
+  if (t.includes("national holiday") || t.includes("festival") || t.includes("gazetted holiday") || t.includes("public holiday")) return true;
+  if (t.includes("republic day") || t.includes("independence day") || t.includes("gandhi jayanti")) return true;
+  if (t.includes("shivratri") || t.includes("holi") || t.includes("eid") || t.includes("mahavir jayanti") || t.includes("good friday") || t.includes("buddha purnima") || t.includes("bakrid") || t.includes("muharram") || t.includes("janmashtami") || t.includes("milad") || t.includes("dussehra") || t.includes("vijayadashami") || t.includes("diwali") || t.includes("deepawali") || t.includes("govardhan") || t.includes("bhai dooj") || t.includes("guru nanak") || t.includes("christmas") || t.includes("new year's day")) return true;
   return false;
+};
+
+const getHolidayForDate = (dateStr, data) => {
+  if (!dateStr) return null;
+  const custom = (data?.holidays || []).find(h => (h.due === dateStr || h.date === dateStr));
+  if (custom) return custom;
+  const cat = INDIAN_HOLIDAYS_CATALOG.find(h => h.due === dateStr);
+  return cat || null;
 };
 
 const dueStatus = (dateStr, tz = "Asia/Kolkata") => {
@@ -6057,15 +6087,10 @@ const collectDueItems = (data) => {
   const overdue=[], today=[];
   const tz = data?.settings?.timezone || "Asia/Kolkata";
   const check=(it)=>{
+    if (!it || isHolidayItem(it)) return; // Holidays are NEVER due tasks
     const text = it.item || it.text;
     const due = it.due;
     if (!due) return;
-    if (isHolidayItem(it)) {
-      // Holidays only show on the day itself as a festival notification, NEVER as overdue chores!
-      const s = dueStatus(due, tz);
-      if (s === "today") today.push(text);
-      return;
-    }
     const s = dueStatus(due, tz);
     if (s === "overdue") overdue.push(text);
     else if (s === "today") today.push(text);
@@ -6084,11 +6109,15 @@ const collectDueItems = (data) => {
 // underlying item done in place, not just show a read-only string.
 const dueItemsByDate = (data) => {
   const map = {};
-  const push=(dateStr,entry)=>{ if(!dateStr) return; if(!map[dateStr]) map[dateStr]=[]; map[dateStr].push(entry); };
-  data.captures.filter(c=>c.status!=="Transferred"&&c.status!=="Done").forEach(c=>push(c.due,{id:c.id,text:c.item,tag:c.category,time:c.time,source:"captures"}));
-  data.dailyBackup.forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"dailyBackup"}));
-  data.weeklySomeday.forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"weeklySomeday"}));
-  data.monthlyTray.forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"monthlyTray"}));
+  const push=(dateStr,entry)=>{ 
+    if(!dateStr || isHolidayItem(entry)) return; 
+    if(!map[dateStr]) map[dateStr]=[]; 
+    map[dateStr].push(entry); 
+  };
+  (data.captures||[]).filter(c=>c.status!=="Transferred"&&c.status!=="Done"&&!isHolidayItem(c)).forEach(c=>push(c.due,{id:c.id,text:c.item,tag:c.category,time:c.time,source:"captures"}));
+  (data.dailyBackup||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"dailyBackup"}));
+  (data.weeklySomeday||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"weeklySomeday"}));
+  (data.monthlyTray||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"monthlyTray"}));
   Object.values(map).forEach(list=>list.sort((a,b)=>(a.time||"99:99").localeCompare(b.time||"99:99")));
   return map;
 };
@@ -7110,7 +7139,7 @@ function DailyView({ data, patch, dk, setDk, userId }){
   const updateSlotItem = (source, id, field, value) => updateSourceItem(patch, source, id, field, value);
   const removeSlotItem = (source, id) => removeSourceItem(patch, source, id);
   const routine = (data.dailyBackup || []).filter(b => b.taskType === "DAILY" && !b.due && !isHolidayItem(b));
-  const otherBackup = (data.dailyBackup || []).filter(b => b.taskType !== "DAILY" && !(b.due && b.time));
+  const otherBackup = (data.dailyBackup || []).filter(b => b.taskType !== "DAILY" && !isHolidayItem(b) && !(b.due && b.time));
   
   const [yrStr, moStr, dayStr] = dk.split("-");
   const mk = `${yrStr}-${moStr}`;
@@ -7120,6 +7149,7 @@ function DailyView({ data, patch, dk, setDk, userId }){
   const isBufferDay = (monthObj.buffers || []).includes(dom);
   const recurringMonthlyForToday = (data.recurringMonthly || []).filter(r => r.day === dom);
   const hasMonthlyEvents = isBufferDay || monthlyCommitment || recurringMonthlyForToday.length > 0;
+  const todayHoliday = getHolidayForDate(dk, data);
 
   const dueMap = dueItemsByDate(data);
   const dueToday = (dueMap[dk] || []);
@@ -7175,6 +7205,27 @@ function DailyView({ data, patch, dk, setDk, userId }){
       </div>
 
       {showCalendarModal && <CalendarSyncModal data={data} dk={dk} userId={userId} onClose={() => setShowCalendarModal(false)} />}
+
+      {/* Festival & Gazetted Public Holiday Celebration Banner */}
+      {todayHoliday && (
+        <div className="rounded-3xl border-2 border-amber-300 bg-linear-to-r from-amber-50 via-orange-50 to-amber-50 p-4 shadow-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl animate-bounce">🎆</span>
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-wider text-amber-900">
+                Gazetted Holiday &amp; Festival
+              </div>
+              <div className="text-base font-black text-slate-950">
+                {todayHoliday.text}
+              </div>
+            </div>
+          </div>
+          <span className="hidden sm:inline-flex items-center rounded-full bg-amber-200/70 border border-amber-300 px-3 py-1 text-xs font-black text-amber-950">
+            Enjoy the Celebration 🎉
+          </span>
+        </div>
+      )}
+
       <OverduePanel data={data} patch={patch} />
 
       {/* 2. Monthly Horizon & Buffer Day Ribbon */}
@@ -8211,26 +8262,27 @@ function ComplianceAndHolidaysModal({ data, patch, onClose, onNotice }){
   const [activeTab, setActiveTab] = useState("holidays"); // "holidays" | "tax"
   const importHolidays = () => {
     let added = 0;
-    const tz = data?.settings?.timezone || "Asia/Kolkata";
-    const t = todayKey(tz);
     patch(d => {
-      d.dailyBackup = d.dailyBackup || [];
+      d.holidays = d.holidays || [];
+      // Clean out any legacy holiday items from task arrays
+      d.dailyBackup = (d.dailyBackup || []).filter(b => !isHolidayItem(b));
+      d.captures = (d.captures || []).filter(c => !isHolidayItem(c));
+      d.weeklySomeday = (d.weeklySomeday || []).filter(w => !isHolidayItem(w));
+      d.monthlyTray = (d.monthlyTray || []).filter(m => !isHolidayItem(m));
+
       INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
-        if (!d.dailyBackup.some(b => b.text === hol.text && b.due === hol.due)) {
-          d.dailyBackup.push({
-            id: uid(),
+        if (!d.holidays.some(h => h.text === hol.text && h.due === hol.due)) {
+          d.holidays.push({
+            id: hol.id,
             text: hol.text,
             due: hol.due,
-            time: "",
-            tag: "Holiday",
-            taskType: "HOLIDAY",
-            done: hol.due < t
+            tag: "Holiday"
           });
           added++;
         }
       });
     });
-    if (onNotice) onNotice(`✓ Successfully imported ${added} Indian festivals & holidays into your planner!`);
+    if (onNotice) onNotice(`✓ Indian festivals & gazetted holidays enabled — celebrating on your calendar without cluttering tasks!`);
   };
 
   const importTaxDeadlines = () => {
@@ -12360,26 +12412,26 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                 <button
                   onClick={() => {
                     let added = 0;
-                    const tz = data?.settings?.timezone || "Asia/Kolkata";
-                    const t = todayKey(tz);
                     patch(d => {
-                      d.dailyBackup = d.dailyBackup || [];
+                      d.holidays = d.holidays || [];
+                      d.dailyBackup = (d.dailyBackup || []).filter(b => !isHolidayItem(b));
+                      d.captures = (d.captures || []).filter(c => !isHolidayItem(c));
+                      d.weeklySomeday = (d.weeklySomeday || []).filter(w => !isHolidayItem(w));
+                      d.monthlyTray = (d.monthlyTray || []).filter(m => !isHolidayItem(m));
+
                       INDIAN_HOLIDAYS_CATALOG.forEach(hol => {
-                        if (!d.dailyBackup.some(b => b.text === hol.text && b.due === hol.due)) {
-                          d.dailyBackup.push({
-                            id: uid(),
+                        if (!d.holidays.some(h => h.text === hol.text && h.due === hol.due)) {
+                          d.holidays.push({
+                            id: hol.id,
                             text: hol.text,
                             due: hol.due,
-                            time: "",
-                            tag: "Holiday",
-                            taskType: "HOLIDAY",
-                            done: hol.due < t
+                            tag: "Holiday"
                           });
                           added++;
                         }
                       });
                     });
-                    alert(`✓ Successfully imported ${added} Indian holidays into your calendar!`);
+                    alert(`✓ Indian festivals & gazetted holidays enabled — visible on calendar without adding chores to your task list!`);
                   }}
                   className="w-full rounded-xl bg-slate-950 hover:bg-slate-800 text-white py-2 text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5"
                 >
