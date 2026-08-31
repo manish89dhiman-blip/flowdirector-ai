@@ -10462,35 +10462,66 @@ function MonthlyView({ data, patch, onGoToDay }){
   const [notice, setNotice] = useState("");
   const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 4500); };
 
-  const mk = `${y}-${m}`;
-  const month = data.monthly[mk] || { days: {}, buffers: [] };
-  const upd = (fn) => patch(d => { if (!d.monthly[mk]) d.monthly[mk] = { days: {}, buffers: [] }; fn(d.monthly[mk]); });
+  const mk = `${y}-${pad2(m)}`;
+  const rawMonth = data?.monthly?.[mk] || data?.monthly?.[`${y}-${m}`] || {};
+  const month = {
+    days: rawMonth.days || {},
+    buffers: Array.isArray(rawMonth.buffers) ? rawMonth.buffers : []
+  };
+
+  const upd = (fn) => patch(d => { 
+    if (!d.monthly) d.monthly = {};
+    if (!d.monthly[mk]) d.monthly[mk] = { days: {}, buffers: [] }; 
+    fn(d.monthly[mk]); 
+  });
+
   const daysInMonth = new Date(y, m, 0).getDate();
   const firstDow = (new Date(y, m - 1, 1).getDay() + 6) % 7;
-  const nav = (n) => { let nm = m + n, ny = y; if (nm > 12) { nm = 1; ny++; } if (nm < 1) { nm = 12; ny--; } setM(nm); setY(ny); };
-  const toggleBuffer = (n) => upd(x => { x.buffers = x.buffers.includes(n) ? x.buffers.filter(b => b !== n) : [...x.buffers, n]; });
-  const cells = []; for (let i = 0; i < firstDow; i++) cells.push(null); for (let n = 1; n <= daysInMonth; n++) cells.push(n);
+
+  const nav = (n) => { 
+    let nm = m + n;
+    let ny = y; 
+    if (nm > 12) { nm = 1; ny++; } 
+    if (nm < 1) { nm = 12; ny--; } 
+    const nextDaysInMonth = new Date(ny, nm, 0).getDate();
+    setSelectedDay(prev => Math.max(1, Math.min(prev || 1, nextDaysInMonth)));
+    setM(nm); 
+    setY(ny); 
+  };
+
+  const toggleBuffer = (n) => upd(x => { 
+    x.buffers = Array.isArray(x.buffers) ? x.buffers : [];
+    x.buffers = x.buffers.includes(n) ? x.buffers.filter(b => b !== n) : [...x.buffers, n]; 
+  });
+
+  const cells = []; 
+  for (let i = 0; i < firstDow; i++) cells.push(null); 
+  for (let n = 1; n <= daysInMonth; n++) cells.push(n);
+
   const place = (item, n) => patch(d => {
+    if (!d.monthly) d.monthly = {};
     if (!d.monthly[mk]) d.monthly[mk] = { days: {}, buffers: [] };
     const prev = d.monthly[mk].days[n] || "";
     d.monthly[mk].days[n] = prev ? prev + " · " + item.text : item.text;
-    d.monthlyTray = d.monthlyTray.filter(t => t.id !== item.id);
+    d.monthlyTray = (d.monthlyTray || []).filter(t => t.id !== item.id);
     if (!d.recurringMonthly) d.recurringMonthly = [];
     d.recurringMonthly.push({ id: item.id, text: item.text, tag: item.tag, day: n, time: item.time || "" });
   });
-  const dropTray = (id) => { if (!confirm("Delete this item? This can't be undone.")) return; patch(d => { d.monthlyTray = d.monthlyTray.filter(t => t.id !== id); }); };
+
+  const dropTray = (id) => { if (!confirm("Delete this item? This can't be undone.")) return; patch(d => { d.monthlyTray = (d.monthlyTray || []).filter(t => t.id !== id); }); };
   const stopRecurring = (id) => patch(d => { d.recurringMonthly = (d.recurringMonthly || []).filter(r => r.id !== id); });
-  const updateTrayField = (id, field, value) => patch(d => { const t = d.monthlyTray.find(x => x.id === id); if (t) t[field] = value; });
+  const updateTrayField = (id, field, value) => patch(d => { const t = (d.monthlyTray || []).find(x => x.id === id); if (t) t[field] = value; });
   const updateRecurringField = (id, field, value) => patch(d => { const r = (d.recurringMonthly || []).find(x => x.id === id); if (r) r[field] = value; });
-  const dueMap = dueItemsByDate(data);
+  const dueMap = dueItemsByDate(data || {});
 
   useEffect(() => {
-    const recurring = data.recurringMonthly || [];
+    const recurring = data?.recurringMonthly || [];
     if (recurring.length === 0) return;
-    const monthDays = (data.monthly[mk] || { days: {} }).days || {};
+    const monthDays = month.days || {};
     const additions = recurring.filter(r => r.day <= daysInMonth && !(monthDays[r.day] || "").includes(r.text));
     if (additions.length === 0) return;
     patch(d => {
+      if (!d.monthly) d.monthly = {};
       if (!d.monthly[mk]) d.monthly[mk] = { days: {}, buffers: [] };
       additions.forEach(r => {
         const cur = d.monthly[mk].days[r.day] || "";
@@ -10499,9 +10530,15 @@ function MonthlyView({ data, patch, onGoToDay }){
     });
   }, [mk]);
 
-  const activeMobileDateKey = `${y}-${pad2(m)}-${pad2(selectedDay || 1)}`;
+  const safeSelectedDay = Math.max(1, Math.min(selectedDay || 1, daysInMonth));
+  const activeMobileDateKey = `${y}-${pad2(m)}-${pad2(safeSelectedDay)}`;
   const activeMobileDue = dueMap[activeMobileDateKey] || [];
-  const activeMobileIsBuffer = month.buffers.includes(selectedDay);
+  const activeMobileIsBuffer = month.buffers.includes(safeSelectedDay);
+
+  let formattedDateHeader = `${MONTHS[m - 1] || "Month"} ${safeSelectedDay}, ${y}`;
+  try {
+    formattedDateHeader = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(y, m - 1, safeSelectedDay));
+  } catch (_) {}
 
   return (
     <div className="space-y-4">
@@ -10629,7 +10666,7 @@ function MonthlyView({ data, patch, onGoToDay }){
           <div className="flex items-center justify-between">
             <div>
               <div className="text-sm font-black text-slate-900">
-                {new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date(activeMobileDateKey + "T00:00:00"))}
+                {formattedDateHeader}
               </div>
               {activeMobileIsBuffer && (
                 <div className="text-xs font-black text-emerald-700 mt-0.5">
@@ -10640,7 +10677,7 @@ function MonthlyView({ data, patch, onGoToDay }){
 
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => toggleBuffer(selectedDay)}
+                onClick={() => toggleBuffer(safeSelectedDay)}
                 className={`rounded-xl border px-3 py-1 text-xs font-bold transition shadow-2xs ${
                   activeMobileIsBuffer ? "border-emerald-300 bg-emerald-100 text-emerald-900 font-black" : "border-slate-200 bg-slate-50 text-slate-700"
                 }`}
@@ -10661,8 +10698,8 @@ function MonthlyView({ data, patch, onGoToDay }){
               Monthly Blueprint Fixed Deliverable
             </label>
             <textarea
-              value={month.days[selectedDay] || ""}
-              onChange={e => upd(x => { x.days[selectedDay] = e.target.value; })}
+              value={month.days[safeSelectedDay] || ""}
+              onChange={e => upd(x => { x.days[safeSelectedDay] = e.target.value; })}
               rows={3}
               placeholder="Add key deliverable, launch date, or fixed commitment..."
               className="w-full rounded-xl border border-slate-200 bg-slate-50/70 p-2.5 text-xs font-semibold text-slate-900 outline-none focus:border-amber-400 focus:bg-white transition"
