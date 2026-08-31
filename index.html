@@ -6254,7 +6254,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
         {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} orgCtx={orgCtx} meId={userId} />}
         {tab==="followup" && <FollowUpView data={data} patch={patch} orgCtx={orgCtx} meId={userId} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
-        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} orgCtx={orgCtx} />}
+        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} orgCtx={orgCtx} onOpenCapture={() => setTab("capture")} />}
         {tab==="weekly" && <WeeklyView data={data} patch={patch} orgCtx={orgCtx} />}
         {tab==="monthly" && <MonthlyView data={data} patch={patch} onGoToDay={(dateStr)=>{setDailyDate(dateStr); setTab("daily");}} />}
         {tab==="ideas" && <IdeasAndReferenceView data={data} patch={patch} />}
@@ -7513,14 +7513,13 @@ const collectDueItems = (data) => {
     if (s === "overdue") overdue.push(text);
     else if (s === "today") today.push(text);
   };
-  (data.captures||[]).filter(c=>c.status!=="Transferred"&&c.status!=="Done").forEach(check);
   (data.dailyBackup||[]).filter(b=>!b.done).forEach(check);
   (data.weeklySomeday||[]).filter(b=>!b.done).forEach(check);
   (data.monthlyTray||[]).filter(b=>!b.done).forEach(check);
   return { overdue, today };
 };
 // Every item with a due date, indexed by that exact "YYYY-MM-DD" — shared by
-// Daily/Weekly/Monthly so a due date set anywhere in Capture shows up
+// Daily/Weekly/Monthly so a due date set anywhere in Backup/Someday/Tray shows up
 // everywhere, without ever writing into the freeform editable text cells.
 // Full item identity (id/source/done), not just display text — so anywhere this
 // is rendered (Daily/Weekly panels, the Daily slot chart) can edit or mark the
@@ -7532,7 +7531,6 @@ const dueItemsByDate = (data) => {
     if(!map[dateStr]) map[dateStr]=[]; 
     map[dateStr].push(entry); 
   };
-  (data.captures||[]).filter(c=>c.status!=="Transferred"&&c.status!=="Done"&&!isHolidayItem(c)).forEach(c=>push(c.due,{id:c.id,text:c.item,tag:c.category,time:c.time,done:c.status==="Done",source:"captures"}));
   (data.dailyBackup||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"dailyBackup"}));
   (data.weeklySomeday||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"weeklySomeday"}));
   (data.monthlyTray||[]).filter(b=>!isHolidayItem(b)).forEach(b=>push(b.due,{id:b.id,text:b.text,tag:b.tag,taskType:b.taskType,due:b.due,time:b.time,assignee:b.assignee,done:!!b.done,source:"monthlyTray"}));
@@ -8790,7 +8788,7 @@ function DailyDelegateModal({ target, orgCtx, meId, onDelegateSuccess, onClose }
   );
 }
 
-function DailyView({ data, patch, dk, setDk, userId, orgCtx }){
+function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [delegateModalTarget, setDelegateModalTarget] = useState(null);
   const [myKras, setMyKras] = useState([]);
@@ -8849,6 +8847,8 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx }){
   const slotItems = dailySlotItems(data, dk, dueMap);
 
   const routineDoneCount = routine.filter(r => day.routineDone?.[r.id]).length;
+  const openCaptures = (data.captures || []).filter(c => c.status !== "Transferred" && c.status !== "Done");
+  const openCapturesCount = openCaptures.length;
 
   const handleScheduleInSlot = (slot, text) => {
     if (!text || !text.trim()) return;
@@ -8996,6 +8996,30 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx }){
           <span className="hidden sm:inline-flex items-center rounded-full bg-amber-200/70 border border-amber-300 px-3 py-1 text-xs font-black text-amber-950">
             Enjoy the Celebration 🎉
           </span>
+        </div>
+      )}
+
+      {/* Untriaged Quick Capture Inbox Reminder */}
+      {openCapturesCount > 0 && (
+        <div className="rounded-3xl border-2 border-amber-200 bg-amber-50/80 p-3.5 sm:px-5 sm:py-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-200 text-lg shadow-2xs">📥</span>
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-wider text-amber-900">
+                Quick Capture Inbox
+              </div>
+              <div className="text-xs font-bold text-amber-950">
+                You have {openCapturesCount} raw {openCapturesCount === 1 ? "idea/item" : "ideas/items"} waiting in your inbox to be triaged.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onOpenCapture ? onOpenCapture : () => navigate("/capture")}
+            className="rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-2 text-xs font-black transition shadow-2xs flex items-center gap-1.5"
+          >
+            <span>Triage Inbox</span>
+            <span>→</span>
+          </button>
         </div>
       )}
 
