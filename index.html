@@ -71,7 +71,33 @@ const TYPE_HELP = {
   DELETE:"No value — removed. The most enjoyable type."
 };
 const DEFAULT_CATEGORIES = ["Hiring","Sales","Finance","Ops","Marketing","Admin","Personal","Decision"];
-const DEFAULT_TASK_TYPE_LABELS = Object.fromEntries(TASK_TYPES.map(t=>[t,t]));
+const DEFAULT_TASK_TYPE_LABELS = {
+  "SCHEDULE": "📅 Daily Backup (Date/Time Slot)",
+  "DAILY": "🔁 Daily Repeating Routine",
+  "DELEGATE": "👥 Delegate to Team Member",
+  "WAITING": "⏳ Waiting / Follow-up (Daily Backup)",
+  "WAITING-FOR": "⏳ Waiting / Follow-up",
+  "PROJECT": "📂 Multi-Step Project (Daily Backup)",
+  "WEEKLY": "🗓️ Weekly Someday Pool",
+  "MONTHLY": "📌 Monthly Blueprint Tray",
+  "MAYBE": "💭 Someday / Maybe List",
+  "REFERENCE": "💡 Reference Notes",
+  "AUTOMATE": "⚡ Automate / Systematize",
+  "DELETE": "✕ Drop / Delete"
+};
+
+function getCompanyDepartments(data) {
+  if (Array.isArray(data?.departments) && data.departments.length > 0) {
+    return data.departments;
+  }
+  return DEPARTMENTS;
+}
+
+function getAvailableCategories(data) {
+  const depts = getCompanyDepartments(data);
+  const customCats = Array.isArray(data?.categories) ? data.categories : DEFAULT_CATEGORIES;
+  return Array.from(new Set([...depts, ...customCats]));
+}
 const DAILY_SLOTS = ["7–8 AM","8–9 AM","9–10 AM","10–11 AM","11–12","12–1 PM","1–2 PM","2–3 PM","3–4 PM","4–5 PM","5–6 PM","6–7 PM","7–8 PM","8–9 PM","9–10 PM"];
 const WEEK_SLOTS  = ["7–8 AM","8–9 AM","9–10 AM","10–11 AM","11–12","12–1 PM","1–2 PM","2–3 PM","3–4 PM","4–5 PM","5–6 PM","6–7 PM","7–8 PM","8–9 PM"];
 const DAY_KEYS = ["mon","tue","wed","thu","fri","sat","sun"];
@@ -6656,8 +6682,8 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
             onChange={e => setFilterCat(e.target.value)}
             className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 outline-none"
           >
-            <option value="ALL">All Categories</option>
-            {["Deep Focus", "Meeting", "Finance", "Sales", "Ops & Admin", "Personal"].map(c => (
+            <option value="ALL">All Categories &amp; Depts</option>
+            {getAvailableCategories(data).map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
@@ -6687,7 +6713,7 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
                       🏷️ {c.category}
                     </span>
                   )}
-                  {ohv > 0 && ["Admin", "Ops & Admin"].includes(c.category) && (
+                  {ohv > 0 && ["Admin", "Ops & Admin", "Operations"].includes(c.category) && (
                     <span className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-700">
                       delegate? (&lt; ₹{ohv}/h)
                     </span>
@@ -6731,8 +6757,8 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
                 onChange={e => setCatOf(c.id, e.target.value)} 
                 className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none"
               >
-                <option value="">— Category —</option>
-                {(data.categories || DEFAULT_CATEGORIES).map(x => <option key={x}>{x}</option>)}
+                <option value="">— Category / Dept —</option>
+                {getAvailableCategories(data).map(x => <option key={x} value={x}>{x}</option>)}
               </select>
 
               <select 
@@ -11383,58 +11409,180 @@ function StandaloneManualPage({ session, onBack }){
 /*  7 · SETTINGS                                                       */
 /* ================================================================== */
 function CategoriesSection({ data, patch }){
-  const [name,setName]=useState("");
-  const list = data.categories||DEFAULT_CATEGORIES;
-  const add=()=>{ const n=name.trim(); if(!n || list.includes(n)) return; patch(d=>{ if(!d.categories) d.categories=[...DEFAULT_CATEGORIES]; d.categories.push(n); }); setName(""); };
-  const rename=(oldName,newName)=>{
-    const n=newName.trim();
-    if(!n || n===oldName) return;
-    patch(d=>{
-      if(!d.categories) d.categories=[...DEFAULT_CATEGORIES];
-      const idx=d.categories.indexOf(oldName);
-      if(idx>=0) d.categories[idx]=n;
-      d.captures.forEach(c=>{ if(c.category===oldName) c.category=n; });
-      d.maybe.forEach(m=>{ if(m.category===oldName) m.category=n; });
+  const [catName, setCatName] = useState("");
+  const [deptName, setDeptName] = useState("");
+
+  const depts = getCompanyDepartments(data);
+  const categories = data.categories || DEFAULT_CATEGORIES;
+
+  const addDept = () => {
+    const n = deptName.trim();
+    if (!n || depts.includes(n)) return;
+    patch(d => {
+      if (!d.departments) d.departments = [...DEPARTMENTS];
+      d.departments.push(n);
+    });
+    setDeptName("");
+  };
+
+  const removeDept = (dName) => {
+    if (!confirm(`Remove "${dName}" department?`)) return;
+    patch(d => {
+      const curr = d.departments || [...DEPARTMENTS];
+      d.departments = curr.filter(x => x !== dName);
     });
   };
-  const remove=(catName)=>{
-    if(!confirm(`Remove "${catName}" from your category list? Items already tagged with it keep the label — it just won't be offered for new items.`)) return;
-    patch(d=>{ d.categories=(d.categories||DEFAULT_CATEGORIES).filter(x=>x!==catName); });
+
+  const addCat = () => {
+    const n = catName.trim();
+    if (!n || categories.includes(n)) return;
+    patch(d => {
+      if (!d.categories) d.categories = [...DEFAULT_CATEGORIES];
+      d.categories.push(n);
+    });
+    setCatName("");
   };
+
+  const removeCat = (cName) => {
+    if (!confirm(`Remove "${cName}" category tag?`)) return;
+    patch(d => {
+      d.categories = (d.categories || DEFAULT_CATEGORIES).filter(x => x !== cName);
+    });
+  };
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 font-semibold text-slate-700">Categories</h3>
-      <p className="mb-3 text-xs text-slate-400">Used in Capture and Maybe. Renaming updates it everywhere already tagged with it; removing just stops offering it going forward.</p>
-      <div className="flex gap-2">
-        <input value={name} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="New category name"
-          className="flex-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm outline-none focus:border-amber-400" />
-        <button onClick={add} className="flex items-center gap-1 rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"><Ic n="plus"/> Add</button>
-      </div>
-      <div className="mt-3 space-y-1">
-        {list.map(catName=>(
-          <div key={catName} className="flex items-center gap-2">
-            <input defaultValue={catName} onBlur={e=>rename(catName,e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") e.target.blur(); }}
-              className="flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-amber-400" />
-            <button onClick={()=>remove(catName)} className="text-slate-300 hover:text-rose-500"><Ic n="trash"/></button>
+    <div className="space-y-6">
+      {/* 1. Company Departments Manager */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="font-extrabold text-sm text-slate-950 flex items-center gap-2">
+              <span>🏢</span>
+              <span>Company Departments</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Configured departments automatically appear across your whole team, Goals/KRAs, member permissions, and Task tagging.
+            </p>
           </div>
-        ))}
+          <span className="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs font-bold">
+            {depts.length} Active Departments
+          </span>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            value={deptName}
+            onChange={e => setDeptName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addDept()}
+            placeholder="Add custom department (e.g. Charter Sales, Flight Ops, Medical Crew)…"
+            className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-400 focus:bg-white transition"
+          />
+          <button
+            onClick={addDept}
+            className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-black transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>+</span>
+            <span>Add Department</span>
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-2">
+          {depts.map(d => (
+            <div key={d} className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-800 shadow-2xs">
+              <span>🏢 {d}</span>
+              <button
+                onClick={() => removeDept(d)}
+                className="text-slate-400 hover:text-rose-600 font-bold ml-1 transition"
+                title="Remove department"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. Custom Task Tags & Categories */}
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="font-extrabold text-sm text-slate-950 flex items-center gap-2">
+              <span>🏷️</span>
+              <span>Custom Task Categories &amp; Tags</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Custom labels used in Quick Capture and Someday/Maybe alongside your company departments.
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-100 text-slate-700 px-3 py-1 text-xs font-bold">
+            {categories.length} Tags
+          </span>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            value={catName}
+            onChange={e => setCatName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && addCat()}
+            placeholder="Add custom tag (e.g. Deep Focus, Personal, Decision, Strategy)…"
+            className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-400 focus:bg-white transition"
+          />
+          <button
+            onClick={addCat}
+            className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-black transition shadow-xs flex items-center gap-1.5"
+          >
+            <span>+</span>
+            <span>Add Tag</span>
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-2 pt-2">
+          {categories.map(c => (
+            <div key={c} className="flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-xs font-bold text-amber-950 shadow-2xs">
+              <span>🏷️ {c}</span>
+              <button
+                onClick={() => removeCat(c)}
+                className="text-amber-600 hover:text-rose-600 font-bold ml-1 transition"
+                title="Remove tag"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
 function TaskTypeLabelsSection({ data, patch }){
-  const labels = data.taskTypeLabels||DEFAULT_TASK_TYPE_LABELS;
-  const setLabel=(key,v)=>patch(d=>{ if(!d.taskTypeLabels) d.taskTypeLabels={...DEFAULT_TASK_TYPE_LABELS}; d.taskTypeLabels[key]=v||key; });
+  const labels = data.taskTypeLabels || DEFAULT_TASK_TYPE_LABELS;
+  const setLabel = (key, v) => patch(d => { 
+    if (!d.taskTypeLabels) d.taskTypeLabels = { ...DEFAULT_TASK_TYPE_LABELS }; 
+    d.taskTypeLabels[key] = v || key; 
+  });
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="mb-3 font-semibold text-slate-700">Task type labels</h3>
-      <p className="mb-3 text-xs text-slate-400">Rename how each Task Type shows up in Capture — what it routes to on Transfer never changes, only the label does.</p>
-      <div className="space-y-2">
-        {TASK_TYPES.map(key=>(
-          <div key={key} className="flex flex-wrap items-center gap-2 text-sm">
-            <Field value={labels[key]||key} onChange={e=>setLabel(key,e.target.value)} className="w-40 shrink-0" />
-            <span className="text-xs text-slate-400">{TYPE_HELP[key]}</span>
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-4">
+      <div>
+        <h3 className="font-extrabold text-sm text-slate-950 flex items-center gap-2">
+          <span>🎯</span>
+          <span>Task Destination &amp; Triage Reference</span>
+        </h3>
+        <p className="text-xs text-slate-500 mt-0.5">
+          Shows where each action in Quick Capture transfers to when you click "Transfer".
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 pt-1">
+        {TASK_TYPES.map(key => (
+          <div key={key} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 space-y-1">
+            <div className="font-bold text-xs text-slate-900 flex items-center justify-between">
+              <span>{labels[key] || DEFAULT_TASK_TYPE_LABELS[key] || key}</span>
+              <span className="mono text-[10px] font-mono uppercase text-slate-400 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                {key}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">{TYPE_HELP[key]}</p>
           </div>
         ))}
       </div>
