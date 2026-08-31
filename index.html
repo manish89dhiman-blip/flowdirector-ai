@@ -4516,6 +4516,163 @@ function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
 /* ================================================================== */
 /*  Planner shell                                                      */
 /* ================================================================== */
+function GlobalQuickCaptureModal({ data, patch, ohv, onClose }) {
+  const [text, setText] = useState("");
+  const [category, setCategory] = useState("Deep Focus");
+  const [taskType, setTaskType] = useState("SCHEDULE");
+  const [due, setDue] = useState(todayKey());
+  const [time, setTime] = useState("");
+  const [assignee, setAssignee] = useState("");
+  const [details, setDetails] = useState("");
+
+  const save = () => {
+    const t = text.trim();
+    if (!t) return;
+    const payload = {
+      id: uid(),
+      text: t + (details ? ` — ${details}` : ""),
+      tag: category,
+      taskType: taskType || "SCHEDULE",
+      due: due || "",
+      time: time || "",
+      assignee: assignee || ""
+    };
+    patch(d => {
+      if (["SCHEDULE", "DAILY", "WAITING", "WAITING-FOR", "PROJECT", "DELEGATE"].includes(taskType)) {
+        d.dailyBackup = d.dailyBackup || [];
+        d.dailyBackup.unshift(payload);
+      } else if (taskType === "WEEKLY") {
+        d.weeklySomeday = d.weeklySomeday || [];
+        d.weeklySomeday.unshift(payload);
+      } else if (taskType === "MONTHLY") {
+        d.monthlyTray = d.monthlyTray || [];
+        d.monthlyTray.unshift(payload);
+      } else if (taskType === "MAYBE") {
+        d.maybe = d.maybe || [];
+        d.maybe.unshift({ id: uid(), added: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }), item: t, category, revisit: "", decision: "" });
+      } else if (taskType === "REFERENCE" || taskType === "AUTOMATE") {
+        d.reference = d.reference || [];
+        d.reference.unshift({ id: uid(), text: t, note: details });
+      } else {
+        d.captures = d.captures || [];
+        d.captures.unshift({ id: uid(), date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }), item: t, category, taskType, details, status: "Open" });
+      }
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-2xl space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⚡</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">Quick Capture Task</h3>
+              <p className="text-xs text-slate-500">Dump it instantly so your mind stays free</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 font-bold">✕</button>
+        </div>
+
+        <div className="space-y-3">
+          <input
+            autoFocus
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); save(); } }}
+            placeholder="What needs to get done?"
+            className="w-full rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-3 text-sm font-bold text-slate-950 outline-none focus:border-amber-500 focus:bg-white transition"
+          />
+
+          {/* Quick Category Chips */}
+          <div className="flex flex-wrap gap-1.5">
+            {["Deep Focus", "Meeting", "Finance", "Sales", "Ops & Admin", "Personal"].map(cat => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategory(cat)}
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition border ${
+                  category === cat ? "bg-slate-950 text-white border-slate-950 shadow-xs" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Destination Type</label>
+              <select
+                value={taskType}
+                onChange={e => setTaskType(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
+              >
+                {TASK_TYPES.map(x => (
+                  <option key={x} value={x}>{(data.taskTypeLabels || DEFAULT_TASK_TYPE_LABELS)[x] || x}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Due Date</label>
+              <input
+                type="date"
+                value={due}
+                onChange={e => setDue(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Time (Optional)</label>
+              <input
+                type="time"
+                value={time}
+                onChange={e => setTime(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Assign to (Optional)</label>
+              <select
+                value={assignee}
+                onChange={e => setAssignee(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
+              >
+                <option value="">Myself</option>
+                {(data.team || []).map(m => (
+                  <option key={m.id} value={m.name}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <input
+            value={details}
+            onChange={e => setDetails(e.target.value)}
+            placeholder="Context, link, or notes (optional)…"
+            className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-800 outline-none"
+          />
+        </div>
+
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <button onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button onClick={save} className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-black shadow-md transition">
+            ⚡ Save &amp; Dispatch
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const userId = session.user.id;
   const path = usePath();
@@ -4535,6 +4692,8 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const initialRoute = parsePlannerRoute(path);
   const [tab, setTabState] = useState(initialRoute.tab);
   const [settingsSubTab, setSettingsSubTab] = useState(initialRoute.subTab || "general");
+  const [showMobileMoreDrawer, setShowMobileMoreDrawer] = useState(false);
+  const [showQuickCaptureModal, setShowQuickCaptureModal] = useState(false);
 
   useEffect(() => {
     const { tab: newTab, subTab: newSubTab } = parsePlannerRoute(path);
@@ -4591,6 +4750,22 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   }, [userId]);
   useEffect(() => { amPlatformAdmin(userId).then(setIsAdmin); }, [userId]);
   useEffect(() => { amTrainingCoach(userId, session?.user?.email).then(setIsCoach); }, [userId, session?.user?.email]);
+
+  // Global Shortcut for Quick Capture (c or Ctrl+K)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.key === "c" || e.key === "C") && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
+        e.preventDefault();
+        setShowQuickCaptureModal(prev => !prev);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setShowQuickCaptureModal(prev => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     if (!orgCtx || !orgCtx.membership) {
@@ -4709,12 +4884,24 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
   return (
     <div className="min-h-screen bg-[#fbf9fa] text-slate-900 selection:bg-amber-400 font-sans antialiased">
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 text-slate-900 shadow-sm backdrop-blur-md">
+      {/* 1. Desktop Executive Header (Visible on Desktop >= md) */}
+      <header className="sticky top-0 z-20 hidden md:block border-b border-slate-200 bg-white/95 text-slate-900 shadow-sm backdrop-blur-md">
         {/* Tier 1: Brand & Executive Status Bar */}
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
           <Logo height={44} lightMode={true} onClick={() => setTab(isMember ? "standup" : "capture")} />
 
           <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
+            {/* Quick Capture Desktop Button */}
+            <button
+              onClick={() => setShowQuickCaptureModal(true)}
+              className="flex items-center gap-1.5 rounded-xl bg-slate-950 text-white hover:bg-slate-800 px-3 py-1.5 text-xs font-black shadow-sm transition"
+              title="Press 'C' anywhere"
+            >
+              <span>⚡</span>
+              <span>+ Quick Capture</span>
+              <span className="rounded bg-slate-800 px-1 py-0.2 text-[10px] text-amber-400 font-mono">C</span>
+            </button>
+
             {/* 15-Day Free Trial Countdown Badge */}
             <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50/80 px-3 py-1.5 shadow-xs">
               <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
@@ -4788,7 +4975,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
           </div>
         </div>
 
-        {/* Tier 2: Executive Light Navigation Menu Bar (No Scrollbar) */}
+        {/* Tier 2: Desktop Navigation Bar */}
         <div className="border-t border-slate-200/80 bg-[#f8fafc]">
           <nav className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-4 py-2 [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {TABS.map(([id, label]) => {
@@ -4812,7 +4999,27 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">
+      {/* 2. Mobile App Header Bar (< md) */}
+      <header className="sticky top-0 z-20 block md:hidden border-b border-slate-200 bg-white/95 text-slate-900 shadow-xs backdrop-blur-md px-3.5 py-2">
+        <div className="flex items-center justify-between">
+          <Logo height={32} lightMode={true} onClick={() => setTab(isMember ? "standup" : "daily")} />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 rounded-xl border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-extrabold text-amber-900">
+              <span>₹{ohv.toLocaleString("en-IN")}/h</span>
+            </div>
+            <button
+              onClick={() => setShowMobileMoreDrawer(true)}
+              className="rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-700 hover:bg-slate-100"
+              title="Menu"
+            >
+              <Ic n="menu" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Workspace Area (pb-28 on mobile for fixed bottom tab bar) */}
+      <main className="mx-auto max-w-6xl px-3 sm:px-4 py-4 sm:py-6 pb-28 md:pb-8">
         <QuickStartBanner 
           data={data} 
           patch={patch} 
@@ -4842,6 +5049,122 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                                initialSubTab={settingsSubTab} />}
       </main>
 
+      {/* 3. Fixed Mobile Bottom Tab Bar with Center Floating '+' FAB (< md) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 block md:hidden border-t border-slate-200 bg-white/95 backdrop-blur-lg shadow-lg">
+        <div className="flex items-center justify-around px-2 py-1.5">
+          {/* Daily Tab */}
+          <button
+            onClick={() => setTab("daily")}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition ${
+              tab === "daily" ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
+            }`}
+          >
+            <span className="text-lg">📅</span>
+            <span className="text-[10px] font-bold">Daily</span>
+          </button>
+
+          {/* Weekly Tab */}
+          <button
+            onClick={() => setTab("weekly")}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition ${
+              tab === "weekly" ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
+            }`}
+          >
+            <span className="text-lg">🗓️</span>
+            <span className="text-[10px] font-bold">Weekly</span>
+          </button>
+
+          {/* Center Floating Action Button (FAB) for Quick Capture */}
+          <button
+            onClick={() => setShowQuickCaptureModal(true)}
+            className="flex flex-col items-center justify-center -mt-5 h-12 w-12 rounded-full bg-slate-950 text-amber-400 shadow-xl shadow-slate-950/30 hover:scale-105 active:scale-95 transition-all border-2 border-amber-400"
+            title="Quick Capture (+)"
+          >
+            <span className="text-2xl font-black leading-none mb-0.5">+</span>
+          </button>
+
+          {/* Follow-up Tab */}
+          <button
+            onClick={() => setTab("followup")}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition ${
+              tab === "followup" ? "text-amber-600 font-extrabold" : "text-slate-500 font-medium hover:text-slate-800"
+            }`}
+          >
+            <span className="text-lg">👥</span>
+            <span className="text-[10px] font-bold">Follow-up</span>
+          </button>
+
+          {/* More Menu Drawer */}
+          <button
+            onClick={() => setShowMobileMoreDrawer(true)}
+            className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition ${
+              ["monthly", "goals", "people", "team", "ideas", "manual", "settings"].includes(tab)
+                ? "text-amber-600 font-extrabold"
+                : "text-slate-500 font-medium hover:text-slate-800"
+            }`}
+          >
+            <span className="text-lg">☰</span>
+            <span className="text-[10px] font-bold">More</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 4. Slide-Up Mobile More Drawer Modal */}
+      {showMobileMoreDrawer && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 backdrop-blur-xs md:hidden" onClick={() => setShowMobileMoreDrawer(false)}>
+          <div className="w-full max-h-[85vh] overflow-y-auto rounded-t-3xl border-t border-slate-200 bg-white p-5 shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🧭</span>
+                <span className="font-extrabold text-base text-slate-950">Workspace Navigation</span>
+              </div>
+              <button onClick={() => setShowMobileMoreDrawer(false)} className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 text-sm font-bold">✕</button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              {[
+                { id: "capture", icon: "📥", label: "Capture Inbox", desc: "Dump & categorize thoughts" },
+                { id: "monthly", icon: "📆", label: "Monthly Blueprint", desc: "Buffer days & fixed goals" },
+                { id: "goals", icon: "🎯", label: "Goals & KRAs", desc: "Quarterly OKRs & KPIs" },
+                { id: "people", icon: "🏢", label: "Team Dashboard", desc: "Direct reports & routines" },
+                { id: "ideas", icon: "💡", label: "Ideas & Reference", desc: "Knowledge & somedays" },
+                { id: "manual", icon: "📖", label: "User Guide", desc: "System training manual" },
+                { id: "settings", icon: "⚙️", label: "Settings", desc: "Profile, company & billing" },
+              ].map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => { setTab(item.id); setShowMobileMoreDrawer(false); }}
+                  className={`flex flex-col items-start p-3 rounded-2xl border transition text-left ${
+                    tab === item.id ? "border-amber-400 bg-amber-50/80 shadow-xs font-bold" : "border-slate-200 bg-slate-50/70 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="text-xl mb-1">{item.icon}</div>
+                  <div className="text-xs font-extrabold text-slate-900">{item.label}</div>
+                  <div className="text-[10px] text-slate-500 leading-tight">{item.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-semibold truncate max-w-[200px]">{session.user.email}</span>
+              <button onClick={() => sb.auth.signOut()} className="rounded-xl bg-slate-950 text-white px-3 py-1.5 font-bold shadow-xs">
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Global Quick Capture Modal */}
+      {showQuickCaptureModal && (
+        <GlobalQuickCaptureModal
+          data={data}
+          patch={patch}
+          ohv={ohv}
+          onClose={() => setShowQuickCaptureModal(false)}
+        />
+      )}
+
       {showTrainingModal && (
         <ExecutiveWelcomeOnboardingFlow 
           orgCtx={orgCtx} 
@@ -4869,104 +5192,334 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 /* ================================================================== */
 function CaptureView({ data, patch, ohv }){
   const [text, setText] = useState("");
-  const add = () => { const t=text.trim(); if(!t) return; patch(d=>d.captures.unshift({id:uid(),date:new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short"}),item:t,category:"",taskType:"",details:"",status:"Open"})); setText(""); };
-  const open = data.captures.filter(c=>c.status!=="Transferred"&&c.status!=="Done");
-  const closed = data.captures.filter(c=>c.status==="Transferred"||c.status==="Done");
-  const setType=(id,v)=>patch(d=>{const c=d.captures.find(x=>x.id===id);if(c)c.taskType=v;});
-  const setDetails=(id,v)=>patch(d=>{const c=d.captures.find(x=>x.id===id);if(c)c.details=v;});
-  const setCatOf=(id,v)=>patch(d=>{const c=d.captures.find(x=>x.id===id);if(c)c.category=v;});
-  const setDue=(id,v)=>patch(d=>{const c=d.captures.find(x=>x.id===id);if(c)c.due=v;});
-  const setTime=(id,v)=>patch(d=>{const c=d.captures.find(x=>x.id===id);if(c)c.time=v;});
-  const setAssignee=(id,v)=>patch(d=>{const c=d.captures.find(x=>x.id===id);if(c)c.assignee=v;});
-  const remove=(id)=>{ if(!confirm("Delete this item? This can't be undone.")) return; patch(d=>{d.captures=d.captures.filter(x=>x.id!==id);}); };
-  const markDone=(id)=>patch(d=>{const c=d.captures.find(x=>x.id===id);if(c)c.status=c.status==="Done"?"Open":"Done";});
-  const transfer=(item)=>{ if(!item.taskType) return;
-    const payload={id:uid(),text:item.item+(item.details?` — ${item.details}`:""),tag:item.category,taskType:item.taskType,due:item.due||"",time:item.time||"",assignee:item.assignee||""};
-    patch(d=>{ const t=item.taskType; let dest="";
-      if(["SCHEDULE","DAILY","WAITING","WAITING-FOR","PROJECT","DELEGATE"].includes(t)){ d.dailyBackup.unshift(payload); dest="Daily backup"; }
-      else if(t==="WEEKLY"){ d.weeklySomeday.unshift(payload); dest="Weekly someday"; }
-      else if(t==="MONTHLY"){ d.monthlyTray.unshift(payload); dest="Monthly tray"; }
-      else if(t==="MAYBE"){ d.maybe.unshift({id:uid(),added:item.date,item:item.item,category:item.category,revisit:"",decision:""}); dest="Maybe list"; }
-      else if(t==="REFERENCE"||t==="AUTOMATE"){ d.reference.unshift({id:uid(),text:item.item,note:item.details}); dest="Reference"; }
-      else if(t==="DELETE"){ d.captures=d.captures.filter(x=>x.id!==item.id); return; }
-      const c=d.captures.find(x=>x.id===item.id); if(c){ c.status="Transferred"; c.dest=dest; }
+  const [selectedCat, setSelectedCat] = useState("Deep Focus");
+  const [selectedType, setSelectedType] = useState("SCHEDULE");
+  const [filterCat, setFilterCat] = useState("ALL");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const add = () => { 
+    const t = text.trim(); 
+    if (!t) return; 
+    patch(d => {
+      d.captures = d.captures || [];
+      d.captures.unshift({
+        id: uid(),
+        date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
+        item: t,
+        category: selectedCat,
+        taskType: selectedType,
+        details: "",
+        status: "Open"
+      });
+    });
+    setText(""); 
+  };
+
+  const open = (data.captures || []).filter(c => c.status !== "Transferred" && c.status !== "Done");
+  const closed = (data.captures || []).filter(c => c.status === "Transferred" || c.status === "Done");
+
+  const filteredOpen = open.filter(c => {
+    const matchesCat = filterCat === "ALL" || c.category === filterCat;
+    const matchesSearch = !searchQuery || c.item.toLowerCase().includes(searchQuery.toLowerCase()) || (c.details || "").toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCat && matchesSearch;
+  });
+
+  const setType = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.taskType = v; });
+  const setDetails = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.details = v; });
+  const setCatOf = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.category = v; });
+  const setDue = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.due = v; });
+  const setTime = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.time = v; });
+  const setAssignee = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.assignee = v; });
+  const remove = (id) => { if (!confirm("Delete this item? This can't be undone.")) return; patch(d => { d.captures = d.captures.filter(x => x.id !== id); }); };
+  const markDone = (id) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.status = c.status === "Done" ? "Open" : "Done"; });
+  
+  const transfer = (item) => { 
+    if (!item.taskType) return;
+    const payload = {
+      id: uid(),
+      text: item.item + (item.details ? ` — ${item.details}` : ""),
+      tag: item.category,
+      taskType: item.taskType,
+      due: item.due || "",
+      time: item.time || "",
+      assignee: item.assignee || ""
+    };
+    patch(d => { 
+      const t = item.taskType; 
+      let dest = "";
+      if (["SCHEDULE", "DAILY", "WAITING", "WAITING-FOR", "PROJECT", "DELEGATE"].includes(t)) { 
+        d.dailyBackup = d.dailyBackup || [];
+        d.dailyBackup.unshift(payload); 
+        dest = "Daily backup"; 
+      }
+      else if (t === "WEEKLY") { 
+        d.weeklySomeday = d.weeklySomeday || [];
+        d.weeklySomeday.unshift(payload); 
+        dest = "Weekly someday"; 
+      }
+      else if (t === "MONTHLY") { 
+        d.monthlyTray = d.monthlyTray || [];
+        d.monthlyTray.unshift(payload); 
+        dest = "Monthly tray"; 
+      }
+      else if (t === "MAYBE") { 
+        d.maybe = d.maybe || [];
+        d.maybe.unshift({ id: uid(), added: item.date, item: item.item, category: item.category, revisit: "", decision: "" }); 
+        dest = "Maybe list"; 
+      }
+      else if (t === "REFERENCE" || t === "AUTOMATE") { 
+        d.reference = d.reference || [];
+        d.reference.unshift({ id: uid(), text: item.item, note: item.details }); 
+        dest = "Reference"; 
+      }
+      else if (t === "DELETE") { 
+        d.captures = d.captures.filter(x => x.id !== item.id); 
+        return; 
+      }
+      const c = d.captures.find(x => x.id === item.id); 
+      if (c) { c.status = "Transferred"; c.dest = dest; }
     });
   };
+
   return (
-    <div>
-      <Callout>Likh do — dimaag chhod dega. Dump everything here first. Decide later. Nothing moves until you press Transfer.</Callout>
-      <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="space-y-5">
+      <Callout>Dump everything here first — what is written first, survives. Decide later. Nothing moves to your schedule until you press Transfer.</Callout>
+
+      {/* 1. Rapid Capture Desk */}
+      <div className="rounded-3xl border-2 border-slate-200 bg-white p-4 sm:p-6 shadow-xs space-y-3.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⚡</span>
+            <span className="text-xs font-black uppercase tracking-wider text-slate-900">Rapid Capture Desk</span>
+          </div>
+          <span className="text-[11px] font-bold text-slate-400 hidden sm:inline">Press Enter to capture</span>
+        </div>
+
         <div className="flex flex-col gap-2 sm:flex-row">
-          <input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
-            placeholder="Kuch dimaag mein aaya? Type it and hit Enter…"
-            className="flex-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm outline-none focus:border-amber-400" />
-          <button onClick={add} className="flex items-center justify-center gap-1 rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"><Ic n="plus"/> Capture</button>
+          <input 
+            value={text} 
+            onChange={e => setText(e.target.value)} 
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); add(); } }}
+            placeholder="Kuch dimaag mein aaya? Type task, idea, or follow-up…"
+            className="flex-1 rounded-2xl border-2 border-amber-300 bg-amber-50/60 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:border-amber-500 focus:bg-white transition" 
+          />
+          <button 
+            onClick={add} 
+            className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-6 py-3 text-sm font-black text-white hover:bg-slate-800 transition shadow-sm"
+          >
+            <span>+</span>
+            <span>Capture</span>
+          </button>
+        </div>
+
+        {/* Quick Category Chips */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+          <span className="text-[11px] font-bold text-slate-400 mr-1">Category:</span>
+          {["Deep Focus", "Meeting", "Finance", "Sales", "Ops & Admin", "Personal"].map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCat(cat)}
+              className={`rounded-xl px-3 py-1 text-xs font-bold transition border ${
+                selectedCat === cat 
+                  ? "bg-slate-950 text-white border-slate-950 shadow-2xs" 
+                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
       </div>
-      <div className="mb-2 flex items-center justify-between">
-        <h2 className="font-semibold text-slate-700">Inbox <span className="text-slate-400">({open.length})</span></h2>
-        <span className="mono text-xs text-slate-400">Assign a Type → Transfer</span>
+
+      {/* 2. Inbox Header & Filter Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-2">
+          <h2 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+            <span>📥</span>
+            <span>Inbox</span>
+            <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-0.5 text-xs font-black">
+              {open.length}
+            </span>
+          </h2>
+        </div>
+
+        {/* Category Filters & Search */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <input
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search inbox…"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none w-36 sm:w-48 placeholder:text-slate-400"
+            />
+          </div>
+          <select
+            value={filterCat}
+            onChange={e => setFilterCat(e.target.value)}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 outline-none"
+          >
+            <option value="ALL">All Categories</option>
+            {["Deep Focus", "Meeting", "Finance", "Sales", "Ops & Admin", "Personal"].map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
       </div>
-      <div className="space-y-2">
-        {open.length===0 && <Ghost>Inbox empty. Dimaag saaf. 🧘</Ghost>}
-        {open.map(c=>(
-          <div key={c.id} className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-            <div className="flex flex-wrap items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className={"font-medium "+(c.status==="Done"?"text-slate-400 line-through":"text-slate-800")}>{c.item}</span>
-                  {ohv>0 && ["Admin","Marketing"].includes(c.category) &&
-                    <span className="rounded bg-rose-50 px-1.5 py-0.5 text-xs font-medium text-rose-600" title="Below your hour value — delegate or automate">delegate?</span>}
-                  {c.due &&
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">📅 {c.due}{c.time?` ${c.time}`:""}</span>}
-                  {c.assignee &&
-                    <span className="rounded bg-sky-50 px-1.5 py-0.5 text-xs text-sky-600">→ {c.assignee}</span>}
+
+      {/* 3. Responsive Inbox Task Cards */}
+      <div className="space-y-3">
+        {filteredOpen.length === 0 && (
+          <div className="py-12 text-center rounded-3xl border border-dashed border-slate-200 bg-white p-8">
+            <div className="text-3xl mb-2">🧘</div>
+            <div className="text-sm font-black text-slate-800">Inbox is empty!</div>
+            <p className="text-xs text-slate-500 mt-1">Dimaag bilkul saaf hai. Dump any new ideas or tasks above.</p>
+          </div>
+        )}
+
+        {filteredOpen.map(c => (
+          <div key={c.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3 transition hover:border-slate-300">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`text-sm font-extrabold break-words ${c.status === "Done" ? "text-slate-400 line-through" : "text-slate-900"}`}>
+                    {c.item}
+                  </span>
+                  {c.category && (
+                    <span className="rounded-lg bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                      🏷️ {c.category}
+                    </span>
+                  )}
+                  {ohv > 0 && ["Admin", "Ops & Admin"].includes(c.category) && (
+                    <span className="rounded-lg bg-rose-50 border border-rose-200 px-2 py-0.5 text-[10px] font-bold text-rose-700">
+                      delegate? (&lt; ₹{ohv}/h)
+                    </span>
+                  )}
+                  {c.due && (
+                    <span className="rounded-lg bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900">
+                      📅 {c.due}{c.time ? ` · ${c.time}` : ""}
+                    </span>
+                  )}
+                  {c.assignee && (
+                    <span className="rounded-lg bg-purple-50 border border-purple-200 px-2 py-0.5 text-[10px] font-bold text-purple-900">
+                      → {c.assignee}
+                    </span>
+                  )}
                 </div>
-                <span className="mono text-xs text-slate-400">{c.date}</span>
+                <span className="mono text-[11px] text-slate-400 block">{c.date}</span>
               </div>
-              <button onClick={()=>markDone(c.id)} title="Mark done" className={"rounded px-2 py-1 "+(c.status==="Done"?"bg-emerald-100 text-emerald-600":"text-slate-400 hover:bg-slate-100")}><Ic n="check"/></button>
-              <button onClick={()=>remove(c.id)} title="Delete" className="rounded px-2 py-1 text-slate-400 hover:bg-rose-50 hover:text-rose-500"><Ic n="trash"/></button>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button 
+                  onClick={() => markDone(c.id)} 
+                  title="Mark done" 
+                  className={`rounded-xl p-2 transition ${c.status === "Done" ? "bg-emerald-100 text-emerald-700 font-bold" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"}`}
+                >
+                  <Ic n="check"/>
+                </button>
+                <button 
+                  onClick={() => remove(c.id)} 
+                  title="Delete" 
+                  className="rounded-xl p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                >
+                  <Ic n="trash"/>
+                </button>
+              </div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <select value={c.category} onChange={e=>setCatOf(c.id,e.target.value)} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none">
+
+            {/* Task Controls Row */}
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
+              <select 
+                value={c.category || ""} 
+                onChange={e => setCatOf(c.id, e.target.value)} 
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none"
+              >
                 <option value="">— Category —</option>
-                {(data.categories||DEFAULT_CATEGORIES).map(x=><option key={x}>{x}</option>)}
+                {(data.categories || DEFAULT_CATEGORIES).map(x => <option key={x}>{x}</option>)}
               </select>
-              <select value={c.taskType} onChange={e=>setType(c.id,e.target.value)} className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-slate-700 outline-none">
-                <option value="">— Task Type —</option>
-                {TASK_TYPES.map(x=><option key={x} value={x}>{(data.taskTypeLabels||DEFAULT_TASK_TYPE_LABELS)[x]||x}</option>)}
+
+              <select 
+                value={c.taskType || ""} 
+                onChange={e => setType(c.id, e.target.value)} 
+                className="rounded-xl border-2 border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-black text-amber-950 outline-none"
+              >
+                <option value="">— Destination —</option>
+                {TASK_TYPES.map(x => (
+                  <option key={x} value={x}>{(data.taskTypeLabels || DEFAULT_TASK_TYPE_LABELS)[x] || x}</option>
+                ))}
               </select>
-              <input type="date" value={c.due||""} onChange={e=>setDue(c.id,e.target.value)} title="Date"
-                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none focus:border-amber-400" />
-              <input type="time" value={c.time||""} onChange={e=>setTime(c.id,e.target.value)} title="Time"
-                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none focus:border-amber-400" />
-              {["DELEGATE","WAITING-FOR"].includes(c.taskType) &&
-                <select value={c.assignee||""} onChange={e=>setAssignee(c.id,e.target.value)} className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-slate-700 outline-none">
+
+              <input 
+                type="date" 
+                value={c.due || ""} 
+                onChange={e => setDue(c.id, e.target.value)} 
+                title="Due Date"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-bold text-slate-700 outline-none" 
+              />
+
+              <input 
+                type="time" 
+                value={c.time || ""} 
+                onChange={e => setTime(c.id, e.target.value)} 
+                title="Time"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-bold text-slate-700 outline-none" 
+              />
+
+              {["DELEGATE", "WAITING-FOR"].includes(c.taskType) && (
+                <select 
+                  value={c.assignee || ""} 
+                  onChange={e => setAssignee(c.id, e.target.value)} 
+                  className="rounded-xl border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-bold text-sky-950 outline-none"
+                >
                   <option value="">— Assign to —</option>
-                  {(data.team||[]).map(m=><option key={m.id} value={m.name}>{m.name}</option>)}
-                </select>}
-              <input value={c.details||""} onChange={e=>setDetails(c.id,e.target.value)} placeholder="notes (optional) — kis se, context, etc."
-                className="min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs outline-none focus:border-amber-400" />
-              <button onClick={()=>transfer(c)} disabled={!c.taskType}
-                className={"flex items-center gap-1 rounded-md px-3 py-1 text-xs font-semibold "+(c.taskType?"bg-amber-400 text-slate-900 hover:bg-amber-300":"cursor-not-allowed bg-slate-100 text-slate-400")}><Ic n="send"/> Transfer</button>
+                  {(data.team || []).map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                </select>
+              )}
+
+              <input 
+                value={c.details || ""} 
+                onChange={e => setDetails(c.id, e.target.value)} 
+                placeholder="Context or notes…"
+                className="min-w-[120px] flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-800 outline-none focus:bg-white" 
+              />
+
+              <button 
+                onClick={() => transfer(c)} 
+                disabled={!c.taskType}
+                className={`flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-xs font-black transition shadow-2xs ${
+                  c.taskType ? "bg-amber-400 text-slate-950 hover:bg-amber-300" : "cursor-not-allowed bg-slate-100 text-slate-400"
+                }`}
+              >
+                <span>⚡</span>
+                <span>Transfer</span>
+              </button>
             </div>
-            {c.taskType && <p className="mt-1.5 flex items-center gap-1 text-xs text-slate-400"><Ic n="info"/> {TYPE_HELP[c.taskType]}</p>}
+
+            {c.taskType && (
+              <p className="flex items-center gap-1 text-[11px] font-medium text-slate-400">
+                <Ic n="info"/> {TYPE_HELP[c.taskType]}
+              </p>
+            )}
           </div>
         ))}
       </div>
-      {closed.length>0 && (
-        <details className="mt-6">
-          <summary className="cursor-pointer text-sm font-medium text-slate-500">Cleared — done & transferred ({closed.length})</summary>
-          <div className="mt-2 space-y-1">
-            {closed.map(c=>(
-              <div key={c.id} className="flex items-center justify-between rounded-md border border-slate-100 bg-white px-3 py-1.5 text-sm text-slate-400">
+
+      {/* 4. Cleared / Completed History Drawer */}
+      {closed.length > 0 && (
+        <details className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs">
+          <summary className="cursor-pointer text-xs font-black uppercase tracking-wider text-slate-500">
+            Cleared &amp; Transferred ({closed.length})
+          </summary>
+          <div className="mt-3 space-y-1.5">
+            {closed.map(c => (
+              <div key={c.id} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-400">
                 <span className="line-through">{c.item}</span>
-                <span className="flex items-center gap-2">
-                  {c.dest && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">→ {c.dest}</span>}
-                  {c.status==="Done" && !c.dest &&
-                    <button onClick={()=>markDone(c.id)} title="Undo done" className="text-slate-300 hover:text-amber-600">↺</button>}
-                  <button onClick={()=>remove(c.id)} className="text-slate-300 hover:text-rose-500"><Ic n="x"/></button>
-                </span>
+                <div className="flex items-center gap-2">
+                  {c.dest && <span className="rounded-lg bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">→ {c.dest}</span>}
+                  {c.status === "Done" && !c.dest && (
+                    <button onClick={() => markDone(c.id)} title="Undo done" className="text-slate-400 hover:text-amber-600 font-bold">↺</button>
+                  )}
+                  <button onClick={() => remove(c.id)} className="text-slate-400 hover:text-rose-600"><Ic n="x"/></button>
+                </div>
               </div>
             ))}
           </div>
@@ -6544,23 +7097,21 @@ function CalendarSyncModal({ data, dk, userId, onClose }){
 
 function DailyView({ data, patch, dk, setDk, userId }){
   const [showCalendarModal, setShowCalendarModal] = useState(false);
-  const blank=()=>({outcome:"",priorities:["","",""],marks:["","",""],blocks:{},actual:{},closure:{score:0,ate:"",family:""},routineDone:{}});
-  const day=data.daily[dk]||blank();
-  const upd=(fn)=>patch(d=>{ if(!d.daily[dk]) d.daily[dk]=blank(); fn(d.daily[dk]); });
-  const cycleMark=(i)=>{ const cur=day.marks[i]||""; const idx=PMARKS.findIndex(m=>m.v===cur); upd(x=>{x.marks[i]=PMARKS[(idx+1)%PMARKS.length].v;}); };
-  const removeBackup=(id)=>{ if(!confirm("Delete this backup item? This can't be undone.")) return; patch(d=>{d.dailyBackup=d.dailyBackup.filter(b=>b.id!==id);}); };
-  const updateBackupField=(id,field,value)=>patch(d=>{const b=d.dailyBackup.find(x=>x.id===id); if(b) b[field]=value;});
-  const toggleRoutine=(id)=>upd(x=>{ if(!x.routineDone) x.routineDone={}; x.routineDone[id]=!x.routineDone[id]; });
-  // Slot-chart items sourced from dailyBackup/weeklySomeday/monthlyTray carry
-  // enough identity (id + source) to edit/mark-done in place, right in the grid.
+  const [mobileScheduleTab, setMobileScheduleTab] = useState("plan"); // "plan" | "actual"
+  const blank = () => ({ outcome: "", priorities: ["", "", ""], marks: ["", "", ""], blocks: {}, actual: {}, closure: { score: 0, ate: "", family: "" }, routineDone: {} });
+  const day = data.daily[dk] || blank();
+  const upd = (fn) => patch(d => { if (!d.daily[dk]) d.daily[dk] = blank(); fn(d.daily[dk]); });
+  const cycleMark = (i) => { const cur = day.marks[i] || ""; const idx = PMARKS.findIndex(m => m.v === cur); upd(x => { x.marks[i] = PMARKS[(idx + 1) % PMARKS.length].v; }); };
+  const removeBackup = (id) => { if (!confirm("Delete this backup item? This can't be undone.")) return; patch(d => { d.dailyBackup = d.dailyBackup.filter(b => b.id !== id); }); };
+  const updateBackupField = (id, field, value) => patch(d => { const b = d.dailyBackup.find(x => x.id === id); if (b) b[field] = value; });
+  const toggleRoutine = (id) => upd(x => { if (!x.routineDone) x.routineDone = {}; x.routineDone[id] = !x.routineDone[id]; });
+  
   const SLOT_ARRAY = SOURCE_ARRAY;
-  const updateSlotItem=(source,id,field,value)=>updateSourceItem(patch,source,id,field,value);
-  const removeSlotItem=(source,id)=>removeSourceItem(patch,source,id);
-  const routine = data.dailyBackup.filter(b=>b.taskType==="DAILY" && !b.due && !isHolidayItem(b));
-  // Items with a specific due date + time are already scheduled — they show in
-  // "Due today" and the matching Plan slot instead of cluttering the flexible
-  // backup pool, which is for work that doesn't have a fixed time yet.
-  const otherBackup = data.dailyBackup.filter(b=>b.taskType!=="DAILY" && !(b.due && b.time));
+  const updateSlotItem = (source, id, field, value) => updateSourceItem(patch, source, id, field, value);
+  const removeSlotItem = (source, id) => removeSourceItem(patch, source, id);
+  const routine = (data.dailyBackup || []).filter(b => b.taskType === "DAILY" && !b.due && !isHolidayItem(b));
+  const otherBackup = (data.dailyBackup || []).filter(b => b.taskType !== "DAILY" && !(b.due && b.time));
+  
   const [yrStr, moStr, dayStr] = dk.split("-");
   const mk = `${yrStr}-${moStr}`;
   const dom = parseInt(dayStr, 10);
@@ -6571,67 +7122,95 @@ function DailyView({ data, patch, dk, setDk, userId }){
   const hasMonthlyEvents = isBufferDay || monthlyCommitment || recurringMonthlyForToday.length > 0;
 
   const dueMap = dueItemsByDate(data);
-  const dueToday = (dueMap[dk]||[]);
+  const dueToday = (dueMap[dk] || []);
   const slotItems = dailySlotItems(data, dk, dueMap);
+
+  const routineDoneCount = routine.filter(r => day.routineDone?.[r.id]).length;
+
   return (
-    <div>
+    <div className="space-y-5">
       <Callout>Decide the day before the day decides you. ONE main outcome, max 3 priorities. Slot khaali hua? Pick from Backup.</Callout>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+
+      {/* 1. Date Navigation & Calendar Sync Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border-2 border-slate-200 bg-white p-3 sm:px-5 sm:py-3 shadow-xs">
         <div className="flex items-center gap-2">
-          <button onClick={()=>setDk(shiftDay(dk,-1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="left"/></button>
-          <div className="text-center">
-            <div className="font-semibold text-slate-800">{prettyDate(dk)}</div>
-            {dk!==todayKey() && <button onClick={()=>setDk(todayKey())} className="text-xs text-amber-600 hover:underline">jump to today</button>}
+          <button 
+            onClick={() => setDk(shiftDay(dk, -1))} 
+            className="rounded-2xl border border-slate-200 bg-slate-50 p-2 text-slate-700 hover:bg-slate-100 transition"
+            title="Previous Day"
+          >
+            <Ic n="left"/>
+          </button>
+          <div className="text-left px-1">
+            <div className="text-base sm:text-lg font-black text-slate-950 flex items-center gap-2">
+              <span>{prettyDate(dk)}</span>
+              {dk === todayKey() && (
+                <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                  TODAY
+                </span>
+              )}
+            </div>
+            {dk !== todayKey() && (
+              <button onClick={() => setDk(todayKey())} className="text-xs font-bold text-amber-700 hover:underline">
+                jump to today →
+              </button>
+            )}
           </div>
-          <button onClick={()=>setDk(shiftDay(dk,1))} className="rounded px-2 py-1 text-slate-500 hover:bg-slate-100"><Ic n="right"/></button>
+          <button 
+            onClick={() => setDk(shiftDay(dk, 1))} 
+            className="rounded-2xl border border-slate-200 bg-slate-50 p-2 text-slate-700 hover:bg-slate-100 transition"
+            title="Next Day"
+          >
+            <Ic n="right"/>
+          </button>
         </div>
 
         <button 
           onClick={() => setShowCalendarModal(true)}
-          className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1.5"
+          className="rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-4 py-2 text-xs font-black transition shadow-2xs flex items-center gap-2"
         >
           <span>🗓️</span>
-          <span>Calendar Sync &amp; Feed</span>
+          <span>Google / Apple Calendar Sync</span>
         </button>
       </div>
 
       {showCalendarModal && <CalendarSyncModal data={data} dk={dk} userId={userId} onClose={() => setShowCalendarModal(false)} />}
       <OverduePanel data={data} patch={patch} />
 
-      {/* Monthly Horizon & Buffer Day Ribbon in Daily View */}
+      {/* 2. Monthly Horizon & Buffer Day Ribbon */}
       {hasMonthlyEvents && (
-        <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-xs space-y-2.5">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <span className="text-base">📅</span>
               <span className="text-xs font-black uppercase tracking-wider text-slate-700">
-                Monthly Blueprint &amp; Commitments for {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(new Date(dk + "T00:00:00"))}
+                Monthly Commitments for {new Intl.DateTimeFormat("en-IN", { month: "short", day: "numeric" }).format(new Date(dk + "T00:00:00"))}
               </span>
             </div>
             {isBufferDay && (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 px-3 py-0.5 text-xs font-black shadow-2xs">
-                ⭐ BUFFER DAY
+                ⭐ PROTECTED BUFFER DAY
               </span>
             )}
           </div>
 
           <div className="flex flex-wrap gap-2 pt-0.5">
             {isBufferDay && (
-              <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-950">
+              <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-950">
                 <span>🛡️</span>
-                <span><b>Protected Buffer Day:</b> 0 external client calls. Keep this day clear for delegation to your EA, catch-up, and deep strategy.</span>
+                <span><b>Buffer Day Shield:</b> 0 external meetings. Dedicated for strategic review &amp; team delegation.</span>
               </div>
             )}
 
             {monthlyCommitment && (
-              <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-950">
+              <div className="flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-950">
                 <span>📌</span>
-                <span><b>Monthly Blueprint Goal:</b> {monthlyCommitment}</span>
+                <span><b>Monthly Blueprint:</b> {monthlyCommitment}</span>
               </div>
             )}
 
             {recurringMonthlyForToday.map(r => (
-              <div key={r.id} className="flex items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-950">
+              <div key={r.id} className="flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-950">
                 <span>🔁</span>
                 <span><b>{r.tag ? `[${r.tag}] ` : "Monthly Rule: "}</b>{r.text} {r.time ? `(${r.time})` : ""}</span>
               </div>
@@ -6639,128 +7218,334 @@ function DailyView({ data, patch, dk, setDk, userId }){
           </div>
         </div>
       )}
-      {dueToday.length>0 && (
-        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
-          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-sky-700">📌 Due today ({dueToday.length})</div>
+
+      {/* 3. Due Today Chips */}
+      {dueToday.length > 0 && (
+        <div className="rounded-3xl border border-sky-200 bg-sky-50/80 p-4 shadow-2xs">
+          <div className="mb-2 text-xs font-black uppercase tracking-wider text-sky-900 flex items-center gap-1.5">
+            <span>📌</span>
+            <span>Due Today ({dueToday.length})</span>
+          </div>
           <div className="flex flex-wrap gap-2">
-            {dueToday.map((it,idx)=>{
+            {dueToday.map((it, idx) => {
               const toggleable = it.source && SLOT_ARRAY[it.source];
               const Tag = toggleable ? "button" : "span";
               return (
-                <Tag key={it.id||idx} onClick={toggleable?()=>updateSlotItem(it.source,it.id,"done",!it.done):undefined}
-                  title={toggleable?(it.done?"Mark not done":"Mark done"):undefined}
-                  className={"rounded-full border px-3 py-1 text-xs "+(it.done?"border-emerald-200 bg-emerald-50 text-emerald-700 line-through":"border-sky-200 bg-white text-slate-700")}>
-                  {it.time && <span className="mono text-sky-600">{it.time} · </span>}{it.text}
-                  {it.tag && <span className="ml-1 text-slate-400">({it.tag})</span>}
+                <Tag 
+                  key={it.id || idx} 
+                  onClick={toggleable ? () => updateSlotItem(it.source, it.id, "done", !it.done) : undefined}
+                  title={toggleable ? (it.done ? "Mark not done" : "Mark done") : undefined}
+                  className={`rounded-2xl border px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1.5 ${
+                    it.done 
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-800 line-through" 
+                      : "border-sky-200 bg-white text-slate-800 hover:border-sky-300"
+                  }`}
+                >
+                  {it.time && <span className="mono text-sky-700">{it.time} · </span>}
+                  <span>{it.text}</span>
+                  {it.tag && <span className="text-[10px] text-slate-400 font-normal">({it.tag})</span>}
                 </Tag>
               );
             })}
           </div>
         </div>
       )}
-      {routine.length>0 && (
-        <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
-          <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">🔁 Today's routine (repeats every day)</label>
-          <div className="space-y-1">
-            {routine.map(b=>{
+
+      {/* 4. Daily Habits & Recurring Routine */}
+      {routine.length > 0 && (
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+              <span>🔁</span>
+              <span>Daily Routine &amp; Non-Negotiables</span>
+            </label>
+            <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-0.5 text-xs font-black">
+              {routineDoneCount} / {routine.length} done
+            </span>
+          </div>
+
+          <div className="space-y-1.5">
+            {routine.map(b => {
               const done = !!day.routineDone?.[b.id];
               return (
-                <BackupItemRow key={b.id} item={b} data={data}
-                  onUpdate={(f,v)=>updateBackupField(b.id,f,v)} onRemove={()=>removeBackup(b.id)}
+                <BackupItemRow 
+                  key={b.id} 
+                  item={b} 
+                  data={data}
+                  onUpdate={(f, v) => updateBackupField(b.id, f, v)} 
+                  onRemove={() => removeBackup(b.id)}
                   prefix={
-                    <button onClick={()=>toggleRoutine(b.id)} title="Done today"
-                      className={"shrink-0 rounded px-1.5 py-0.5 "+(done?"bg-emerald-100 text-emerald-600":"text-slate-300 hover:bg-slate-100")}>
+                    <button 
+                      onClick={() => toggleRoutine(b.id)} 
+                      title="Done today"
+                      className={`shrink-0 rounded-xl p-1.5 transition font-bold ${
+                        done ? "bg-emerald-100 text-emerald-700" : "text-slate-300 hover:bg-slate-100 hover:text-slate-600"
+                      }`}
+                    >
                       <Ic n="check"/>
                     </button>
-                  } />
+                  } 
+                />
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-slate-400">Checking off is per-day — resets tomorrow and stays in the routine until you remove it. Click the text to edit.</p>
         </div>
       )}
-      <div className="mb-4 grid gap-4 md:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-amber-600">★ One main outcome</label>
-          <Field value={day.outcome} onChange={e=>upd(x=>{x.outcome=e.target.value;})} placeholder="If only one thing gets done today…" />
-          <label className="mb-1 mt-4 block text-xs font-semibold uppercase tracking-wide text-slate-500">Priorities (max 3)</label>
-          <div className="space-y-2">
-            {[0,1,2].map(i=>(
-              <div key={i} className="flex items-center gap-2">
-                <button onClick={()=>cycleMark(i)} title="done / moved / delegated / dropped"
-                  className={"w-7 shrink-0 rounded border border-slate-200 py-1 text-center mono text-sm "+(PMARKS.find(m=>m.v===(day.marks[i]||""))?.cls)}>
-                  {PMARKS.find(m=>m.v===(day.marks[i]||""))?.label}
-                </button>
-                <Field value={day.priorities[i]||""} onChange={e=>upd(x=>{x.priorities[i]=e.target.value;})} placeholder={`Priority ${i+1}`} />
-              </div>
-            ))}
+
+      {/* 5. One Main Outcome & Top 3 Priorities vs Backup List */}
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Outcome & Priorities */}
+        <div className="rounded-3xl border-2 border-slate-200 bg-white p-5 shadow-xs space-y-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-lg">🏆</span>
+              <label className="text-xs font-black uppercase tracking-wider text-amber-700">One Main Outcome</label>
+            </div>
+            <Field 
+              value={day.outcome} 
+              onChange={e => upd(x => { x.outcome = e.target.value; })} 
+              placeholder="If only one thing gets accomplished today…" 
+            />
+          </div>
+
+          <div className="pt-2 border-t border-slate-100 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-black uppercase tracking-wider text-slate-600">Top 3 Priorities</label>
+              <span className="text-[11px] font-bold text-slate-400">Click symbol to cycle status</span>
+            </div>
+
+            <div className="space-y-2">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="flex items-center gap-2">
+                  <button 
+                    onClick={() => cycleMark(i)} 
+                    title="done / moved / delegated / dropped"
+                    className={`w-8 h-8 shrink-0 rounded-xl border font-mono text-sm font-bold flex items-center justify-center transition shadow-2xs ${
+                      PMARKS.find(m => m.v === (day.marks[i] || ""))?.cls || "border-slate-200 bg-slate-50 text-slate-400"
+                    }`}
+                  >
+                    {PMARKS.find(m => m.v === (day.marks[i] || ""))?.label || "○"}
+                  </button>
+                  <Field 
+                    value={day.priorities[i] || ""} 
+                    onChange={e => upd(x => { x.priorities[i] = e.target.value; })} 
+                    placeholder={`Priority #${i + 1}`} 
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="mb-1 flex items-center justify-between">
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Backup list</label>
-            <span className="text-xs text-slate-400">slot khaali hua toh</span>
-          </div>
-          <div className="max-h-64 space-y-1 overflow-auto">
-            {otherBackup.length===0 && <p className="py-6 text-center text-xs text-slate-400">Nothing parked. Transfer items from Capture.</p>}
-            {otherBackup.map(b=>(
-              <BackupItemRow key={b.id} item={b} data={data}
-                onUpdate={(f,v)=>updateBackupField(b.id,f,v)} onRemove={()=>removeBackup(b.id)}
-                onToggleDone={()=>updateBackupField(b.id,"done",!b.done)} />
-            ))}
+
+        {/* Flexible Backup Pool */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <span>📦</span>
+                <span>Flexible Backup Pool</span>
+              </label>
+              <span className="text-[11px] font-bold text-slate-400">When time frees up</span>
+            </div>
+
+            <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+              {otherBackup.length === 0 && (
+                <div className="py-10 text-center text-xs font-semibold text-slate-400">
+                  No parked tasks. Transfer items from Capture desk.
+                </div>
+              )}
+              {otherBackup.map(b => (
+                <BackupItemRow 
+                  key={b.id} 
+                  item={b} 
+                  data={data}
+                  onUpdate={(f, v) => updateBackupField(b.id, f, v)} 
+                  onRemove={() => removeBackup(b.id)}
+                  onToggleDone={() => updateBackupField(b.id, "done", !b.done)} 
+                />
+              ))}
+            </div>
           </div>
         </div>
       </div>
-      <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4">
-        <div className="mb-2 grid gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400" style={{gridTemplateColumns:"64px minmax(0,1fr) minmax(0,1fr)"}}>
-          <span>Time</span><span>Plan</span><span>What actually happened</span>
+
+      {/* 6. Hourly Schedule Timeline (Desktop Table + Mobile Vertical Cards) */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 shadow-xs space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">⏰</span>
+            <h3 className="text-base font-black text-slate-950">Hourly Schedule &amp; Time-Blocking</h3>
+          </div>
+
+          {/* Mobile Plan vs Actual Toggle */}
+          <div className="flex md:hidden items-center gap-1 rounded-2xl bg-slate-100 p-1 border border-slate-200">
+            <button
+              onClick={() => setMobileScheduleTab("plan")}
+              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+                mobileScheduleTab === "plan" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600"
+              }`}
+            >
+              📅 Plan
+            </button>
+            <button
+              onClick={() => setMobileScheduleTab("actual")}
+              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+                mobileScheduleTab === "actual" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600"
+              }`}
+            >
+              ✓ Actual Happened
+            </button>
+          </div>
         </div>
-        <div className="space-y-1">
-          {DAILY_SLOTS.map((s,si)=>(
-            <div key={s} className="grid items-start gap-2" style={{gridTemplateColumns:"64px minmax(0,1fr) minmax(0,1fr)"}}>
-              <span className="mono text-xs text-slate-500">{s}</span>
-              <div>
-                <Field value={day.blocks[s]||""} onChange={e=>upd(x=>{x.blocks[s]=e.target.value;})} />
-                {slotItems[si].map((it,idx)=>(
-                  it.source && SLOT_ARRAY[it.source] ? (
-                    <div key={it.id} className="mt-0.5">
-                      <BackupItemRow item={it} data={data}
-                        onUpdate={(f,v)=>updateSlotItem(it.source,it.id,f,v)}
-                        onRemove={()=>removeSlotItem(it.source,it.id)}
-                        onToggleDone={()=>updateSlotItem(it.source,it.id,"done",!it.done)} />
-                    </div>
-                  ) : (
-                    <div key={idx} className="mt-0.5 truncate rounded bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700" title={it.text}>📌 {it.text}</div>
-                  )
-                ))}
+
+        {/* Desktop View Table (>= md) */}
+        <div className="hidden md:block space-y-2">
+          <div className="grid gap-3 text-xs font-black uppercase tracking-wider text-slate-400 pb-1 border-b border-slate-100" style={{ gridTemplateColumns: "80px minmax(0, 1fr) minmax(0, 1fr)" }}>
+            <span>Time</span>
+            <span>Planned Focus Block</span>
+            <span>What Actually Happened</span>
+          </div>
+
+          <div className="space-y-2">
+            {DAILY_SLOTS.map((s, si) => (
+              <div key={s} className="grid items-start gap-3 py-1 border-b border-slate-50 last:border-0" style={{ gridTemplateColumns: "80px minmax(0, 1fr) minmax(0, 1fr)" }}>
+                <span className="mono text-xs font-black text-slate-500 pt-2">{s}</span>
+                <div className="space-y-1">
+                  <Field value={day.blocks[s] || ""} onChange={e => upd(x => { x.blocks[s] = e.target.value; })} placeholder="Deep work, client call, review…" />
+                  {slotItems[si].map((it, idx) => (
+                    it.source && SLOT_ARRAY[it.source] ? (
+                      <div key={it.id} className="mt-1">
+                        <BackupItemRow 
+                          item={it} 
+                          data={data}
+                          onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
+                          onRemove={() => removeSlotItem(it.source, it.id)}
+                          onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
+                        />
+                      </div>
+                    ) : (
+                      <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800" title={it.text}>
+                        📌 {it.text}
+                      </div>
+                    )
+                  ))}
+                </div>
+                <input 
+                  value={day.actual[s] || ""} 
+                  onChange={e => upd(x => { x.actual[s] = e.target.value; })}
+                  placeholder="Actual review / notes…"
+                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:bg-white focus:border-slate-400 transition" 
+                />
               </div>
-              <input value={day.actual[s]||""} onChange={e=>upd(x=>{x.actual[s]=e.target.value;})}
-                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-sm outline-none focus:border-slate-400 focus:ring-1 focus:ring-slate-200" />
+            ))}
+          </div>
+        </div>
+
+        {/* Mobile View Stack (< md) */}
+        <div className="block md:hidden space-y-3">
+          {DAILY_SLOTS.map((s, si) => (
+            <div key={s} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="mono text-xs font-black text-slate-900 bg-white border border-slate-200 px-2.5 py-0.5 rounded-lg">
+                  {s}
+                </span>
+                {day.blocks[s] && (
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
+                    Scheduled
+                  </span>
+                )}
+              </div>
+
+              {mobileScheduleTab === "plan" ? (
+                <div className="space-y-1.5">
+                  <Field 
+                    value={day.blocks[s] || ""} 
+                    onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
+                    placeholder="Add planned focus…" 
+                  />
+                  {slotItems[si].map((it, idx) => (
+                    it.source && SLOT_ARRAY[it.source] ? (
+                      <div key={it.id} className="mt-1">
+                        <BackupItemRow 
+                          item={it} 
+                          data={data}
+                          onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
+                          onRemove={() => removeSlotItem(it.source, it.id)}
+                          onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
+                        />
+                      </div>
+                    ) : (
+                      <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800">
+                        📌 {it.text}
+                      </div>
+                    )
+                  ))}
+                </div>
+              ) : (
+                <div>
+                  <input 
+                    value={day.actual[s] || ""} 
+                    onChange={e => upd(x => { x.actual[s] = e.target.value; })}
+                    placeholder="What actually happened…"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none" 
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>
       </div>
-      <div className="rounded-lg border border-slate-200 bg-slate-900 p-4 text-white">
-        <h3 className="mb-3 font-semibold text-amber-400">Evening closure (5 min)</h3>
-        <div className="grid gap-3 md:grid-cols-3">
-          <div>
-            <label className="mb-1 block text-xs text-slate-300">What ate the day?</label>
-            <textarea value={day.closure?.ate||""} onChange={e=>upd(x=>{x.closure.ate=e.target.value;})} rows={2}
-              className="w-full resize-none rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-white outline-none focus:border-amber-400" />
+
+      {/* 7. Evening Closure Desk (5 min) */}
+      <div className="rounded-3xl border border-slate-800 bg-slate-950 p-5 sm:p-6 text-white shadow-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🌙</span>
+            <h3 className="font-black text-base text-amber-400">Evening Closure (5 min reflection)</h3>
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-slate-300">Family / personal commitment</label>
-            <textarea value={day.closure?.family||""} onChange={e=>upd(x=>{x.closure.family=e.target.value;})} rows={2}
-              className="w-full resize-none rounded-md border border-slate-700 bg-slate-800 px-2 py-1 text-sm text-white outline-none focus:border-amber-400" />
+          <span className="text-[11px] font-bold text-slate-400">Complete before shutdown</span>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-300">What ate the day? (Interrupters)</label>
+            <textarea 
+              value={day.closure?.ate || ""} 
+              onChange={e => upd(x => { x.closure.ate = e.target.value; })} 
+              rows={2}
+              placeholder="Meetings, escalations, distractions…"
+              className="w-full resize-none rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400 transition" 
+            />
           </div>
-          <div>
-            <label className="mb-1 block text-xs text-slate-300">Today's score</label>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-300">Family / Personal Commitment</label>
+            <textarea 
+              value={day.closure?.family || ""} 
+              onChange={e => upd(x => { x.closure.family = e.target.value; })} 
+              rows={2}
+              placeholder="Dinner, workout, time with kids…"
+              className="w-full resize-none rounded-2xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-medium text-white outline-none focus:border-amber-400 transition" 
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-slate-300">Today's Executive Score</label>
             <div className="flex items-center gap-2">
-              {[0,1,2,3].map(n=>(
-                <button key={n} onClick={()=>upd(x=>{x.closure.score=n;})}
-                  className={"h-9 w-9 rounded-md mono text-sm font-bold "+((day.closure?.score||0)>=n&&n>0?"bg-amber-400 text-slate-900":"border border-slate-700 bg-slate-800 text-slate-400")}>{n}</button>
+              {[0, 1, 2, 3].map(n => (
+                <button 
+                  key={n} 
+                  onClick={() => upd(x => { x.closure.score = n; })}
+                  className={`h-11 w-11 rounded-2xl font-mono text-sm font-black transition shadow-xs flex items-center justify-center ${
+                    (day.closure?.score || 0) >= n && n > 0 
+                      ? "bg-amber-400 text-slate-950 scale-105" 
+                      : "border border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-700"
+                  }`}
+                >
+                  {n}
+                </button>
               ))}
-              <span className="ml-1 text-xs text-slate-400">/ 3</span>
+              <span className="ml-1 text-xs font-bold text-slate-400">/ 3 points</span>
             </div>
           </div>
         </div>
@@ -11329,15 +12114,31 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
   return (
     <div className="space-y-6">
       {/* Submenu Tabs Navigation Strip */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-xs">
-        <div className="flex items-center gap-1.5 overflow-x-auto [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="rounded-3xl border border-slate-200 bg-white p-2.5 shadow-xs">
+        {/* Mobile Dropdown View (< sm) */}
+        <div className="block sm:hidden">
+          <select
+            value={subTab}
+            onChange={e => setSubTab(e.target.value)}
+            className="w-full rounded-2xl border-2 border-amber-300 bg-amber-50/70 p-3 text-xs font-black text-slate-950 outline-none"
+          >
+            {SETTINGS_TABS.map(st => (
+              <option key={st.id} value={st.id}>
+                {st.icon} {st.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Desktop / Tablet Horizontal Strip (>= sm) */}
+        <div className="hidden sm:flex items-center gap-1.5 overflow-x-auto [ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {SETTINGS_TABS.map(st => {
             const active = subTab === st.id;
             return (
               <button
                 key={st.id}
                 onClick={() => setSubTab(st.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition-all ${
+                className={`flex shrink-0 items-center gap-2 rounded-2xl px-4 py-2.5 text-xs font-black transition-all ${
                   active
                     ? "bg-slate-950 text-white shadow-md shadow-slate-950/10 scale-[1.02]"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
