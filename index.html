@@ -122,12 +122,88 @@ async function saveState(userId, state){
 /*  Every call here is RLS-scoped server-side — the client never        */
 /*  decides who may see what, it only renders what came back.           */
 /* ================================================================== */
-const ROLE_LABEL = { owner:"Owner", manager:"Manager", employee:"Employee" };
-const ROLE_HELP = {
-  owner:"Full picture — sees every person's planner, manages the team and invites.",
-  manager:"Sees their own planner plus their direct reports'.",
-  employee:"Sees their own planner only."
+const ROLE_LABEL = { 
+  owner: "Founder / Owner", 
+  ceo: "Chief Executive Officer (CEO)",
+  director: "Director / VP",
+  manager: "Department Manager", 
+  sub_manager: "Sub-Manager / Lead",
+  lead: "Team Lead",
+  employee: "Employee / Specialist",
+  member: "Team Member",
+  assistant: "Executive Assistant"
 };
+
+const ROLE_HELP = {
+  owner: "Full organization cockpit — manages company settings, all departments, billing, and invites.",
+  ceo: "Executive leadership — sees company-wide departments, goals, and team dashboards.",
+  director: "Department Executive — manages assigned operational departments and managers.",
+  manager: "Department Manager — manages their department's team members and direct reports.",
+  sub_manager: "Sub-Manager / Team Lead — manages their sub-team and tactical deliverables.",
+  employee: "Specialist / Contributor — focused execution on personal schedule and delegated deliverables."
+};
+
+const DEPARTMENTS = [
+  "Executive Office",
+  "Operations",
+  "Sales & Business Development",
+  "Marketing & Growth",
+  "Finance & Accounts",
+  "Engineering & Tech",
+  "Human Resources & Admin",
+  "Customer Success & Support",
+  "Quality & Compliance",
+  "General"
+];
+
+function getRoleRank(r) {
+  const role = (r || "employee").toLowerCase();
+  if (role === "owner" || role === "ceo") return 5;
+  if (role === "director" || role === "vp") return 4;
+  if (role === "manager") return 3;
+  if (role === "sub_manager" || role === "lead") return 2;
+  return 1; // employee / member / assistant
+}
+
+function filterVisibleTeamMembers(allMembers = [], currentUserId, currentRole = "employee", currentDept = "") {
+  const myRank = getRoleRank(currentRole);
+  const myDept = (currentDept || "").trim().toLowerCase();
+
+  return allMembers.filter(m => {
+    // Always see oneself
+    if (m.user_id === currentUserId || m.id === currentUserId) return true;
+
+    const targetRank = getRoleRank(m.role);
+    const targetDept = (m.department || "").trim().toLowerCase();
+
+    // Owner / CEO sees everyone across all departments
+    if (myRank === 5) return true;
+
+    // Director / VP sees managers, sub-managers, and employees, but NEVER owner/ceo
+    if (myRank === 4) {
+      return targetRank < 5;
+    }
+
+    // Department Manager sees only members with lower rank in their department or direct reports, NEVER owner/ceo or other managers
+    if (myRank === 3) {
+      if (targetRank >= 3) return false; // Hide owner, CEO, directors, and other managers
+      return (
+        m.manager_id === currentUserId ||
+        (myDept && targetDept && myDept === targetDept) ||
+        !targetDept || targetDept === "general"
+      );
+    }
+
+    // Sub-Manager / Team Lead sees only direct reports or employees in their sub-team
+    if (myRank === 2) {
+      if (targetRank >= 2) return false;
+      return m.manager_id === currentUserId || (myDept && targetDept && myDept === targetDept);
+    }
+
+    // Employee cannot see owner, ceo, directors, or managers' accounts
+    return false;
+  });
+}
 
 // Everything the app needs to know about the signed-in user's company & profile.
 // Returns { membership, org, profile, pendingInvites } — membership is null when solo.
@@ -150,21 +226,22 @@ async function loadOrgContext(userId, email){
   }
 
   if (m) {
-    const [{ data: org, error: oErr }, teamMembers, orgInvites] = await Promise.all([
+    const [{ data: org, error: oErr }, allMembers, orgInvites] = await Promise.all([
       sb.from("organizations").select("*").eq("id", m.org_id).maybeSingle(),
       loadTeam(m.org_id).catch(() => []),
       loadPendingInvites(m.org_id).catch(() => [])
     ]);
     if (oErr) throw oErr;
-    return { membership: m, org, profile, pendingInvites: withOrgNames, teamMembers: teamMembers || [], orgInvites: orgInvites || [] };
+    const visibleMembers = filterVisibleTeamMembers(allMembers || [], userId, m.role, m.department);
+    return { membership: m, org, profile, pendingInvites: withOrgNames, teamMembers: visibleMembers, allMembers: allMembers || [], orgInvites: orgInvites || [] };
   }
 
   if (withOrgNames.length) {
-    return { membership: null, org: null, profile, pendingInvites: withOrgNames, teamMembers: [], orgInvites: [] };
+    return { membership: null, org: null, profile, pendingInvites: withOrgNames, teamMembers: [], allMembers: [], orgInvites: [] };
   }
 
   // No membership and no pending invites — return null membership so user lands on OnboardingScreen
-  return { membership: null, org: null, profile, pendingInvites: [], teamMembers: [], orgInvites: [] };
+  return { membership: null, org: null, profile, pendingInvites: [], teamMembers: [], allMembers: [], orgInvites: [] };
 }
 
 async function updateProfile(userId, updates) {
@@ -177,7 +254,7 @@ async function createOrg(name, userId){
     .from("organizations").insert({ name, created_by:userId }).select().single();
   if (error) throw error;
   const { data: m, error: mErr } = await sb
-    .from("memberships").insert({ org_id:org.id, user_id:userId, role:"owner" }).select().single();
+    .from("memberships").insert({ org_id:org.id, user_id:userId, role:"owner", department:"Executive Office" }).select().single();
   if (mErr) throw mErr;
   return { org, membership:m };
 }
@@ -197,8 +274,11 @@ async function acceptInvite(invite, userId){
   }
 
   const { data: m, error } = await sb.from("memberships").insert({
-    org_id: invite.org_id, user_id: userId,
-    role: invite.role, manager_id: invite.manager_id || null
+    org_id: invite.org_id, 
+    user_id: userId,
+    role: invite.role, 
+    department: invite.department || "General",
+    manager_id: invite.manager_id || null
   }).select().single();
   if (error) throw error;
   await sb.from("invites").update({ accepted_at:new Date().toISOString() }).eq("id", invite.id);
@@ -220,10 +300,16 @@ async function loadTeam(orgId){
   }
   return (members||[]).map(m => {
     const p = profiles.find(x=>x.id===m.user_id) || {};
-    return { ...m, email:p.email||"", name:p.full_name || p.email || "Unknown" };
+    return { 
+      ...m, 
+      email: p.email||"", 
+      name: p.full_name || p.email || "Unknown",
+      department: m.department || "General"
+    };
   }).sort((a,b) => {
-    const order = { owner:0, manager:1, employee:2 };
-    return (order[a.role]-order[b.role]) || a.name.localeCompare(b.name);
+    const rA = getRoleRank(a.role);
+    const rB = getRoleRank(b.role);
+    return (rB - rA) || a.name.localeCompare(b.name);
   });
 }
 
@@ -232,10 +318,14 @@ async function loadPendingInvites(orgId){
   return data || [];
 }
 
-async function sendInvite(orgId, email, role, managerId, invitedBy){
+async function sendInvite(orgId, email, role, department, managerId, invitedBy){
   const { data, error } = await sb.from("invites").insert({
-    org_id:orgId, email:email.trim().toLowerCase(), role,
-    manager_id: managerId || null, invited_by: invitedBy
+    org_id: orgId, 
+    email: email.trim().toLowerCase(), 
+    role: role || "employee",
+    department: department || "General",
+    manager_id: managerId || null, 
+    invited_by: invitedBy
   }).select().single();
   if (error) throw error;
   return data;
@@ -444,64 +534,83 @@ async function deleteDelegatedTask(taskId) {
 function getEffectiveTeam(data, orgCtx) {
   const list = [];
   const seen = new Set();
+  const myRole = orgCtx?.membership?.role || "owner";
+  const myId = orgCtx?.membership?.user_id;
+  const myDept = orgCtx?.membership?.department || "";
+  const myRank = getRoleRank(myRole);
 
-  // 1. Registered organization members
-  if (orgCtx && Array.isArray(orgCtx.teamMembers)) {
-    orgCtx.teamMembers.forEach(m => {
-      const name = m.name || m.full_name || m.email;
-      if (name && !seen.has(name.toLowerCase())) {
-        seen.add(name.toLowerCase());
-        list.push({
-          id: m.id || m.user_id,
-          user_id: m.user_id,
-          name: name,
-          email: m.email || "",
-          role: m.role || "employee",
-          label: `${name} (${ROLE_LABEL[m.role] || m.role}${m.email ? ' · ' + m.email : ''})`
-        });
-      }
-    });
-  }
+  // 1. Registered organization members (Filtered strictly by role hierarchy & department)
+  const rawMembers = Array.isArray(orgCtx?.allMembers) && orgCtx.allMembers.length > 0
+    ? orgCtx.allMembers
+    : (Array.isArray(orgCtx?.teamMembers) ? orgCtx.teamMembers : []);
+  const allowedMembers = filterVisibleTeamMembers(rawMembers, myId, myRole, myDept);
 
-  // 2. Pending invited team members
+  allowedMembers.forEach(m => {
+    const name = m.name || m.full_name || m.email;
+    if (name && !seen.has(name.toLowerCase())) {
+      seen.add(name.toLowerCase());
+      const deptLabel = m.department && m.department !== "General" ? ` · ${m.department}` : "";
+      list.push({
+        id: m.id || m.user_id,
+        user_id: m.user_id,
+        name: name,
+        email: m.email || "",
+        role: m.role || "employee",
+        department: m.department || "General",
+        label: `${name}${deptLabel} (${ROLE_LABEL[m.role] || m.role}${m.email ? ' · ' + m.email : ''})`
+      });
+    }
+  });
+
+  // 2. Pending invited team members (Strictly filtered by hierarchy & department)
   if (orgCtx && Array.isArray(orgCtx.orgInvites)) {
     orgCtx.orgInvites.forEach(inv => {
       const email = inv.email;
-      if (email && !seen.has(email.toLowerCase())) {
+      const invRank = getRoleRank(inv.role);
+      const invDept = (inv.department || "General").trim().toLowerCase();
+      
+      let canSee = false;
+      if (myRank >= 5) canSee = true; // Owner/CEO sees all
+      else if (myRank >= 3 && invRank < 3 && (!myDept || myDept.toLowerCase() === invDept)) canSee = true;
+
+      if (canSee && email && !seen.has(email.toLowerCase())) {
         seen.add(email.toLowerCase());
         const shortName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const deptLabel = inv.department && inv.department !== "General" ? ` · ${inv.department}` : "";
         list.push({
           id: inv.id,
           user_id: null,
           name: shortName,
           email: email,
           role: inv.role || "employee",
+          department: inv.department || "General",
           pending: true,
-          label: `${shortName} (Invited ${ROLE_LABEL[inv.role] || inv.role} · ${email})`
+          label: `${shortName}${deptLabel} (Invited ${ROLE_LABEL[inv.role] || inv.role} · ${email})`
         });
       }
     });
   }
 
-  // 3. Custom team members stored in user data
-  if (data && Array.isArray(data.team)) {
+  // 3. Custom team members stored in user data (Only for solo/owner)
+  if (myRank >= 3 && data && Array.isArray(data.team)) {
     data.team.forEach(t => {
       if (t.name && !seen.has(t.name.toLowerCase())) {
         seen.add(t.name.toLowerCase());
         list.push({
-          id: t.id || uid(),
+          id: t.id || t.name,
           user_id: null,
           name: t.name,
           email: t.email || "",
-          role: t.role || "Team",
-          label: `${t.name}${t.role ? ' (' + t.role + ')' : ''}`
+          role: t.role || "employee",
+          department: t.department || "General",
+          label: `${t.name} (Custom Team · ${t.role || 'Member'})`
         });
       }
     });
   }
 
-  // Fallback defaults if no team members are present
-  if (list.length === 0) {
+  // Fallback defaults if no team members are present and user is owner
+  if (list.length === 0 && myRank >= 4) {
     const defaults = ["Operations Lead", "Executive Assistant", "Sales Team", "Finance & Accounts"];
     defaults.forEach(d => {
       list.push({
@@ -509,7 +618,8 @@ function getEffectiveTeam(data, orgCtx) {
         user_id: null,
         name: d,
         email: "",
-        role: "Team",
+        role: "employee",
+        department: "General",
         label: d
       });
     });
@@ -6592,8 +6702,10 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
   const today = todayKey();
   const [subTab, setSubTab] = useState("delegated"); // "delegated" | "assigned_to_me" | "standups"
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [deptFilter, setDeptFilter] = useState("ALL");
   const [newTaskText, setNewTaskText] = useState("");
   const [newAssignee, setNewAssignee] = useState("");
+  const [newDepartment, setNewDepartment] = useState("Operations");
   const [newDue, setNewDue] = useState(today);
   const [newLink, setNewLink] = useState("");
   const [planners, setPlanners] = useState([]);
@@ -6604,6 +6716,8 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
   const team = getEffectiveTeam(data, orgCtx);
   const myEmail = (orgCtx?.profile?.email || "").toLowerCase();
   const myName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder";
+  const myRole = orgCtx?.membership?.role || "owner";
+  const myRank = getRoleRank(myRole);
 
   // Load team planners and members
   useEffect(() => {
@@ -6616,6 +6730,12 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
         .catch(() => {});
     }
   }, [orgCtx?.org?.id]);
+
+  // Strict role and department isolation
+  const visibleTeamMembers = filterVisibleTeamMembers(teamMembers, meId, myRole, orgCtx?.membership?.department);
+  const filteredTeamMembers = deptFilter === "ALL" 
+    ? visibleTeamMembers 
+    : visibleTeamMembers.filter(m => (m.department || "General").toLowerCase() === deptFilter.toLowerCase());
 
   // Real-time Database Delegated Tasks assigned to team
   const orgTasks = dbTasks.length > 0 ? dbTasks : [];
@@ -6649,6 +6769,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
           assignee_id: memberObj?.user_id || null,
           assignee_email: memberObj?.email || "",
           assignee_name: memberObj?.name || newAssignee,
+          department: memberObj?.department || newDepartment || "General",
           title: newTaskText.trim(),
           details: "",
           link: newLink.trim() || null,
@@ -6729,11 +6850,15 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
   // Group active list
   const activeList = subTab === "delegated" ? delegatedToTeam : assignedToMe;
   const filteredList = activeList.filter(t => {
-    if (statusFilter === "ALL") return true;
-    return t.status === statusFilter;
+    if (statusFilter !== "ALL" && t.status !== statusFilter) return false;
+    if (deptFilter !== "ALL") {
+      const taskDept = (t.department || "").toLowerCase();
+      const memberObj = teamMembers.find(m => (t.assignee_id && m.user_id === t.assignee_id) || (t.assignee_email && m.email && m.email.toLowerCase() === t.assignee_email.toLowerCase()));
+      const memDept = (memberObj?.department || "General").toLowerCase();
+      if (taskDept !== deptFilter.toLowerCase() && memDept !== deptFilter.toLowerCase()) return false;
+    }
+    return true;
   });
-
-  const openCount = activeList.filter(t => t.status !== "completed").length;
 
   return (
     <div className="space-y-6">
@@ -6797,10 +6922,36 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
             }`}
           >
             <span>🎯 Live Standups</span>
-            <span className="text-[10px] font-bold text-slate-400">({planners.length})</span>
+            <span className="text-[10px] font-bold text-slate-400">({filteredTeamMembers.length})</span>
           </button>
         </div>
       </div>
+
+      {/* Department Filter Pills Bar */}
+      {myRank >= 4 && (
+        <div className="flex flex-wrap items-center gap-1.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+          <span className="text-xs font-black uppercase tracking-wider text-slate-400 mr-2">Department:</span>
+          <button
+            onClick={() => setDeptFilter("ALL")}
+            className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+              deptFilter === "ALL" ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            All Departments
+          </button>
+          {DEPARTMENTS.map(d => (
+            <button
+              key={d}
+              onClick={() => setDeptFilter(d)}
+              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+                deptFilter === d ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+      )}
 
       {(subTab === "delegated" || subTab === "assigned_to_me") && (
         <div className="space-y-5">
@@ -6877,7 +7028,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center space-y-2">
               <span className="text-3xl block">🎉</span>
               <h3 className="text-sm font-bold text-slate-800">No tasks in this view right now</h3>
-              <p className="text-xs text-slate-500">Assign a new task using the bar above or adjust your status filter.</p>
+              <p className="text-xs text-slate-500">Assign a new task using the bar above or adjust your filters.</p>
             </div>
           )}
 
@@ -6900,6 +7051,11 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                           <span>{cfg.icon}</span>
                           <span>{cfg.label}</span>
                         </span>
+                        {task.department && (
+                          <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 border border-blue-100">
+                            📁 {task.department}
+                          </span>
+                        )}
                         <h3 className="text-sm sm:text-base font-extrabold text-slate-950 break-words">{task.title}</h3>
                         {task.link && (
                           <a
@@ -6982,19 +7138,19 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
       {subTab === "standups" && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-xs text-amber-900 font-medium">
-            💡 Live view of what your employees and team members have committed as their <b>Top 3 Deliverables for today</b>, linked to their assigned KRAs.
+            💡 Live view of what your team members have committed as their <b>Top 3 Deliverables for today</b>, linked to their assigned KRAs.
           </div>
 
-          {teamMembers.length === 0 && (
+          {filteredTeamMembers.length === 0 && (
             <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-8 text-center space-y-2">
               <span className="text-3xl block">👥</span>
-              <h4 className="text-sm font-bold text-slate-800">No team members invited yet</h4>
-              <p className="text-xs text-slate-500">Go to Settings &gt; Team to invite your executive assistants and managers.</p>
+              <h4 className="text-sm font-bold text-slate-800">No team members found for this view</h4>
+              <p className="text-xs text-slate-500">Adjust the department filter or invite team members in Settings &gt; Team.</p>
             </div>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {teamMembers.map(m => {
+            {filteredTeamMembers.map(m => {
               const memberPlan = (planners.find(p => p.userId === m.user_id) || {}).plan || {};
               const memberStandup = memberPlan.standups?.[today] || {};
               const p1 = memberStandup.p1;
@@ -7009,7 +7165,12 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div>
                       <h4 className="text-sm font-black text-slate-900">{m.name || m.email}</h4>
-                      <span className="text-[11px] font-bold text-slate-400">{ROLE_LABEL[m.role] || m.role}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[11px] font-bold text-slate-400">{ROLE_LABEL[m.role] || m.role}</span>
+                        <span className="rounded-full bg-blue-50 px-2 py-0.2 text-[9px] font-black text-blue-700 border border-blue-100">
+                          📁 {m.department || "General"}
+                        </span>
+                      </div>
                     </div>
                     {hasP ? (
                       <span className="rounded-full bg-emerald-100 text-emerald-900 px-3 py-1 text-[10px] font-black">
@@ -10534,7 +10695,9 @@ const quarterOfMonth = (mp) => {
 };
 
 function GoalsView({ orgCtx, meId }){
-  const role = orgCtx.membership.role;
+  const myRole = orgCtx.membership?.role || "employee";
+  const myRank = getRoleRank(myRole);
+  const myDept = orgCtx.membership?.department || "";
   const [members, setMembers] = useState(null);
   const [who, setWho] = useState(meId);
   const [period, setPeriod] = useState(monthPeriod());
@@ -10547,9 +10710,9 @@ function GoalsView({ orgCtx, meId }){
   const periods = [period, quarter];
 
   useEffect(() => {
-    if (role === "employee") { setMembers([]); return; }
+    if (myRank <= 1) { setMembers([]); return; }
     loadTeam(orgCtx.org.id).then(setMembers).catch(()=>setMembers([]));
-  }, [orgCtx.org.id, role]);
+  }, [orgCtx.org.id, myRole]);
 
   const refresh = () => loadGoals(who, periods)
     .then(setGoals)
@@ -10557,12 +10720,10 @@ function GoalsView({ orgCtx, meId }){
 
   useEffect(() => { setGoals(null); refresh(); }, [who, period]);
 
-  // Mirror can_manage_person() so we don't offer controls the server will refuse.
+  // Strict role and department filtering
+  const visible = filterVisibleTeamMembers(members || [], meId, myRole, myDept);
   const targetMember = (members || []).find(m => m.user_id === who);
-  const canManage = role === "owner"
-    || (role === "manager" && targetMember && targetMember.manager_id === meId);
-  const visible = (members || []).filter(m =>
-    m.user_id === meId || role === "owner" || (role === "manager" && m.manager_id === meId));
+  const canManage = myRank >= 5 || (myRank >= 3 && targetMember && targetMember.user_id !== meId && getRoleRank(targetMember.role) < myRank);
 
   const act = async (fn) => {
     setMsg("");
@@ -10917,17 +11078,19 @@ function PeopleView({ orgCtx, meId }){
   const [planners, setPlanners] = useState(null); // [{userId, plan}]
   const [kpiData, setKpiData] = useState(null);   // {kpis, values} or null if unavailable
   const [period, setPeriod] = useState("7");
+  const [deptFilter, setDeptFilter] = useState("ALL");
   const [sel, setSel] = useState(null);           // drilled-into membership row
   const [err, setErr] = useState("");
-  const role = orgCtx.membership.role;
+  const myRole = orgCtx.membership?.role || "owner";
+  const myRank = getRoleRank(myRole);
+  const myDept = orgCtx.membership?.department || "";
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([loadTeam(orgCtx.org.id), loadAllVisiblePlanners()])
       .then(([m, p]) => { if (!cancelled) { setMembers(m); setPlanners(p); } })
       .catch(e => { if (!cancelled) { setErr(e.message || "Couldn't load your team."); setMembers([]); setPlanners([]); } });
-    // KPIs are a separate, optional concern: if the Phase 3 tables aren't there
-    // the dashboard must still work, just without the goals column.
+    // KPIs are a separate, optional concern
     loadAllVisibleKpis([monthPeriod(), quarterPeriod()])
       .then(k => { if (!cancelled) setKpiData(k); })
       .catch(() => { if (!cancelled) setKpiData(null); });
@@ -10935,8 +11098,6 @@ function PeopleView({ orgCtx, meId }){
   }, [orgCtx.org.id]);
 
   // Average attainment across a person's KPIs for the CURRENT month/quarter.
-  // Deliberately not tied to the 7/30-day selector above — KPI periods are
-  // months and quarters, and pretending otherwise would be a false number.
   const kpiAttainFor = (userId) => {
     if (!kpiData) return null;
     const scores = kpiData.kpis
@@ -10951,9 +11112,9 @@ function PeopleView({ orgCtx, meId }){
 
   if (members === null || planners === null) return <Ghost>Loading your team…</Ghost>;
 
-  // Mirror the server-side rule so we never offer a row RLS will refuse.
-  const visible = members.filter(m =>
-    m.user_id === meId || role === "owner" || (role === "manager" && m.manager_id === meId));
+  // Strict role and department isolation
+  const visible = filterVisibleTeamMembers(members || [], meId, myRole, myDept)
+    .filter(m => deptFilter === "ALL" || (m.department || "General").toLowerCase() === deptFilter.toLowerCase());
 
   const days = lastNDayKeys(PERIODS.find(p => p.id === period).days);
   const planOf = (uid) => (planners.find(p => p.userId === uid) || {}).plan || null;
@@ -10986,11 +11147,37 @@ function PeopleView({ orgCtx, meId }){
   return (
     <div>
       <Callout>
-        {role === "owner"
-          ? "The whole picture — how the team is actually planning and following through. Read-only: you can see the work, not rewrite it for them."
-          : "How your direct reports are planning and following through. Read-only — coach with it, don't edit it."}
+        {myRank >= 5
+          ? "Executive Overview — team follow-through, standup adherence, and performance across departments."
+          : "Department Dashboard — follow-through and priority execution for your department."}
       </Callout>
       {err && <p className="mb-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
+
+      {/* Department Filter Pills Bar */}
+      {myRank >= 4 && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+          <span className="text-xs font-black uppercase tracking-wider text-slate-400 mr-2">Department:</span>
+          <button
+            onClick={() => setDeptFilter("ALL")}
+            className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+              deptFilter === "ALL" ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            All Departments
+          </button>
+          {DEPARTMENTS.map(d => (
+            <button
+              key={d}
+              onClick={() => setDeptFilter(d)}
+              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+                deptFilter === d ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2">
         <div className="flex flex-wrap items-center gap-1">
@@ -11004,7 +11191,7 @@ function PeopleView({ orgCtx, meId }){
           <span className="pl-2 text-xs text-slate-400 hidden sm:inline">{withData.length} of {visible.length} have planner data</span>
         </div>
 
-        {role === "owner" && (
+        {myRank >= 4 && (
           <button 
             onClick={() => navigate("/settings/company")}
             className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-1.5 text-xs font-bold transition shadow-2xs"
@@ -11030,7 +11217,7 @@ function PeopleView({ orgCtx, meId }){
         <span className="text-xs text-slate-400">Click a row for the detail</span>
       </div>
       <div className="space-y-2">
-        {rows.length === 0 && <Ghost>Nobody to show yet.</Ghost>}
+        {rows.length === 0 && <Ghost>Nobody to show in this department.</Ghost>}
         {rows.map(({member:m, metrics:x, kpiAttain}) => (
           <button key={m.id} onClick={()=>setSel(sel && sel.id===m.id ? null : m)}
             className={"block w-full rounded-lg border p-3 text-left transition "+
@@ -11040,7 +11227,12 @@ function PeopleView({ orgCtx, meId }){
                 <div className="truncate font-medium text-slate-800">
                   {m.name}{m.user_id===meId && <span className="text-xs font-normal text-slate-400"> (you)</span>}
                 </div>
-                <div className="truncate text-xs text-slate-400">{ROLE_LABEL[m.role]}</div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-xs text-slate-500 font-bold">{ROLE_LABEL[m.role] || m.role}</span>
+                  <span className="rounded-full bg-blue-50 px-2 py-0.2 text-[10px] font-bold text-blue-700 border border-blue-100">
+                    📁 {m.department || "General"}
+                  </span>
+                </div>
               </div>
               {!x && <span className="text-xs text-slate-400">No planner data yet</span>}
               {x && <>
@@ -11281,10 +11473,14 @@ function TeamView({ orgCtx, meId }){
   const [invites, setInvites] = useState([]);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("employee");
+  const [department, setDepartment] = useState("Operations");
   const [managerId, setManagerId] = useState("");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deptFilter, setDeptFilter] = useState("ALL");
   const orgId = orgCtx.org.id;
+  const myRole = orgCtx?.membership?.role || "owner";
+  const myRank = getRoleRank(myRole);
 
   const refresh = () => Promise.all([loadTeam(orgId), loadPendingInvites(orgId)])
     .then(([m,i]) => { setMembers(m); setInvites(i); })
@@ -11297,7 +11493,7 @@ function TeamView({ orgCtx, meId }){
     if (!e) { setMsg("Enter an email address."); return; }
     setBusy(true); setMsg("");
     try {
-      const row = await sendInvite(orgId, e, role, managerId || null, meId);
+      const row = await sendInvite(orgId, e, role, department || "General", managerId || null, meId);
       setEmail(""); setManagerId("");
       setMsg(await inviteNote(row.id, e, { ...row, orgName: orgCtx?.org?.name }));
       await refresh();
@@ -11352,92 +11548,258 @@ function TeamView({ orgCtx, meId }){
   };
 
   if (members === null) return <Ghost>Loading your team…</Ghost>;
-  const managers = members.filter(m => m.role === "owner" || m.role === "manager");
+
+  // Strict role and department filtering
+  const visibleMembers = filterVisibleTeamMembers(members, meId, myRole, orgCtx?.membership?.department);
+  const managers = visibleMembers.filter(m => getRoleRank(m.role) >= 3);
+
+  const displayedMembers = deptFilter === "ALL" 
+    ? visibleMembers 
+    : visibleMembers.filter(m => (m.department || "General").toLowerCase() === deptFilter.toLowerCase());
+
+  const displayedInvites = invites.filter(inv => {
+    const invRank = getRoleRank(inv.role);
+    if (myRank >= 5) return true;
+    if (myRank >= 3 && invRank < 3) {
+      return !orgCtx?.membership?.department || orgCtx.membership.department.toLowerCase() === (inv.department || "General").toLowerCase();
+    }
+    return false;
+  });
 
   return (
     <div className="space-y-6">
-      <Callout>Owners see everyone. Managers see their direct reports. Employees see only themselves — set that up here.</Callout>
-      {msg && <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{msg}</p>}
+      <Callout>
+        {myRank >= 5 
+          ? "Executive Control: Owners & CEOs oversee all departments, leaders, and employees."
+          : "Department Scoped: You manage members, deliverables, and standups for your department."}
+      </Callout>
+      {msg && <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-900">{msg}</p>}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 font-semibold text-slate-700">Invite someone</h3>
-        <p className="mb-3 text-xs text-slate-400">
-          They join by signing up (or signing in) with this exact email address — the invite is waiting for them when they do.
-          If email is set up, we'll send them an invitation; if not, use <b>Copy direct link</b> below and pass it along yourself.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <input value={email} onChange={e=>setEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&invite()}
-            type="email" placeholder="name@company.com"
-            className="min-w-[12rem] flex-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm outline-none focus:border-amber-400" />
-          <select value={role} onChange={e=>setRole(e.target.value)}
-            className="rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700 outline-none">
-            <option value="employee">Employee</option>
-            <option value="manager">Manager</option>
-            <option value="owner">Owner</option>
-          </select>
-          {role === "employee" &&
-            <select value={managerId} onChange={e=>setManagerId(e.target.value)}
-              className="rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700 outline-none">
-              <option value="">— Reports to —</option>
-              {managers.map(m => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}
-            </select>}
-          <button onClick={invite} disabled={busy}
-            className="flex items-center gap-1 rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700 disabled:opacity-60">
-            <Ic n="send"/> {busy ? "…" : "Invite"}
-          </button>
+      {/* Invite Box (Only for Owner, CEO, Director, Manager) */}
+      {myRank >= 3 && (
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
+          <div>
+            <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+              <span>✉️</span>
+              <span>Invite Team Member</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Assign their role and department. They join instantly by accepting the email invitation.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            <input 
+              value={email} 
+              onChange={e=>setEmail(e.target.value)} 
+              onKeyDown={e=>e.key==="Enter"&&invite()}
+              type="email" 
+              placeholder="member@company.com"
+              className="rounded-xl border border-amber-300 bg-amber-50/50 px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:bg-white" 
+            />
+
+            <select 
+              value={role} 
+              onChange={e=>setRole(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+            >
+              {myRank >= 5 && <option value="owner">Founder / Co-Owner</option>}
+              {myRank >= 5 && <option value="ceo">Chief Executive Officer (CEO)</option>}
+              {myRank >= 4 && <option value="director">Director / VP</option>}
+              {myRank >= 4 && <option value="manager">Department Manager</option>}
+              <option value="sub_manager">Sub-Manager / Team Lead</option>
+              <option value="employee">Employee / Specialist</option>
+              <option value="assistant">Executive Assistant</option>
+            </select>
+
+            <select 
+              value={department} 
+              onChange={e=>setDepartment(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+            >
+              {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+
+            {getRoleRank(role) < 3 && managers.length > 0 ? (
+              <select 
+                value={managerId} 
+                onChange={e=>setManagerId(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+              >
+                <option value="">— Direct Manager —</option>
+                {managers.map(m => <option key={m.user_id} value={m.user_id}>{m.name}</option>)}
+              </select>
+            ) : (
+              <button 
+                onClick={invite} 
+                disabled={busy}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-black shadow-xs disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >
+                <span>🚀</span>
+                <span>{busy ? "Sending…" : "Send Invite"}</span>
+              </button>
+            )}
+          </div>
+
+          {getRoleRank(role) < 3 && managers.length > 0 && (
+            <div className="flex justify-end">
+              <button 
+                onClick={invite} 
+                disabled={busy}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-black shadow-xs disabled:opacity-60 flex items-center gap-1.5"
+              >
+                <span>🚀</span>
+                <span>{busy ? "Sending…" : "Send Invite"}</span>
+              </button>
+            </div>
+          )}
+
+          <p className="text-[11px] text-slate-400 font-medium">{ROLE_HELP[role] || ""}</p>
         </div>
-        <p className="mt-2 text-xs text-slate-400">{ROLE_HELP[role]}</p>
-      </div>
+      )}
 
-      {invites.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <h3 className="mb-3 font-semibold text-slate-700">Pending invites ({invites.length})</h3>
-          <div className="space-y-1.5">
-            {invites.map(i => (
-              <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-100 bg-stone-50 px-3 py-2 text-sm">
-                <span className="text-slate-800 font-medium">{i.email}</span>
-                <span className="flex items-center gap-2">
-                  <span className="rounded bg-white px-2 py-0.5 text-xs font-semibold text-slate-600 border border-slate-200">{ROLE_LABEL[i.role]}</span>
-                  <button onClick={()=>resend(i)}
-                    className="text-xs font-semibold text-slate-600 hover:text-slate-950">Resend email</button>
-                  <button onClick={()=>copyLink(i)}
-                    className="text-xs font-bold text-blue-600 hover:text-blue-800">Copy direct link</button>
-                  <button onClick={async ()=>{ await revokeInvite(i.id); refresh(); }}
-                    className="text-xs font-semibold text-rose-500 hover:text-rose-700">Revoke</button>
-                </span>
+      {/* Pending Invites */}
+      {displayedInvites.length > 0 && (
+        <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
+          <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+            <span>⏳</span>
+            <span>Pending Invites ({displayedInvites.length})</span>
+          </h3>
+          <div className="space-y-2">
+            {displayedInvites.map(i => (
+              <div key={i.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs">
+                <div className="space-y-0.5">
+                  <span className="font-extrabold text-slate-900">{i.email}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-white px-2.5 py-0.5 text-[10px] font-black text-slate-700 border border-slate-200">
+                      {ROLE_LABEL[i.role] || i.role}
+                    </span>
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-100">
+                      📁 {i.department || "General"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={()=>resend(i)}
+                    className="rounded-xl bg-white border border-slate-200 px-3 py-1.5 font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    ✉️ Resend
+                  </button>
+                  <button 
+                    onClick={()=>copyLink(i)}
+                    className="rounded-xl bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1.5 font-black hover:bg-blue-100"
+                  >
+                    🔗 Copy Link
+                  </button>
+                  {myRank >= 4 && (
+                    <button 
+                      onClick={async ()=>{ await revokeInvite(i.id); refresh(); }}
+                      className="rounded-xl bg-rose-50 text-rose-600 border border-rose-200 px-3 py-1.5 font-bold hover:bg-rose-100"
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="mb-3 font-semibold text-slate-700">Members ({members.length})</h3>
-        <div className="space-y-2">
-          {members.map(m => (
-            <div key={m.id} className="flex flex-wrap items-center gap-2 rounded-md border border-slate-100 bg-stone-50 px-2 py-2 text-sm">
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-slate-800">
-                  {m.name}{m.user_id===meId && <span className="text-xs font-normal text-slate-400"> (you)</span>}
+      {/* Active Team Members List with Department Switcher */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+              <span>👥</span>
+              <span>Team Roster ({displayedMembers.length})</span>
+            </h3>
+            <p className="text-xs text-slate-500">Active organization members and their department assignments.</p>
+          </div>
+
+          {/* Department Filter Pills */}
+          {myRank >= 4 && (
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                onClick={() => setDeptFilter("ALL")}
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                  deptFilter === "ALL" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                All Departments
+              </button>
+              {DEPARTMENTS.map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDeptFilter(d)}
+                  className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                    deptFilter === d ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-2.5">
+          {displayedMembers.map(m => (
+            <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3.5 text-xs">
+              <div className="space-y-1 min-w-[200px]">
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-slate-900 text-sm">{m.name}</span>
+                  {m.user_id === meId && (
+                    <span className="rounded-full bg-amber-100 text-amber-950 px-2 py-0.5 text-[10px] font-black uppercase">You</span>
+                  )}
                 </div>
-                <div className="truncate text-xs text-slate-400">{m.email}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-slate-500 font-medium">{m.email}</span>
+                  <span className="rounded-full bg-blue-100 text-blue-900 px-2 py-0.5 text-[10px] font-black">
+                    📁 {m.department || "General"}
+                  </span>
+                  <span className="rounded-full bg-slate-200 text-slate-800 px-2 py-0.5 text-[10px] font-black">
+                    {ROLE_LABEL[m.role] || m.role}
+                  </span>
+                </div>
               </div>
-              <select value={m.role} onChange={e=>change(m,{ role:e.target.value })}
-                className="rounded border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-700 outline-none">
-                <option value="employee">Employee</option>
-                <option value="manager">Manager</option>
-                <option value="owner">Owner</option>
-              </select>
-              {m.role === "employee" &&
-                <select value={m.manager_id || ""} onChange={e=>change(m,{ manager_id:e.target.value || null })}
-                  className="rounded border border-slate-200 bg-white px-1.5 py-1 text-xs text-slate-700 outline-none">
-                  <option value="">— Reports to —</option>
-                  {managers.filter(x=>x.user_id!==m.user_id).map(x =>
-                    <option key={x.user_id} value={x.user_id}>{x.name}</option>)}
-                </select>}
-              {m.user_id !== meId &&
-                <button onClick={()=>remove(m)} title="Remove from company"
-                  className="text-slate-300 hover:text-rose-500"><Ic n="trash"/></button>}
+
+              {/* Edit Controls (Only for Owner/CEO or higher ranks editing subordinate) */}
+              {myRank >= 4 && m.user_id !== meId && (
+                <div className="flex items-center gap-2">
+                  <select 
+                    value={m.role} 
+                    onChange={e=>change(m, { role: e.target.value })}
+                    className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none"
+                  >
+                    {myRank >= 5 && <option value="owner">Founder / Owner</option>}
+                    {myRank >= 5 && <option value="ceo">CEO</option>}
+                    <option value="director">Director / VP</option>
+                    <option value="manager">Department Manager</option>
+                    <option value="sub_manager">Sub-Manager / Lead</option>
+                    <option value="employee">Employee / Specialist</option>
+                    <option value="assistant">Executive Assistant</option>
+                  </select>
+
+                  <select 
+                    value={m.department || "General"} 
+                    onChange={e=>change(m, { department: e.target.value })}
+                    className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none"
+                  >
+                    {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+
+                  <button 
+                    onClick={()=>remove(m)} 
+                    title="Remove from organization"
+                    className="rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 p-2 font-bold transition border border-rose-100"
+                  >
+                    <Ic n="trash"/>
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>
