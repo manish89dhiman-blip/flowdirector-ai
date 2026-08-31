@@ -98,6 +98,67 @@ function getAvailableCategories(data) {
   const customCats = Array.isArray(data?.categories) ? data.categories : DEFAULT_CATEGORIES;
   return Array.from(new Set([...depts, ...customCats]));
 }
+
+const TIME_SLOTS_15MIN = [
+  "06:00", "06:15", "06:30", "06:45",
+  "07:00", "07:15", "07:30", "07:45",
+  "08:00", "08:15", "08:30", "08:45",
+  "09:00", "09:15", "09:30", "09:45",
+  "10:00", "10:15", "10:30", "10:45",
+  "11:00", "11:15", "11:30", "11:45",
+  "12:00", "12:15", "12:30", "12:45",
+  "13:00", "13:15", "13:30", "13:45",
+  "14:00", "14:15", "14:30", "14:45",
+  "15:00", "15:15", "15:30", "15:45",
+  "16:00", "16:15", "16:30", "16:45",
+  "17:00", "17:15", "17:30", "17:45",
+  "18:00", "18:15", "18:30", "18:45",
+  "19:00", "19:15", "19:30", "19:45",
+  "20:00", "20:15", "20:30", "20:45",
+  "21:00", "21:15", "21:30", "21:45",
+  "22:00", "22:15", "22:30", "22:45",
+  "23:00"
+];
+
+function slot15MinLabel(timeStr) {
+  if (!timeStr) return "";
+  const parts = timeStr.split(":");
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1] || "0", 10);
+  if (isNaN(h)) return timeStr;
+  
+  let endH = h;
+  let endM = m + 15;
+  if (endM >= 60) {
+    endM = 0;
+    endH = (h + 1) % 24;
+  }
+  
+  const startPeriod = h >= 12 ? "PM" : "AM";
+  const startDisplayH = h % 12 === 0 ? 12 : h % 12;
+  const startStr = `${startDisplayH}:${String(m).padStart(2, "0")}`;
+  
+  const endPeriod = endH >= 12 ? "PM" : "AM";
+  const endDisplayH = endH % 12 === 0 ? 12 : endH % 12;
+  const endStr = `${endDisplayH}:${String(endM).padStart(2, "0")}`;
+  
+  if (startPeriod === endPeriod) {
+    return `${startStr} – ${endStr} ${endPeriod}`;
+  }
+  return `${startStr} ${startPeriod} – ${endStr} ${endPeriod}`;
+}
+
+function formatTimeDisplay15Min(timeStr) {
+  if (!timeStr) return "";
+  const parts = timeStr.split(":");
+  const h = parseInt(parts[0], 10);
+  const m = parts[1] || "00";
+  if (isNaN(h)) return timeStr;
+  const period = h >= 12 ? "PM" : "AM";
+  const displayH = h % 12 === 0 ? 12 : h % 12;
+  return `${displayH}:${m} ${period}`;
+}
+
 const DAILY_SLOTS = ["7–8 AM","8–9 AM","9–10 AM","10–11 AM","11–12","12–1 PM","1–2 PM","2–3 PM","3–4 PM","4–5 PM","5–6 PM","6–7 PM","7–8 PM","8–9 PM","9–10 PM"];
 const WEEK_SLOTS  = ["7–8 AM","8–9 AM","9–10 AM","10–11 AM","11–12","12–1 PM","1–2 PM","2–3 PM","3–4 PM","4–5 PM","5–6 PM","6–7 PM","7–8 PM","8–9 PM"];
 const DAY_KEYS = ["mon","tue","wed","thu","fri","sat","sun"];
@@ -5354,13 +5415,17 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, onClose }) {
             </div>
 
             <div>
-              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Time</label>
-              <input
-                type="time"
+              <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Time (15-Min Slot)</label>
+              <select
                 value={time}
                 onChange={e => setTime(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
-              />
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-400"
+              >
+                <option value="">— Optional Time —</option>
+                {TIME_SLOTS_15MIN.map(t => (
+                  <option key={t} value={t}>{slot15MinLabel(t)} ({t})</option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -6847,13 +6912,17 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
                 <option value="finish_by">🏁 Finish By</option>
               </select>
 
-              <input 
-                type="time" 
+              <select 
                 value={c.time || ""} 
                 onChange={e => setTime(c.id, e.target.value)} 
-                title="Time"
-                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-bold text-slate-700 outline-none" 
-              />
+                title="15-Min Time Slot"
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-bold text-slate-700 outline-none max-w-[170px]" 
+              >
+                <option value="">— Time Slot (15m) —</option>
+                {TIME_SLOTS_15MIN.map(t => (
+                  <option key={t} value={t}>{slot15MinLabel(t)}</option>
+                ))}
+              </select>
 
               <select
                 value={c.duration || ""}
@@ -7658,6 +7727,19 @@ const slotIndexForTime = (time, slotCount) => {
   const idx = hour - 7;
   return (idx >= 0 && idx < slotCount) ? idx : -1;
 };
+
+const slotIndexFor15MinTime = (time) => {
+  if (!time) return -1;
+  const parts = time.split(":");
+  const hour = parseInt(parts[0], 10);
+  const min = parseInt(parts[1] || "0", 10);
+  if (isNaN(hour)) return -1;
+  if (hour < 6 || hour > 23) return -1;
+  const snappedMinIdx = Math.floor(min / 15);
+  const slotIdx = (hour - 6) * 4 + snappedMinIdx;
+  return (slotIdx >= 0 && slotIdx < TIME_SLOTS_15MIN.length) ? slotIdx : -1;
+};
+
 // Per-hour-slot items for one calendar day: that day's due items, DAILY routine
 // items (every day), WEEKLY-recurring items whose day-of-week matches, and
 // MONTHLY-recurring items whose day-of-month matches — each at their own time.
@@ -7667,11 +7749,24 @@ const dailySlotItems = (data, dateStr, dueMap) => {
   // Items with an exact due date match carry full id/source/done, so the Daily
   // slot chart can edit or mark them done in place, not just display them.
   (dueMap[dateStr]||[]).forEach(place);
-  data.dailyBackup.filter(b=>b.taskType==="DAILY"&&b.time).forEach(b=>place({text:b.text,tag:b.tag,time:b.time}));
+  (data.dailyBackup||[]).filter(b=>b.taskType==="DAILY"&&b.time).forEach(b=>place({text:b.text,tag:b.tag,time:b.time}));
   const dow = dayOfWeekKey(dateStr);
-  data.weeklySomeday.filter(b=>b.taskType==="WEEKLY"&&b.due&&dayOfWeekKey(b.due)===dow).forEach(b=>place({text:b.text,tag:b.tag,time:b.time}));
+  (data.weeklySomeday||[]).filter(b=>b.taskType==="WEEKLY"&&b.due&&dayOfWeekKey(b.due)===dow).forEach(b=>place({text:b.text,tag:b.tag,time:b.time}));
   const dom = parseInt(dateStr.slice(8,10),10);
   (data.recurringMonthly||[]).filter(r=>r.day===dom).forEach(r=>place({text:r.text,tag:r.tag,time:r.time}));
+  return slots;
+};
+
+// Exact 15-minute slot items mapping
+const daily15MinSlotItems = (data, dateStr, dueMap) => {
+  const slots = TIME_SLOTS_15MIN.map(()=>[]);
+  const place=(entry)=>{ const idx=slotIndexFor15MinTime(entry.time); if(idx>=0 && idx<slots.length) slots[idx].push(entry); };
+  (dueMap[dateStr]||[]).forEach(place);
+  (data.dailyBackup||[]).filter(b=>b.taskType==="DAILY"&&b.time&&!isHolidayItem(b)).forEach(place);
+  const dow = dayOfWeekKey(dateStr);
+  (data.weeklySomeday||[]).filter(b=>b.taskType==="WEEKLY"&&b.due&&dayOfWeekKey(b.due)===dow&&b.time).forEach(place);
+  const dom = parseInt(dateStr.slice(8,10),10);
+  (data.recurringMonthly||[]).filter(r=>r.day===dom&&r.time).forEach(place);
   return slots;
 };
 // Same idea across a whole Mon–Sun week, keyed by "slotIdx|dayKey" for the grid.
@@ -7892,8 +7987,17 @@ function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, e
           <option value="finish_by">🏁 Finish By</option>
         </select>
 
-        <input type="time" value={item.time||""} onChange={e=>onUpdate("time",e.target.value)} title="Time"
-          className="rounded border border-slate-200 bg-white px-1.5 py-1 text-xs outline-none" />
+        <select 
+          value={item.time||""} 
+          onChange={e=>onUpdate("time",e.target.value)} 
+          title="15-Min Time Slot"
+          className="rounded border border-slate-200 bg-white px-1.5 py-1 text-xs outline-none"
+        >
+          <option value="">— Time (15m) —</option>
+          {TIME_SLOTS_15MIN.map(t => (
+            <option key={t} value={t}>{slot15MinLabel(t)}</option>
+          ))}
+        </select>
 
         <select
           value={item.duration || ""}
@@ -8930,13 +9034,17 @@ function DailyDelegateModal({ target, orgCtx, meId, onDelegateSuccess, onClose }
             </div>
 
             <div>
-              <label className="text-[10px] font-black uppercase text-slate-600 block mb-1">Target Time (Optional)</label>
-              <input
-                type="time"
+              <label className="text-[10px] font-black uppercase text-slate-600 block mb-1">Target Time (15-Min Slot)</label>
+              <select
                 value={dueTime}
                 onChange={e => setDueTime(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-500"
-              />
+              >
+                <option value="">— Optional Time —</option>
+                {TIME_SLOTS_15MIN.map(t => (
+                  <option key={t} value={t}>{slot15MinLabel(t)} ({t})</option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -8997,6 +9105,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
   const [delegateModalTarget, setDelegateModalTarget] = useState(null);
   const [myKras, setMyKras] = useState([]);
   const [notice, setNotice] = useState("");
+  const [timelineResolution, setTimelineResolution] = useState("15min"); // "15min" | "1hour"
   const [mobileScheduleTab, setMobileScheduleTab] = useState("plan"); // "plan" | "actual"
   
   const blank = () => ({ 
@@ -9048,17 +9157,21 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
 
   const dueMap = dueItemsByDate(data);
   const dueToday = (dueMap[dk] || []);
-  const slotItems = dailySlotItems(data, dk, dueMap);
+  const slotItems15Min = daily15MinSlotItems(data, dk, dueMap);
+  const slotItems1Hour = dailySlotItems(data, dk, dueMap);
+  const activeSlots = timelineResolution === "15min" ? TIME_SLOTS_15MIN : DAILY_SLOTS;
+  const slotItems = timelineResolution === "15min" ? slotItems15Min : slotItems1Hour;
 
   const routineDoneCount = routine.filter(r => day.routineDone?.[r.id]).length;
   const openCaptures = (data.captures || []).filter(c => c.status !== "Transferred" && c.status !== "Done");
   const openCapturesCount = openCaptures.length;
 
-  const handleScheduleInSlot = (slot, text) => {
+  const handleScheduleInSlot = (slot, text, prefix = "") => {
     if (!text || !text.trim()) return;
+    const formatted = prefix ? `${prefix} ${text.trim()}` : text.trim();
     upd(x => {
       x.blocks = x.blocks || {};
-      x.blocks[slot] = (x.blocks[slot] ? `${x.blocks[slot]} · ${text.trim()}` : text.trim());
+      x.blocks[slot] = (x.blocks[slot] ? `${x.blocks[slot]} · ${formatted}` : formatted);
     });
     setNotice(`✓ Scheduled into ${slot}!`);
     setTimeout(() => setNotice(""), 3000);
@@ -9432,15 +9545,15 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
                   }}
                   className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
                 >
-                  <option value="" disabled>⏱️ Schedule Time Slot...</option>
-                  <optgroup label="⏱️ Block Time Slot">
-                    {DAILY_SLOTS.map(s => <option key={`block::${s}`} value={`block::${s}`}>⏱️ Block {s}</option>)}
+                  <option value="" disabled>⏱️ Schedule 15-Min Slot...</option>
+                  <optgroup label="⏱️ Block 15-Min Slot">
+                    {TIME_SLOTS_15MIN.map(s => <option key={`block::${s}`} value={`block::${s}`}>⏱️ Block {slot15MinLabel(s)}</option>)}
                   </optgroup>
-                  <optgroup label="🚀 Start By">
-                    {DAILY_SLOTS.map(s => <option key={`start_by::${s}`} value={`start_by::${s}`}>🚀 Start by {s.split("–")[0].trim()}</option>)}
+                  <optgroup label="🚀 Start By (15-Min)">
+                    {TIME_SLOTS_15MIN.map(s => <option key={`start_by::${s}`} value={`start_by::${s}`}>🚀 Start by {formatTimeDisplay15Min(s)}</option>)}
                   </optgroup>
-                  <optgroup label="🏁 Finish By">
-                    {DAILY_SLOTS.map(s => <option key={`finish_by::${s}`} value={`finish_by::${s}`}>🏁 Finish by {s.split("–")[1] || s.split("–")[0]}</option>)}
+                  <optgroup label="🏁 Finish By (15-Min)">
+                    {TIME_SLOTS_15MIN.map(s => <option key={`finish_by::${s}`} value={`finish_by::${s}`}>🏁 Finish by {formatTimeDisplay15Min(s)}</option>)}
                   </optgroup>
                 </select>
 
@@ -9607,15 +9720,15 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
                           }}
                           className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-700 outline-none hover:bg-white transition"
                         >
-                          <option value="" disabled>⏱️ Time Slot...</option>
-                          <optgroup label="⏱️ Block Time Slot">
-                            {DAILY_SLOTS.map(s => <option key={`block::${s}`} value={`block::${s}`}>⏱️ Block {s}</option>)}
+                          <option value="" disabled>⏱️ 15-Min Slot...</option>
+                          <optgroup label="⏱️ Block 15-Min Slot">
+                            {TIME_SLOTS_15MIN.map(s => <option key={`block::${s}`} value={`block::${s}`}>⏱️ Block {slot15MinLabel(s)}</option>)}
                           </optgroup>
-                          <optgroup label="🚀 Start By">
-                            {DAILY_SLOTS.map(s => <option key={`start_by::${s}`} value={`start_by::${s}`}>🚀 Start by {s.split("–")[0].trim()}</option>)}
+                          <optgroup label="🚀 Start By (15-Min)">
+                            {TIME_SLOTS_15MIN.map(s => <option key={`start_by::${s}`} value={`start_by::${s}`}>🚀 Start by {formatTimeDisplay15Min(s)}</option>)}
                           </optgroup>
-                          <optgroup label="🏁 Finish By">
-                            {DAILY_SLOTS.map(s => <option key={`finish_by::${s}`} value={`finish_by::${s}`}>🏁 Finish by {s.split("–")[1] || s.split("–")[0]}</option>)}
+                          <optgroup label="🏁 Finish By (15-Min)">
+                            {TIME_SLOTS_15MIN.map(s => <option key={`finish_by::${s}`} value={`finish_by::${s}`}>🏁 Finish by {formatTimeDisplay15Min(s)}</option>)}
                           </optgroup>
                         </select>
 
@@ -9691,130 +9804,203 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
         </div>
       </div>
 
-      {/* 6. Hourly Schedule Timeline (Desktop Table + Mobile Vertical Cards) */}
+      {/* 6. 15-Minute Schedule Timeline (Desktop Table + Mobile Vertical Cards) */}
       <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xl">⏰</span>
-            <h3 className="text-base font-black text-slate-950">Hourly Schedule &amp; Time-Blocking</h3>
+            <div>
+              <h3 className="text-base font-black text-slate-950">
+                {timelineResolution === "15min" ? "15-Minute Schedule & Focus Blocks" : "Hourly Schedule & Time-Blocking"}
+              </h3>
+              <p className="text-[11px] text-slate-400 font-bold">
+                {timelineResolution === "15min" ? "Granular 15-min intervals for crisp executive execution" : "High-level 1-hour broad focus blocks"}
+              </p>
+            </div>
           </div>
 
-          {/* Mobile Plan vs Actual Toggle */}
-          <div className="flex md:hidden items-center gap-1 rounded-2xl bg-slate-100 p-1 border border-slate-200">
-            <button
-              onClick={() => setMobileScheduleTab("plan")}
-              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
-                mobileScheduleTab === "plan" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600"
-              }`}
-            >
-              📅 Plan
-            </button>
-            <button
-              onClick={() => setMobileScheduleTab("actual")}
-              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
-                mobileScheduleTab === "actual" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600"
-              }`}
-            >
-              ✓ Actual Happened
-            </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Resolution Switcher: 15-Min vs 1-Hour */}
+            <div className="flex items-center gap-1 rounded-2xl bg-slate-100 p-1 border border-slate-200 shadow-2xs">
+              <button
+                onClick={() => setTimelineResolution("15min")}
+                className={`rounded-xl px-3 py-1 text-xs font-black transition flex items-center gap-1.5 ${
+                  timelineResolution === "15min" 
+                    ? "bg-slate-950 text-white shadow-xs" 
+                    : "text-slate-600 hover:text-slate-950"
+                }`}
+                title="Switch to 15-minute slot view"
+              >
+                <span>⏱️</span>
+                <span>15-Min Slots</span>
+              </button>
+              <button
+                onClick={() => setTimelineResolution("1hour")}
+                className={`rounded-xl px-3 py-1 text-xs font-black transition flex items-center gap-1.5 ${
+                  timelineResolution === "1hour" 
+                    ? "bg-slate-950 text-white shadow-xs" 
+                    : "text-slate-600 hover:text-slate-950"
+                }`}
+                title="Switch to 1-hour slot view"
+              >
+                <span>🕐</span>
+                <span>1-Hour Slots</span>
+              </button>
+            </div>
+
+            {/* Mobile Plan vs Actual Toggle */}
+            <div className="flex md:hidden items-center gap-1 rounded-2xl bg-slate-100 p-1 border border-slate-200">
+              <button
+                onClick={() => setMobileScheduleTab("plan")}
+                className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+                  mobileScheduleTab === "plan" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600"
+                }`}
+              >
+                📅 Plan
+              </button>
+              <button
+                onClick={() => setMobileScheduleTab("actual")}
+                className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
+                  mobileScheduleTab === "actual" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600"
+                }`}
+              >
+                ✓ Actual
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Desktop View Table (>= md) */}
         <div className="hidden md:block space-y-2">
-          <div className="grid gap-3 text-xs font-black uppercase tracking-wider text-slate-400 pb-1 border-b border-slate-100" style={{ gridTemplateColumns: "80px minmax(0, 1fr) minmax(0, 1fr)" }}>
-            <span>Time</span>
+          <div 
+            className="grid gap-3 text-xs font-black uppercase tracking-wider text-slate-400 pb-1 border-b border-slate-100" 
+            style={{ gridTemplateColumns: timelineResolution === "15min" ? "140px minmax(0, 1fr) minmax(0, 1fr)" : "100px minmax(0, 1fr) minmax(0, 1fr)" }}
+          >
+            <span>Time Slot</span>
             <span>Planned Focus Block</span>
             <span>What Actually Happened</span>
           </div>
 
-          <div className="space-y-2">
-            {DAILY_SLOTS.map((s, si) => (
-              <div key={s} className="grid items-start gap-3 py-1 border-b border-slate-50 last:border-0" style={{ gridTemplateColumns: "80px minmax(0, 1fr) minmax(0, 1fr)" }}>
-                <span className="mono text-xs font-black text-slate-500 pt-2">{s}</span>
-                <div className="space-y-1">
-                  <Field value={day.blocks[s] || ""} onChange={e => upd(x => { x.blocks[s] = e.target.value; })} placeholder="Deep work, client call, review…" />
-                  {slotItems[si].map((it, idx) => (
-                    it.source && SLOT_ARRAY[it.source] ? (
-                      <div key={it.id} className="mt-1">
-                        <BackupItemRow 
-                          item={it} 
-                          data={data}
-                          onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
-                          onRemove={() => removeSlotItem(it.source, it.id)}
-                          onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
-                        />
-                      </div>
-                    ) : (
-                      <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800" title={it.text}>
-                        📌 {it.text}
-                      </div>
-                    )
-                  ))}
+          <div className="space-y-1.5 max-h-[700px] overflow-y-auto pr-1">
+            {activeSlots.map((s, si) => {
+              const label = timelineResolution === "15min" ? slot15MinLabel(s) : s;
+              const hasContent = !!(day.blocks[s] || (slotItems[si] && slotItems[si].length > 0) || day.actual[s]);
+              
+              return (
+                <div 
+                  key={s} 
+                  className={`grid items-start gap-3 py-1.5 px-2 rounded-xl border transition ${
+                    hasContent 
+                      ? "bg-amber-50/30 border-amber-200/60" 
+                      : "border-transparent hover:border-slate-200 hover:bg-slate-50/50"
+                  }`} 
+                  style={{ gridTemplateColumns: timelineResolution === "15min" ? "140px minmax(0, 1fr) minmax(0, 1fr)" : "100px minmax(0, 1fr) minmax(0, 1fr)" }}
+                >
+                  <div className="pt-1.5">
+                    <span className="mono text-[11px] font-black text-slate-700 block leading-tight">
+                      {label}
+                    </span>
+                    {timelineResolution === "15min" && (
+                      <span className="text-[10px] text-slate-400 mono font-bold">
+                        {s}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <Field 
+                      value={day.blocks[s] || ""} 
+                      onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
+                      placeholder={timelineResolution === "15min" ? "15-min focus, quick sync, execution…" : "Deep work, client call, review…"} 
+                    />
+                    {slotItems[si] && slotItems[si].map((it, idx) => (
+                      it.source && SLOT_ARRAY[it.source] ? (
+                        <div key={it.id} className="mt-1">
+                          <BackupItemRow 
+                            item={it} 
+                            data={data}
+                            onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
+                            onRemove={() => removeSlotItem(it.source, it.id)}
+                            onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
+                          />
+                        </div>
+                      ) : (
+                        <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800" title={it.text}>
+                          📌 {it.text}
+                        </div>
+                      )
+                    ))}
+                  </div>
+
+                  <input 
+                    value={day.actual[s] || ""} 
+                    onChange={e => upd(x => { x.actual[s] = e.target.value; })}
+                    placeholder="Actual review / notes…"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-slate-400 transition" 
+                  />
                 </div>
-                <input 
-                  value={day.actual[s] || ""} 
-                  onChange={e => upd(x => { x.actual[s] = e.target.value; })}
-                  placeholder="Actual review / notes…"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:bg-white focus:border-slate-400 transition" 
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         {/* Mobile View Stack (< md) */}
-        <div className="block md:hidden space-y-3">
-          {DAILY_SLOTS.map((s, si) => (
-            <div key={s} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="mono text-xs font-black text-slate-900 bg-white border border-slate-200 px-2.5 py-0.5 rounded-lg">
-                  {s}
-                </span>
-                {day.blocks[s] && (
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
-                    Scheduled
+        <div className="block md:hidden space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+          {activeSlots.map((s, si) => {
+            const label = timelineResolution === "15min" ? slot15MinLabel(s) : s;
+            const hasScheduled = !!day.blocks[s];
+
+            return (
+              <div key={s} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="mono text-xs font-black text-slate-900 bg-white border border-slate-200 px-2.5 py-0.5 rounded-lg">
+                    {label}
                   </span>
+                  {hasScheduled && (
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
+                      Scheduled
+                    </span>
+                  )}
+                </div>
+
+                {mobileScheduleTab === "plan" ? (
+                  <div className="space-y-1.5">
+                    <Field 
+                      value={day.blocks[s] || ""} 
+                      onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
+                      placeholder="Add planned focus…" 
+                    />
+                    {slotItems[si] && slotItems[si].map((it, idx) => (
+                      it.source && SLOT_ARRAY[it.source] ? (
+                        <div key={it.id} className="mt-1">
+                          <BackupItemRow 
+                            item={it} 
+                            data={data}
+                            onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
+                            onRemove={() => removeSlotItem(it.source, it.id)}
+                            onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
+                          />
+                        </div>
+                      ) : (
+                        <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800">
+                          📌 {it.text}
+                        </div>
+                      )
+                    ))}
+                  </div>
+                ) : (
+                  <div>
+                    <input 
+                      value={day.actual[s] || ""} 
+                      onChange={e => upd(x => { x.actual[s] = e.target.value; })}
+                      placeholder="What actually happened…"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none" 
+                    />
+                  </div>
                 )}
               </div>
-
-              {mobileScheduleTab === "plan" ? (
-                <div className="space-y-1.5">
-                  <Field 
-                    value={day.blocks[s] || ""} 
-                    onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
-                    placeholder="Add planned focus…" 
-                  />
-                  {slotItems[si].map((it, idx) => (
-                    it.source && SLOT_ARRAY[it.source] ? (
-                      <div key={it.id} className="mt-1">
-                        <BackupItemRow 
-                          item={it} 
-                          data={data}
-                          onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
-                          onRemove={() => removeSlotItem(it.source, it.id)}
-                          onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
-                        />
-                      </div>
-                    ) : (
-                      <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800">
-                        📌 {it.text}
-                      </div>
-                    )
-                  ))}
-                </div>
-              ) : (
-                <div>
-                  <input 
-                    value={day.actual[s] || ""} 
-                    onChange={e => upd(x => { x.actual[s] = e.target.value; })}
-                    placeholder="What actually happened…"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none" 
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
