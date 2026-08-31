@@ -398,10 +398,21 @@ async function loadBilling(orgId){
 // org_seats_used() in SQL so the UI and the trigger agree.
 async function loadSeatUsage(orgId){
   const [m, i] = await Promise.all([
-    sb.from("memberships").select("id").eq("org_id", orgId),
-    sb.from("invites").select("id").eq("org_id", orgId).is("accepted_at", null),
+    sb.from("memberships").select("id, role, user_id, created_at").eq("org_id", orgId),
+    sb.from("invites").select("id, email, role, created_at").eq("org_id", orgId).is("accepted_at", null),
   ]);
-  return ((m.data||[]).length) + ((i.data||[]).length);
+  const members = m.data || [];
+  const invites = i.data || [];
+  const activeCount = members.length;
+  const pendingCount = invites.length;
+  const totalUsed = activeCount + pendingCount;
+  return {
+    totalUsed,
+    activeCount,
+    pendingCount,
+    members,
+    invites
+  };
 }
 
 // A trial whose end date has passed counts as lapsed, mirroring org_seat_limit()
@@ -10508,12 +10519,28 @@ function BillingSection({ orgCtx, userId }){
   }
   if (!state || used === null) return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-xs text-slate-500 font-medium">Loading subscription details…</div>;
 
-  const { sub, plans } = state;
-  const plan = sub ? plans.find(p => p.code === sub.plan_code) : null;
+  const usedData = typeof used === "object" && used !== null ? used : { totalUsed: used || 0, activeCount: used || 0, pendingCount: 0, members: [], invites: [] };
+  const usedCount = usedData.totalUsed;
+  const activeCount = usedData.activeCount;
+  const pendingCount = usedData.pendingCount;
+  const pendingInvites = usedData.invites || [];
   const limit = seatLimitOf(sub, plans);
-  const full = limit != null && used >= limit;
+  const full = limit != null && usedCount >= limit;
+  const availableSeats = limit != null ? Math.max(0, limit - usedCount) : null;
   const expiredTrial = trialExpired(sub);
   const lapsed = sub && (!["active","trialing"].includes(sub.status) || expiredTrial);
+
+  const handleRevokeInvite = async (inviteId, email) => {
+    if (!confirm(`Revoke invitation for ${email}? This will free up 1 seat immediately.`)) return;
+    setMsg("");
+    try {
+      await revokeInvite(inviteId);
+      setMsg(`✓ Revoked invitation for ${email}. 1 seat has been freed up!`);
+      await reloadBillingData();
+    } catch (e) {
+      setMsg(e.message || "Couldn't revoke invite.");
+    }
+  };
 
   const buyExtraSeats = async () => {
     setMsg(""); setBusy("extra");
@@ -10524,7 +10551,7 @@ function BillingSection({ orgCtx, userId }){
         body: { extra_seats: Number(extraCount), price_per_seat: 399 }
       });
       await setSubscription(membership.org_id, {
-        plan_code: sub ? sub.plan_code : "team",
+        plan_code: sub ? sub.plan_code : "starter",
         status: sub ? sub.status : "active",
         seats: newTotalSeats,
         until: sub ? sub.current_period_end : null,
@@ -10541,8 +10568,8 @@ function BillingSection({ orgCtx, userId }){
     setMsg(""); setBusy(targetPlan.code);
     try {
       // Check if downgrading seat limit below current used seats
-      if (targetPlan.seat_limit != null && used > targetPlan.seat_limit) {
-        throw new Error(`Cannot downgrade to ${targetPlan.name} (${targetPlan.seat_limit} seats) because your team currently has ${used} active members. Please remove extra members in Team settings first.`);
+      if (targetPlan.seat_limit != null && usedCount > targetPlan.seat_limit) {
+        throw new Error(`Cannot downgrade to ${targetPlan.name} (${targetPlan.seat_limit} seats) because your workspace currently uses ${usedCount} seats (${activeCount} active + ${pendingCount} pending invites). Please remove extra members or revoke invites first.`);
       }
 
       const isUpgrade = !plan || (targetPlan.seat_limit == null ? true : (limit != null && targetPlan.seat_limit > limit));
@@ -10559,7 +10586,7 @@ function BillingSection({ orgCtx, userId }){
       }
 
       // Perform instant self-service subscription plan change
-      const newSeatCapacity = targetPlan.seat_limit != null ? Math.max(targetPlan.seat_limit, used) : null;
+      const newSeatCapacity = targetPlan.seat_limit != null ? Math.max(targetPlan.seat_limit, usedCount) : null;
       await setSubscription(membership.org_id, {
         plan_code: targetPlan.code,
         status: "active",
@@ -10586,13 +10613,13 @@ function BillingSection({ orgCtx, userId }){
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
       {showInvoice && (
-        <InvoiceModal orgCtx={orgCtx} plan={plan} sub={sub} used={used} onClose={() => setShowInvoice(false)} />
+        <InvoiceModal orgCtx={orgCtx} plan={plan} sub={sub} used={usedCount} onClose={() => setShowInvoice(false)} />
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-5">
         <div>
           <div className="text-xs font-mono font-bold uppercase tracking-wider text-blue-600">Self-Service Billing</div>
-          <h3 className="text-2xl font-bold text-slate-950 mt-1">Plan & Seat Subscription</h3>
+          <h3 className="text-2xl font-bold text-slate-950 mt-1">Plan &amp; Seat Subscription</h3>
         </div>
         <div className="flex items-center gap-3">
           <button onClick={() => setShowInvoice(true)}
@@ -10612,31 +10639,141 @@ function BillingSection({ orgCtx, userId }){
       </div>
 
       {/* Current Active Plan Overview Card */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="text-xs text-slate-500 font-medium">Current Active Plan</div>
-          <div className="text-xl font-extrabold text-slate-950 mt-0.5">{plan ? plan.name : sub && sub.plan_code}</div>
-          <div className="text-xs text-slate-600 mt-1 font-mono">
-            {plan && plan.price_display ? plan.price_display : ""}
-            {sub && sub.current_period_end ? ` · Renews ${String(sub.current_period_end).slice(0,10)}` : ""}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-center shadow-xs">
-            <div className="text-xl font-extrabold text-slate-950">
-              {used}{limit != null ? ` / ${limit}` : ""}
+      <div className="bg-slate-50 border-2 border-slate-200 rounded-3xl p-5 sm:p-6 space-y-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-500">Current Subscription</div>
+            <div className="text-2xl font-black text-slate-950 mt-0.5">{plan ? plan.name : sub && sub.plan_code}</div>
+            <div className="text-xs text-slate-600 mt-1 font-semibold">
+              {plan && plan.price_display ? plan.price_display : ""}
+              {sub && sub.current_period_end ? ` · Renews ${String(sub.current_period_end).slice(0,10)}` : ""}
             </div>
-            <div className="text-[11px] font-medium text-slate-500">{limit != null ? "Seats Used" : "Unlimited Seats"}</div>
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-slate-200/80 px-3 py-1 text-xs font-bold text-slate-800">
+              🛡️ {limit != null ? `${limit} Total Seats Allocated` : "Unlimited Seats"}
+            </div>
           </div>
 
-          {isOwner && limit != null && (
-            <button onClick={() => setShowExtra(!showExtra)}
-              className="rounded-xl bg-amber-400 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-amber-300 transition shadow-sm">
-              {showExtra ? "Close Seat Counter" : "+ Adjust Seats"}
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            <div className="bg-white border-2 border-slate-200 rounded-2xl px-5 py-3 text-right shadow-xs min-w-[140px]">
+              <div className="text-2xl font-black text-slate-950">
+                {usedCount} <span className="text-sm font-bold text-slate-400">/ {limit != null ? limit : "∞"}</span>
+              </div>
+              <div className="text-[11px] font-bold text-slate-500 mt-0.5">
+                {availableSeats === 0 ? (
+                  <span className="text-rose-600">● 0 Seats Left (Full)</span>
+                ) : limit != null ? (
+                  <span className="text-emerald-700">● {availableSeats} Seat{availableSeats > 1 ? "s" : ""} Available</span>
+                ) : (
+                  <span className="text-emerald-700">● Unlimited Capacity</span>
+                )}
+              </div>
+            </div>
+
+            {isOwner && limit != null && (
+              <button 
+                onClick={() => setShowExtra(!showExtra)}
+                className="rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-4 py-3 text-xs font-black transition shadow-sm flex items-center gap-1.5"
+              >
+                <span>⚡</span>
+                <span>{showExtra ? "Close Adjuster" : "+ Adjust Seats"}</span>
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Visual Multi-Segment Seat Allocation Bar */}
+        {limit != null && (
+          <div className="space-y-2 pt-2 border-t border-slate-200/80">
+            <div className="flex items-center justify-between text-xs font-bold">
+              <span className="text-slate-700">Workspace Seat Allocation</span>
+              <span className="text-slate-500 font-mono">{Math.min(100, Math.round((usedCount / limit) * 100))}% In Use</span>
+            </div>
+
+            <div className="w-full h-3.5 rounded-full bg-slate-200/80 overflow-hidden flex shadow-inner p-0.5">
+              {/* Active Members Segment (Emerald) */}
+              {activeCount > 0 && (
+                <div 
+                  style={{ width: `${Math.min(100, (activeCount / limit) * 100)}%` }} 
+                  className="bg-emerald-500 h-full rounded-full transition-all"
+                  title={`${activeCount} Active Member(s)`}
+                />
+              )}
+              {/* Pending Invites Segment (Amber) */}
+              {pendingCount > 0 && (
+                <div 
+                  style={{ width: `${Math.min(100, (pendingCount / limit) * 100)}%` }} 
+                  className="bg-amber-400 h-full rounded-full transition-all ml-0.5"
+                  title={`${pendingCount} Pending Invite(s) reserving seats`}
+                />
+              )}
+            </div>
+
+            {/* Clear Legend Pills */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 p-2.5 flex items-center gap-2.5">
+                <span className="h-3 w-3 rounded-full bg-emerald-500 shrink-0"></span>
+                <div>
+                  <div className="text-xs font-black text-emerald-950">{activeCount} Active Member{activeCount === 1 ? "" : "s"}</div>
+                  <div className="text-[10px] text-emerald-800 font-medium">Joined &amp; using workspace</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 flex items-center gap-2.5">
+                <span className="h-3 w-3 rounded-full bg-amber-400 shrink-0"></span>
+                <div>
+                  <div className="text-xs font-black text-amber-950">{pendingCount} Pending Invite{pendingCount === 1 ? "" : "s"}</div>
+                  <div className="text-[10px] text-amber-800 font-medium">Reserved for invited emails</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white p-2.5 flex items-center gap-2.5">
+                <span className="h-3 w-3 rounded-full bg-slate-300 shrink-0"></span>
+                <div>
+                  <div className="text-xs font-black text-slate-950">{availableSeats} Seat{availableSeats === 1 ? "" : "s"} Left</div>
+                  <div className="text-[10px] text-slate-500 font-medium">Ready to invite team</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Detailed Seat Occupancy Breakdown & Quick Revoke */}
+        {pendingCount > 0 && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 space-y-2.5 text-xs">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <span className="font-extrabold text-amber-950 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <span>✉️</span>
+                <span>Pending Invites Reserving Your Seats ({pendingCount})</span>
+              </span>
+              <span className="text-[11px] text-amber-800 font-medium">
+                Pending invitations hold seats until accepted or revoked
+              </span>
+            </div>
+
+            <div className="divide-y divide-amber-200/60 bg-white rounded-xl border border-amber-200 overflow-hidden">
+              {pendingInvites.map(inv => (
+                <div key={inv.id} className="p-3 flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <span className="font-bold text-slate-900">{inv.email}</span>
+                    <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-200 uppercase">
+                      {inv.role}
+                    </span>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      Invited on {new Date(inv.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleRevokeInvite(inv.id, inv.email)}
+                    className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 px-3 py-1.5 text-xs font-bold transition shadow-2xs"
+                  >
+                    ✕ Revoke Invite to Free 1 Seat
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Self-Service Add/Remove Seats Control */}
