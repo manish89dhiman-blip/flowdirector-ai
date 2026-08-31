@@ -5736,6 +5736,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const [isAdmin, setIsAdmin] = useState(false);
   const [isCoach, setIsCoach] = useState(false);
   const notifiedRef = useRef(false);
+  const lastSavedJsonRef = useRef("");
 
   const [sub, setSub] = useState(null);
   const [subLoading, setSubLoading] = useState(true);
@@ -5798,7 +5799,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                 const toast = {
                   id: uid(),
                   title: `📋 Status Update: ${newRow.title}`,
-                  body: `Status is now ${TASK_STATUS_CONFIG[newRow.status]?.label || newRow.status}`,
+                  body: `Marked as ${TASK_STATUS_CONFIG[newRow.status]?.label || newRow.status} by ${newRow.assignee_name}`,
                   time: "Just now",
                   task: newRow,
                   created_at: new Date().toISOString()
@@ -5819,6 +5820,33 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       sb.removeChannel(channel);
     };
   }, [orgCtx?.org?.id, userId, session?.user?.email]);
+
+  // Multi-Device Real-Time Live Sync for Planner State (Instant updates across Phone, Laptop, Tablet)
+  useEffect(() => {
+    if (!userId || !sb) return;
+
+    const channel = sb
+      .channel(`user_planner_realtime_${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'planner_state', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const newRow = payload.new;
+          if (newRow && newRow.data) {
+            const incomingJson = JSON.stringify(newRow.data);
+            if (incomingJson !== lastSavedJsonRef.current) {
+              lastSavedJsonRef.current = incomingJson;
+              setData(newRow.data);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      sb.removeChannel(channel);
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!activeToast) return;
@@ -5868,6 +5896,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         });
       }
 
+      lastSavedJsonRef.current = JSON.stringify(d);
       setData(d);
       if (dirty) {
         saveState(userId, d).catch(() => {});
@@ -5907,9 +5936,16 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
   useEffect(() => {
     if (!data) return;
+    const currentJson = JSON.stringify(data);
+    if (currentJson === lastSavedJsonRef.current) return;
+
     setSaving(true);
     const t = setTimeout(async () => {
-      try { await saveState(userId, data); setSyncError(false); }
+      try { 
+        lastSavedJsonRef.current = currentJson;
+        await saveState(userId, data); 
+        setSyncError(false); 
+      }
       catch { setSyncError(true); }
       finally { setSaving(false); }
     }, 600);
@@ -11414,6 +11450,32 @@ function GoalsView({ orgCtx, meId }){
     setGoals(null); 
     refresh(); 
   }, [who, period, meId]);
+
+  // Real-Time Multi-Device Sync for Goals, KRAs, KPIs & Daily Logs
+  useEffect(() => {
+    const targetUserId = who || meId;
+    if (!targetUserId || !sb) return;
+
+    const channel = sb
+      .channel(`goals_realtime_${targetUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kpi_daily_logs', filter: `user_id=eq.${targetUserId}` }, () => {
+        refresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kpis', filter: `user_id=eq.${targetUserId}` }, () => {
+        refresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kras', filter: `user_id=eq.${targetUserId}` }, () => {
+        refresh();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kpi_values' }, () => {
+        refresh();
+      })
+      .subscribe();
+
+    return () => {
+      sb.removeChannel(channel);
+    };
+  }, [who, meId, period]);
 
   // Strict role and department filtering
   const visible = filterVisibleTeamMembers(members || [], meId, myRole, myDept);
