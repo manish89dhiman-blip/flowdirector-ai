@@ -1135,14 +1135,12 @@ async function deletePlan(code){
   if (error) throw error;
 }
 
-// The one call that actually grants or removes seats. `until` is the trial end
-// (or null); everything else is the plan the company lands on.
-async function setSubscription(orgId, { plan_code, status, seats, until }){
+async function setSubscription(orgId, { plan_code, status, seats, until, provider = "manual" }){
   const { error } = await sb.from("subscriptions").upsert({
     org_id: orgId, plan_code, status,
     seats: seats === "" || seats == null ? null : Number(seats),
     current_period_end: until || null,
-    provider: "razorpay",
+    provider: provider,
     updated_at: new Date().toISOString(),
   }, { onConflict: "org_id" });
   if (error) throw error;
@@ -1160,6 +1158,101 @@ async function loadPlatformSetting(key, fallback = "") {
 async function savePlatformSetting(key, value) {
   const { error } = await sb.from("platform_settings").upsert({ key, value, updated_at: new Date().toISOString() });
   if (error) throw error;
+}
+
+/* ------------------------------------------------------------------ */
+/*  VIP Promo Codes & 30-Day Free Trial Management                    */
+/* ------------------------------------------------------------------ */
+async function loadVipPromoCodes() {
+  try {
+    const raw = await loadPlatformSetting("vip_promo_codes", "[]");
+    const list = typeof raw === "string" ? JSON.parse(raw || "[]") : (raw || []);
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    console.warn("Failed to load VIP promo codes:", err);
+    return [];
+  }
+}
+
+async function saveVipPromoCodes(codes) {
+  const payload = JSON.stringify(Array.isArray(codes) ? codes : []);
+  await savePlatformSetting("vip_promo_codes", payload);
+}
+
+async function validateVipCode(codeStr) {
+  if (!codeStr || !codeStr.trim()) return { valid: false, error: "Please provide a VIP promo code." };
+  const clean = codeStr.trim().toUpperCase();
+  const codes = await loadVipPromoCodes();
+  const found = codes.find(c => (c.code || "").toUpperCase() === clean);
+  if (!found) {
+    // If no promo code is stored yet and user provides "VIP30", support VIP30 out-of-the-box
+    if (clean === "VIP30") {
+      const defaultVip = {
+        id: "vip_default",
+        code: "VIP30",
+        trial_days: 30,
+        plan_code: "starter",
+        seats: 3,
+        max_uses: 100,
+        uses_count: 0,
+        is_active: true,
+        notes: "Default 30-Day VIP Free Trial",
+        created_at: new Date().toISOString()
+      };
+      return { valid: true, codeObj: defaultVip };
+    }
+    return { valid: false, error: "Invalid VIP code. Please verify the code with your program coordinator." };
+  }
+  if (found.is_active === false) {
+    return { valid: false, error: "This VIP promo code has been paused or deactivated." };
+  }
+  if (found.expires_at && new Date(found.expires_at) < new Date()) {
+    return { valid: false, error: "This VIP promo code has expired." };
+  }
+  if (found.max_uses != null && found.max_uses > 0 && (found.uses_count || 0) >= found.max_uses) {
+    return { valid: false, error: "This VIP promo code has reached its maximum redemption limit." };
+  }
+  return { valid: true, codeObj: found };
+}
+
+async function redeemVipCodeForOrg(codeStr, orgId) {
+  const check = await validateVipCode(codeStr);
+  if (!check.valid) throw new Error(check.error);
+  const codeObj = check.codeObj;
+  
+  const trialDays = Number(codeObj.trial_days) || 30;
+  const until = new Date(Date.now() + trialDays * 86400000).toISOString();
+  const planCode = codeObj.plan_code || "starter";
+  const seats = codeObj.seats != null ? codeObj.seats : (planCode === "solo" ? 1 : 3);
+  
+  await setSubscription(orgId, {
+    plan_code: planCode,
+    status: "trialing",
+    seats,
+    until,
+  });
+
+  // Increment usage count
+  try {
+    const codes = await loadVipPromoCodes();
+    const idx = codes.findIndex(c => (c.code || "").toUpperCase() === (codeObj.code || "").toUpperCase());
+    if (idx !== -1) {
+      codes[idx].uses_count = (codes[idx].uses_count || 0) + 1;
+      await saveVipPromoCodes(codes);
+    } else if (codeObj.code === "VIP30") {
+      const newCodes = [{ ...codeObj, uses_count: 1 }, ...codes];
+      await saveVipPromoCodes(newCodes);
+    }
+  } catch (err) {
+    console.warn("Failed to increment VIP code uses_count:", err);
+  }
+
+  return {
+    trialDays,
+    until,
+    planCode,
+    seats
+  };
 }
 
 async function updateOrgTraining(orgId, updates) {
@@ -2724,7 +2817,11 @@ function Root(){
     const urlParams = new URLSearchParams(window.location.search);
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const hasInviteParam = !!(urlParams.get("email") || urlParams.get("invite") || hashParams.get("email") || hashParams.get("invite"));
+    const hasVipCode = !!(urlParams.get("code") || urlParams.get("promo") || hashParams.get("code") || hashParams.get("promo"));
 
+    if (path === "/vip" || (hasVipCode && (path === "/signup" || path === "/trial"))) {
+      return <VipSignupScreen onBack={() => navigate("/")} />;
+    }
     if (path === "/signup" || path === "/trial" || hasInviteParam) {
       return <AuthScreen initialMode="up" initialPlan={selectedPlan} initialCycle={selectedCycle} onBack={() => navigate("/")} />;
     }
@@ -2741,7 +2838,7 @@ function Root(){
   }
 
   // Signed in — if still on auth routes, navigate to main app
-  if (path === "/login" || path === "/signin" || path === "/signup" || path === "/trial") {
+  if (path === "/login" || path === "/signin" || path === "/signup" || path === "/trial" || path === "/vip") {
     navigate("/");
   }
 
@@ -4296,6 +4393,281 @@ function ResetPasswordScreen({ onDone }){
 }
 
 /* ================================================================== */
+/*  VIP Onboarding Screen (/vip or /vip?code=VIP30)                   */
+/*  Enables 30-Day (or custom) zero-friction trial for VIP groups     */
+/*  with ZERO credit card/mandate required.                           */
+/* ================================================================== */
+function VipSignupScreen({ onBack }) {
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialCode = (urlParams.get("code") || urlParams.get("promo") || "").trim().toUpperCase();
+
+  const [code, setCode] = useState(initialCode || "VIP30");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState(null); // { valid: bool, codeObj, error }
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const checkCode = async (cStr) => {
+    if (!cStr || !cStr.trim()) {
+      setValidationResult(null);
+      return;
+    }
+    setValidating(true);
+    try {
+      const res = await validateVipCode(cStr);
+      setValidationResult(res);
+    } catch {
+      setValidationResult({ valid: false, error: "Could not verify code right now." });
+    }
+    setValidating(false);
+  };
+
+  useEffect(() => {
+    if (initialCode) {
+      checkCode(initialCode);
+    } else {
+      checkCode("VIP30");
+    }
+  }, []);
+
+  const handleActivate = async (e) => {
+    if (e) e.preventDefault();
+    setMsg("");
+
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanPw = (pw || "").trim();
+    const cleanWn = (workspaceName || "").trim();
+    const cleanCode = (code || "").trim().toUpperCase();
+
+    if (!cleanEmail || !cleanPw) {
+      setMsg("Please enter both email and password.");
+      return;
+    }
+    if (cleanPw.length < 6) {
+      setMsg("Password must be at least 6 characters.");
+      return;
+    }
+    if (!cleanWn) {
+      setMsg("Please enter your Company / Workspace Name.");
+      return;
+    }
+
+    setBusy(true);
+    setMsg("Verifying VIP authorization...");
+
+    try {
+      // 1. Validate the code
+      const check = await validateVipCode(cleanCode);
+      if (!check.valid) {
+        throw new Error(check.error || "Invalid VIP Promo Code.");
+      }
+
+      setMsg("Creating your account & workspace...");
+
+      // 2. Sign up user (or sign in if already registered)
+      writeSolo(false);
+      let { data, error } = await sb.auth.signUp({ email: cleanEmail, password: cleanPw });
+
+      if ((error && /already registered|already exists/i.test(error.message)) ||
+          (data && data.user && data.user.identities && data.user.identities.length === 0) ||
+          (data && !data.session)) {
+        const signInRes = await sb.auth.signInWithPassword({ email: cleanEmail, password: cleanPw });
+        if (signInRes.data && signInRes.data.session) {
+          data = signInRes.data;
+          error = null;
+        } else if (error) {
+          throw error;
+        }
+      } else if (error) {
+        throw error;
+      }
+
+      if (!data || !data.session) {
+        setMsg("Account created! Please check your email to confirm registration, then log in to activate your VIP trial.");
+        setBusy(false);
+        return;
+      }
+
+      const userId = data.session.user.id;
+
+      // 3. Check or create Company Workspace
+      let orgId = null;
+      const { data: mem } = await sb.from("memberships").select("org_id").eq("user_id", userId).maybeSingle();
+      if (mem && mem.org_id) {
+        orgId = mem.org_id;
+      } else {
+        const { org } = await createOrg(cleanWn, userId);
+        orgId = org.id;
+      }
+
+      // 4. Redeem VIP code to grant 30-day (or custom duration) trial
+      setMsg("🎉 Authorizing 30-Day VIP Access...");
+      const grant = await redeemVipCodeForOrg(cleanCode, orgId);
+
+      // 5. Send welcome email
+      sendTransactionalEmail("welcome", cleanEmail, {
+        company_name: cleanWn,
+        plan_name: `VIP ${grant.trialDays}-Day Free Trial`,
+        full_name: cleanWn
+      });
+
+      setMsg(`🎉 VIP Access Activated! Loading your workspace...`);
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 700);
+
+    } catch (err) {
+      setMsg(err.message || "Could not activate VIP access. Please check your credentials.");
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 px-4 py-12 text-slate-100">
+      <div className="w-full max-w-md rounded-3xl border border-slate-700/80 bg-slate-900/90 backdrop-blur-xl p-6 sm:p-8 text-white shadow-2xl space-y-6">
+        
+        {/* Header with VIP Badge */}
+        <div className="text-center space-y-2 border-b border-slate-800 pb-5">
+          <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-amber-400/10 px-3.5 py-1 text-xs font-black tracking-wider text-amber-300 shadow-xs mb-1">
+            <span>👑 EXCLUSIVE VIP ACCESS</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+            Activate 30-Day Free Trial
+          </h1>
+          <p className="text-xs text-slate-400 font-medium">
+            Full executive access · Zero payment / card required
+          </p>
+        </div>
+
+        {/* Promo Code Input & Verification Banner */}
+        <div className="space-y-2">
+          <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+            <span>VIP Invitation Code</span>
+            {validating && <span className="text-amber-400 font-normal">Validating...</span>}
+          </label>
+
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={code}
+              onChange={e => {
+                const val = e.target.value.toUpperCase();
+                setCode(val);
+                checkCode(val);
+              }}
+              placeholder="e.g. VIP30"
+              className="flex-1 rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs font-black tracking-widest text-white uppercase outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
+            />
+            <button
+              type="button"
+              onClick={() => checkCode(code)}
+              className="rounded-2xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-bold text-slate-300 hover:bg-slate-700 transition"
+            >
+              Verify
+            </button>
+          </div>
+
+          {/* Validation Feedback */}
+          {validationResult && validationResult.valid && (
+            <div className="rounded-2xl border border-emerald-500/40 bg-emerald-950/50 p-3 text-xs text-emerald-300 flex items-start gap-2 shadow-2xs">
+              <span className="text-base">✓</span>
+              <div>
+                <div className="font-black text-emerald-200">
+                  {validationResult.codeObj.trial_days || 30}-Day Free Trial Unlocked
+                </div>
+                <div className="text-[11px] text-emerald-400/90">
+                  Plan: <b>{validationResult.codeObj.plan_code === "starter" ? "Business Starter (3 Seats)" : (validationResult.codeObj.plan_code || "Solo Executive")}</b> · No mandate required.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {validationResult && !validationResult.valid && (
+            <div className="rounded-2xl border border-rose-500/40 bg-rose-950/50 p-3 text-xs text-rose-300 flex items-start gap-2">
+              <span>✕</span>
+              <span>{validationResult.error}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Signup Form */}
+        <form onSubmit={handleActivate} className="space-y-3.5 pt-1">
+          <div>
+            <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1">Company / Workspace Name</label>
+            <input
+              type="text"
+              value={workspaceName}
+              onChange={e => setWorkspaceName(e.target.value)}
+              placeholder="e.g. Acme Corp / Apex Studio"
+              required
+              className="w-full rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs font-bold text-white outline-none focus:border-amber-400 focus:bg-slate-800"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1">Work Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@company.com"
+              required
+              className="w-full rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs font-bold text-white outline-none focus:border-amber-400 focus:bg-slate-800"
+            />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-black uppercase tracking-wider text-slate-400 block mb-1">Password</label>
+            <input
+              type="password"
+              value={pw}
+              onChange={e => setPw(e.target.value)}
+              placeholder="Minimum 6 characters"
+              required
+              className="w-full rounded-2xl border border-slate-700 bg-slate-800/90 px-3.5 py-2.5 text-xs font-bold text-white outline-none focus:border-amber-400 focus:bg-slate-800"
+            />
+          </div>
+
+          {msg && (
+            <div className={`p-3 rounded-2xl text-xs font-bold ${
+              msg.includes("✓") || msg.includes("🎉") 
+                ? "bg-emerald-950/80 border border-emerald-500/50 text-emerald-200" 
+                : "bg-amber-950/80 border border-amber-500/50 text-amber-200"
+            }`}>
+              {msg}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={busy || (validationResult && !validationResult.valid)}
+            className="w-full rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 py-3.5 text-xs font-black text-slate-950 uppercase tracking-wider shadow-lg transition disabled:opacity-50"
+          >
+            {busy ? "Activating VIP Workspace..." : "🚀 Activate 30-Day VIP Workspace →"}
+          </button>
+        </form>
+
+        <div className="text-center pt-2 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <button 
+            type="button" 
+            onClick={onBack ? onBack : () => { window.location.href = "/"; }} 
+            className="hover:text-white transition"
+          >
+            ← Back to Home
+          </button>
+          <a href="/login" className="text-amber-400 hover:underline">
+            Already have an account? Sign in →
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================== */
 /*  Onboarding — create a company, accept an invite, or stay solo      */
 /* ================================================================== */
 function OnboardingScreen({ session, pendingInvites = [], onJoined, onSolo }){
@@ -4304,8 +4676,30 @@ function OnboardingScreen({ session, pendingInvites = [], onJoined, onSolo }){
   const [plansList, setPlansList] = useState([]);
   const [planCode, setPlanCode] = useState("solo");
   const [showCreateOrg, setShowCreateOrg] = useState(pendingInvites.length === 0);
+  const [showVipInput, setShowVipInput] = useState(false);
+  const [vipCodeInput, setVipCodeInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+
+  const handleRedeemVipOnboarding = async () => {
+    const n = name.trim();
+    if (!n) { setMsg("Please enter your company or workspace name first."); return; }
+    if (!vipCodeInput.trim()) { setMsg("Please enter your VIP Promo Code."); return; }
+    
+    setBusy(true); setMsg("Validating VIP code...");
+    try {
+      const { org } = await createOrg(n, session.user.id);
+      writeSolo(false);
+      const grant = await redeemVipCodeForOrg(vipCodeInput.trim(), org.id);
+      setMsg(`🎉 VIP Access Activated (${grant.trialDays} Days Free)! Loading workspace...`);
+      setTimeout(() => {
+        window.location.reload();
+      }, 700);
+    } catch (e) {
+      setMsg(e.message || "Could not redeem VIP code.");
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     sb.from("plans").select("*").order("sort_order", { ascending: true })
@@ -4480,6 +4874,46 @@ function OnboardingScreen({ session, pendingInvites = [], onJoined, onSolo }){
               className="w-full py-3.5 rounded-xl bg-slate-950 text-white font-bold text-xs hover:bg-slate-800 transition shadow-md disabled:opacity-60 flex items-center justify-center gap-2">
               {busy ? "Setting Up Workspace..." : `Create Workspace & Authorize ${billingCycle === "yearly" ? "Annual" : "Monthly"} Mandate →`}
             </button>
+
+            {/* VIP Promo Code Option */}
+            <div className="pt-2 border-t border-slate-100 text-center">
+              {!showVipInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowVipInput(true)}
+                  className="text-xs font-bold text-amber-700 hover:text-amber-900 transition underline flex items-center justify-center gap-1 mx-auto"
+                >
+                  <span>👑 Have a VIP Promo Code? Activate 30-Day Free Trial</span>
+                </button>
+              ) : (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-3.5 text-left space-y-2.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-amber-950 uppercase tracking-wide">👑 VIP Promo Code Activation</span>
+                    <button type="button" onClick={() => setShowVipInput(false)} className="text-xs text-slate-400 hover:text-slate-600">✕ Close</button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={vipCodeInput}
+                      onChange={e => setVipCodeInput(e.target.value.toUpperCase())}
+                      placeholder="e.g. VIP30"
+                      className="flex-1 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-black uppercase tracking-widest text-slate-950 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleRedeemVipOnboarding}
+                      disabled={busy}
+                      className="rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 px-3.5 py-2 text-xs font-black uppercase tracking-wider transition shadow-2xs disabled:opacity-50"
+                    >
+                      {busy ? "…" : "Activate VIP →"}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-amber-800 font-medium">
+                    Enter your VIP invitation code to unlock full access for 30 days without payment mandate.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -14504,6 +14938,7 @@ function AdminView({ meId }){
           <TabBtn id="overview">📊 Overview & Revenue</TabBtn>
           <TabBtn id="companies">🏢 Companies ({d.companies.length})</TabBtn>
           <TabBtn id="users">👥 Users ({(d.profiles||[]).length})</TabBtn>
+          <TabBtn id="promo_codes">🎁 VIP Promo Codes</TabBtn>
           <TabBtn id="training">📹 Training & Coaches</TabBtn>
           <TabBtn id="requests">📩 Plan Requests{pending.length ? ` (${pending.length})` : ""}</TabBtn>
           <TabBtn id="plans">💳 Pricing Plans ({d.plans.length})</TabBtn>
@@ -14684,6 +15119,8 @@ function AdminView({ meId }){
           {d.companies.length === 0 && <p className="text-sm text-slate-400">No companies yet.</p>}
         </div>
       )}
+
+      {tab === "promo_codes" && <AdminPromoCodes plans={d.plans} onNotice={(t)=>{say(t); refresh();}} />}
 
       {tab === "training" && <AdminTrainingOperations onNotice={(t)=>{say(t); refresh();}} />}
 
@@ -15218,6 +15655,26 @@ function AdminCompanyRow({ c, plans, onSaved }){
     setStatus("trialing"); setUntil(dateKey(d));
   };
 
+  const handleQuickGrant30d = async () => {
+    if (!confirm(`Grant 30-Day Free Trial to "${c.name}"?`)) return;
+    setBusy(true);
+    try {
+      const d = new Date(); d.setDate(d.getDate() + 30);
+      const untilStr = dateKey(d);
+      await setSubscription(c.id, {
+        plan_code: planCode || "starter",
+        status: "trialing",
+        seats: seats === "" || seats == null ? 3 : Number(seats),
+        until: untilStr,
+        provider: "manual"
+      });
+      onSaved(`✓ Granted 30-Day Free Trial to "${c.name}" (until ${untilStr})!`);
+    } catch (e) {
+      onSaved("Couldn't grant trial: " + (e.message || ""));
+    }
+    setBusy(false);
+  };
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -15254,6 +15711,11 @@ function AdminCompanyRow({ c, plans, onSaved }){
         </div>
 
         <div className="flex items-center gap-2">
+          <button onClick={handleQuickGrant30d} disabled={busy}
+            title="Instantly grant/extend 30-day trial without payment mandate"
+            className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-100 transition shadow-2xs">
+            🎁 Grant +30d Trial
+          </button>
           <button onClick={()=>setOpen(!open)}
             className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 transition shadow-2xs">
             {open ? "Close" : "✏️ Edit Plan / Status"}
@@ -15328,7 +15790,7 @@ function AdminPlans({ plans, onSaved }){
       await savePlan({
         code: draft.code.trim().toLowerCase(),
         name: draft.name.trim(),
-        seat_limit: draft.seat_limit === "" ? null : Number(draft.seat_limit),
+seat_limit: draft.seat_limit === "" ? null : Number(draft.seat_limit),
         price_display: draft.price_display || null,
         price_display_yearly: draft.price_display_yearly || null,
         razorpay_plan_id: draft.razorpay_plan_id || null,
@@ -15444,6 +15906,397 @@ function AdminPlans({ plans, onSaved }){
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  Admin VIP Promo Codes & 30-Day Free Trial Manager                 */
+/* ================================================================== */
+function AdminPromoCodes({ plans = [], onNotice }) {
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState(null); // code being created/edited
+  const [busy, setBusy] = useState(false);
+  const [copiedCode, setCopiedCode] = useState("");
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const list = await loadVipPromoCodes();
+      if (list.length === 0) {
+        const defaultCodes = [
+          {
+            id: "vip_default",
+            code: "VIP30",
+            trial_days: 30,
+            plan_code: "starter",
+            seats: 3,
+            max_uses: 100,
+            uses_count: 0,
+            is_active: true,
+            notes: "Exclusive 30-Day Free Trial for VIP & Beta Groups",
+            created_at: new Date().toISOString()
+          }
+        ];
+        await saveVipPromoCodes(defaultCodes);
+        setCodes(defaultCodes);
+      } else {
+        setCodes(list);
+      }
+    } catch (e) {
+      if (onNotice) onNotice("Failed to load promo codes: " + (e.message || ""));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const handleSave = async () => {
+    if (!draft.code || !draft.code.trim()) {
+      return alert("Please provide a promo code name (e.g. VIP30).");
+    }
+    const cleanCode = draft.code.trim().toUpperCase();
+    const trialDays = Number(draft.trial_days) || 30;
+    const planCode = draft.plan_code || "starter";
+    const selectedPlan = plans.find(p => p.code === planCode);
+    const seats = draft.seats != null && draft.seats !== "" ? Number(draft.seats) : (selectedPlan?.seat_limit || (planCode === "solo" ? 1 : 3));
+    const maxUses = draft.max_uses != null && draft.max_uses !== "" ? Number(draft.max_uses) : null;
+
+    setBusy(true);
+    try {
+      const current = await loadVipPromoCodes();
+      const existingIdx = current.findIndex(c => (c.code || "").toUpperCase() === cleanCode && c.id !== draft.id);
+      if (existingIdx !== -1) {
+        throw new Error(`Promo code "${cleanCode}" already exists. Please choose a different code.`);
+      }
+
+      let updated;
+      if (draft.id) {
+        updated = current.map(c => c.id === draft.id ? {
+          ...c,
+          code: cleanCode,
+          trial_days: trialDays,
+          plan_code: planCode,
+          seats,
+          max_uses: maxUses,
+          notes: (draft.notes || "").trim(),
+          is_active: draft.is_active ?? true,
+          updated_at: new Date().toISOString()
+        } : c);
+      } else {
+        const newCode = {
+          id: "vip_" + Date.now(),
+          code: cleanCode,
+          trial_days: trialDays,
+          plan_code: planCode,
+          seats,
+          max_uses: maxUses,
+          uses_count: 0,
+          notes: (draft.notes || "").trim(),
+          is_active: true,
+          created_at: new Date().toISOString()
+        };
+        updated = [newCode, ...current];
+      }
+
+      await saveVipPromoCodes(updated);
+      if (onNotice) onNotice(`✓ Saved VIP Promo Code "${cleanCode}" (${trialDays} days)!`);
+      setDraft(null);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Couldn't save promo code: " + (e.message || ""));
+      alert(e.message || "Couldn't save promo code.");
+    }
+    setBusy(false);
+  };
+
+  const handleToggleActive = async (c) => {
+    try {
+      const current = await loadVipPromoCodes();
+      const updated = current.map(x => x.id === c.id ? { ...x, is_active: !x.is_active } : x);
+      await saveVipPromoCodes(updated);
+      if (onNotice) onNotice(`Code ${c.code} is now ${!c.is_active ? "Active" : "Paused"}.`);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Failed to update status: " + e.message);
+    }
+  };
+
+  const handleDelete = async (c) => {
+    if (!confirm(`Delete VIP Promo Code "${c.code}"? Existing redeemed workspaces will not be affected.`)) return;
+    try {
+      const current = await loadVipPromoCodes();
+      const updated = current.filter(x => x.id !== c.id);
+      await saveVipPromoCodes(updated);
+      if (onNotice) onNotice(`Deleted VIP Promo Code "${c.code}".`);
+      refresh();
+    } catch (e) {
+      if (onNotice) onNotice("Couldn't delete promo code: " + e.message);
+    }
+  };
+
+  const copyLink = (c) => {
+    const origin = window.location.origin;
+    const url = `${origin}/vip?code=${encodeURIComponent(c.code)}`;
+    navigator.clipboard.writeText(url);
+    setCopiedCode(c.code);
+    if (onNotice) onNotice(`✓ Copied VIP Link: ${url}`);
+    setTimeout(() => setCopiedCode(""), 3000);
+  };
+
+  if (loading) return <Ghost>Loading VIP Promo Codes…</Ghost>;
+
+  return (
+    <div className="space-y-6">
+      {/* Header with Create Code button */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div>
+          <h3 className="font-extrabold text-base text-slate-950 flex items-center gap-2">
+            <span>🎁</span>
+            <span>VIP Promo Codes &amp; 30-Day Free Trials</span>
+          </h3>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Create custom invite codes for VIP beta cohorts with zero credit card or mandate required.
+          </p>
+        </div>
+
+        <button
+          onClick={() => setDraft({
+            code: "",
+            trial_days: 30,
+            plan_code: "starter",
+            seats: 3,
+            max_uses: "",
+            notes: "",
+            is_active: true
+          })}
+          className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+        >
+          <span>＋</span>
+          <span>Create VIP Promo Code</span>
+        </button>
+      </div>
+
+      {/* Draft Creator / Editor Modal */}
+      {draft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl text-slate-900 space-y-4 animate-scale-in">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-extrabold text-slate-950">
+                  {draft.id ? `Edit VIP Code: ${draft.code}` : "Create New VIP Promo Code"}
+                </h3>
+                <p className="text-xs text-slate-400">Configure trial duration, seats, and usage quotas</p>
+              </div>
+              <button onClick={() => setDraft(null)} className="text-slate-400 hover:text-slate-600 font-bold text-lg">✕</button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                  Promo Code Name
+                </label>
+                <input
+                  type="text"
+                  value={draft.code}
+                  onChange={e => setDraft({ ...draft, code: e.target.value.toUpperCase() })}
+                  placeholder="e.g. VIP30, BETA60, FOUNDER30"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black tracking-widest uppercase outline-none focus:border-amber-500 focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                    Free Trial Duration (Days)
+                  </label>
+                  <select
+                    value={draft.trial_days}
+                    onChange={e => setDraft({ ...draft, trial_days: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-500"
+                  >
+                    <option value={7}>7 Days</option>
+                    <option value={14}>14 Days</option>
+                    <option value={30}>30 Days (Recommended)</option>
+                    <option value={45}>45 Days</option>
+                    <option value={60}>60 Days (2 Months)</option>
+                    <option value={90}>90 Days (Quarterly Beta)</option>
+                    <option value={180}>180 Days (Half Year)</option>
+                    <option value={365}>365 Days (1 Year)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                    Grant Plan Tier
+                  </label>
+                  <select
+                    value={draft.plan_code}
+                    onChange={e => {
+                      const p = e.target.value;
+                      setDraft({ ...draft, plan_code: p, seats: p === "solo" ? 1 : 3 });
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-500"
+                  >
+                    <option value="starter">Business Starter (3 Seats)</option>
+                    <option value="solo">Solo Executive (1 Seat)</option>
+                    {plans.filter(p => !["starter", "solo", "free"].includes(p.code)).map(p => (
+                      <option key={p.code} value={p.code}>{p.name} ({p.seat_limit || "unlimited"} seats)</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                    Seat Limit <span className="text-slate-400 font-normal">(Override)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={draft.seats || ""}
+                    onChange={e => setDraft({ ...draft, seats: e.target.value ? Number(e.target.value) : "" })}
+                    placeholder="3"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                    Max Redemptions <span className="text-slate-400 font-normal">(Blank = Unlimited)</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={draft.max_uses || ""}
+                    onChange={e => setDraft({ ...draft, max_uses: e.target.value ? Number(e.target.value) : "" })}
+                    placeholder="Unlimited"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-600 block mb-1">
+                  Notes / Target Cohort
+                </label>
+                <input
+                  type="text"
+                  value={draft.notes || ""}
+                  onChange={e => setDraft({ ...draft, notes: e.target.value })}
+                  placeholder="e.g. Mastermind Group, Beta testing partner"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-800 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDraft(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={busy}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 px-4 py-2 text-xs font-bold text-white transition disabled:opacity-50 shadow-xs"
+              >
+                {busy ? "Saving..." : "Save & Generate VIP Link →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Promo Codes List */}
+      <div className="space-y-3">
+        {codes.length === 0 && (
+          <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-xs text-slate-400">
+            No VIP promo codes configured. Click "Create VIP Promo Code" above to generate your first link.
+          </div>
+        )}
+
+        {codes.map(c => {
+          const shareUrl = `${window.location.origin}/vip?code=${encodeURIComponent(c.code)}`;
+          const isCopied = copiedCode === c.code;
+
+          return (
+            <div key={c.id || c.code} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5">
+                    <span className="font-mono text-base font-black text-slate-950 bg-slate-100 border border-slate-300 px-2.5 py-0.5 rounded-lg">
+                      {c.code}
+                    </span>
+                    <span className="rounded-full bg-amber-100 border border-amber-300 px-2.5 py-0.5 text-xs font-extrabold text-amber-950 shadow-2xs">
+                      {c.trial_days || 30}-Day Free Trial
+                    </span>
+                    <span className="rounded-full bg-blue-100 border border-blue-200 px-2.5 py-0.5 text-xs font-bold text-blue-900">
+                      {c.plan_code === "starter" ? "Business Starter" : (c.plan_code || "Solo")} ({c.seats || 3} Seats)
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                      c.is_active !== false ? "bg-emerald-100 text-emerald-900 border border-emerald-300" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {c.is_active !== false ? "● Active" : "Paused"}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-500 flex flex-wrap items-center gap-3 pt-0.5">
+                    <span><b>Redemptions:</b> {c.uses_count || 0} {c.max_uses ? `/ ${c.max_uses} max` : "(unlimited)"}</span>
+                    {c.notes && <span>· 📝 {c.notes}</span>}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => copyLink(c)}
+                    className={`rounded-xl px-3.5 py-2 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs border ${
+                      isCopied 
+                        ? "bg-emerald-600 text-white border-emerald-600" 
+                        : "bg-slate-900 text-white border-slate-900 hover:bg-slate-800"
+                    }`}
+                    title="Copy shareable link to send to VIPs"
+                  >
+                    <span>{isCopied ? "✓ Copied!" : "📋 Copy VIP Link"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => setDraft({ ...c })}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    ✏️ Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleToggleActive(c)}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    {c.is_active !== false ? "Pause" : "Resume"}
+                  </button>
+
+                  <button
+                    onClick={() => handleDelete(c)}
+                    className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50 transition"
+                  >
+                    🗑
+                  </button>
+                </div>
+              </div>
+
+              {/* Direct Link Preview Box */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-1.5 text-xs text-slate-500 font-mono overflow-x-auto">
+                <span className="text-slate-400 font-sans font-bold text-[10px] uppercase">Link:</span>
+                <span className="truncate select-all text-slate-700">{shareUrl}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
