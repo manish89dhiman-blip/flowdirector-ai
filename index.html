@@ -86,16 +86,19 @@ const DEFAULT_TASK_TYPE_LABELS = {
   "DELETE": "✕ Drop / Delete"
 };
 
-function getCompanyDepartments(data) {
+function getCompanyDepartments(data, orgCtx) {
   if (Array.isArray(data?.departments) && data.departments.length > 0) {
     return data.departments;
+  }
+  if (Array.isArray(orgCtx?.org?.departments) && orgCtx.org.departments.length > 0) {
+    return orgCtx.org.departments;
   }
   return DEPARTMENTS;
 }
 
-function getAvailableCategories(data) {
-  const depts = getCompanyDepartments(data);
-  const customCats = Array.isArray(data?.categories) ? data.categories : DEFAULT_CATEGORIES;
+function getAvailableCategories(data, orgCtx) {
+  const depts = getCompanyDepartments(data, orgCtx);
+  const customCats = Array.isArray(data?.categories) && data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES;
   return Array.from(new Set([...depts, ...customCats]));
 }
 
@@ -6934,9 +6937,9 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         {tab==="ideas" && <IdeasAndReferenceView data={data} patch={patch} />}
         {tab==="maybe" && <MaybeView data={data} patch={patch} />}
         {tab==="reference" && <ReferenceView data={data} patch={patch} />}
-        {tab==="goals" && <GoalsView orgCtx={orgCtx} meId={userId} />}
-        {tab==="people" && <PeopleView orgCtx={orgCtx} meId={userId} />}
-        {tab==="team" && <TeamView orgCtx={orgCtx} meId={userId} />}
+        {tab==="goals" && <GoalsView orgCtx={orgCtx} meId={userId} data={data} />}
+        {tab==="people" && <PeopleView orgCtx={orgCtx} meId={userId} data={data} />}
+        {tab==="team" && <TeamView orgCtx={orgCtx} meId={userId} data={data} />}
         {tab==="manual" && <KnowledgeBaseManualView onOpenTraining={() => setShowTrainingModal(true)} />}
         {tab==="settings" && <SettingsView data={data} patch={patch} setData={setData} userId={userId}
                                orgCtx={orgCtx} orgError={orgError}
@@ -7580,6 +7583,8 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
     }
   }, [orgCtx?.org?.id]);
 
+  const depts = getCompanyDepartments(data, orgCtx);
+
   // Strict role and department isolation
   const visibleTeamMembers = filterVisibleTeamMembers(teamMembers, meId, myRole, orgCtx?.membership?.department);
   const filteredTeamMembers = deptFilter === "ALL" 
@@ -7807,7 +7812,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
           >
             All Departments
           </button>
-          {DEPARTMENTS.map(d => (
+          {depts.map(d => (
             <button
               key={d}
               onClick={() => setDeptFilter(d)}
@@ -12226,7 +12231,7 @@ function MaybeView({ data, patch }){
       <div className="mb-4 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row">
         <input value={item} onChange={e=>setItem(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Second helipad? Europe trip? New aircraft?…"
           className="flex-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm outline-none focus:border-amber-400" />
-        <select value={cat} onChange={e=>setCat(e.target.value)} className="rounded-md border border-slate-200 px-2 py-2 text-sm">{(data.categories||DEFAULT_CATEGORIES).map(c=><option key={c}>{c}</option>)}</select>
+        <select value={cat} onChange={e=>setCat(e.target.value)} className="rounded-md border border-slate-200 px-2 py-2 text-sm">{getAvailableCategories(data).map(c=><option key={c}>{c}</option>)}</select>
         <button onClick={add} className="flex items-center justify-center gap-1 rounded-md bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-700"><Ic n="plus"/> Park it</button>
       </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -12240,7 +12245,7 @@ function MaybeView({ data, patch }){
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="p-2 mono text-xs text-slate-400">{r.added}</td>
                 <td className="p-2"><input value={r.item} onChange={e=>set(r.id,"item",e.target.value)} className="w-full min-w-[10rem] rounded border border-slate-200 px-1 py-0.5 text-sm text-slate-700 outline-none focus:border-amber-400" /></td>
-                <td className="p-2"><select value={r.category} onChange={e=>set(r.id,"category",e.target.value)} className="rounded border border-slate-200 bg-white px-1 py-0.5 text-xs text-slate-600 outline-none">{(data.categories||DEFAULT_CATEGORIES).map(c=><option key={c}>{c}</option>)}</select></td>
+                <td className="p-2"><select value={r.category} onChange={e=>set(r.id,"category",e.target.value)} className="rounded border border-slate-200 bg-white px-1 py-0.5 text-xs text-slate-600 outline-none">{getAvailableCategories(data).map(c=><option key={c}>{c}</option>)}</select></td>
                 <td className="p-2"><input type="date" value={r.revisit||""} onChange={e=>set(r.id,"revisit",e.target.value)} className="rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-xs outline-none" /></td>
                 <td className="p-2"><input value={r.decision||""} onChange={e=>set(r.id,"decision",e.target.value)} placeholder="commit / re-park" className="w-full rounded border border-slate-200 px-1 py-0.5 text-xs outline-none focus:border-amber-400" /></td>
                 <td className="p-2"><div className="flex gap-1">
@@ -12728,45 +12733,64 @@ function StandaloneManualPage({ session, onBack }){
 /* ================================================================== */
 /*  7 · SETTINGS                                                       */
 /* ================================================================== */
-function CategoriesSection({ data, patch }){
+function CategoriesSection({ data, patch, orgCtx }){
   const [catName, setCatName] = useState("");
   const [deptName, setDeptName] = useState("");
 
-  const depts = getCompanyDepartments(data);
-  const categories = data.categories || DEFAULT_CATEGORIES;
+  const depts = getCompanyDepartments(data, orgCtx);
+  const categories = Array.isArray(data?.categories) && data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES;
 
-  const addDept = () => {
+  const addDept = async () => {
     const n = deptName.trim();
     if (!n || depts.includes(n)) return;
+    const updated = [...depts, n];
     patch(d => {
-      if (!d.departments) d.departments = [...DEPARTMENTS];
-      d.departments.push(n);
+      d.departments = updated;
     });
+    if (orgCtx?.org?.id && sb) {
+      try {
+        await sb.from("orgs").update({ departments: updated }).eq("id", orgCtx.org.id);
+        if (orgCtx.org) orgCtx.org.departments = updated;
+      } catch (err) {
+        console.warn("Could not sync department to org:", err);
+      }
+    }
     setDeptName("");
   };
 
-  const removeDept = (dName) => {
+  const removeDept = async (dName) => {
     if (!confirm(`Remove "${dName}" department?`)) return;
+    const updated = depts.filter(x => x !== dName);
     patch(d => {
-      const curr = d.departments || [...DEPARTMENTS];
-      d.departments = curr.filter(x => x !== dName);
+      d.departments = updated;
     });
+    if (orgCtx?.org?.id && sb) {
+      try {
+        await sb.from("orgs").update({ departments: updated }).eq("id", orgCtx.org.id);
+        if (orgCtx.org) orgCtx.org.departments = updated;
+      } catch (err) {
+        console.warn("Could not sync department to org:", err);
+      }
+    }
   };
 
   const addCat = () => {
     const n = catName.trim();
     if (!n || categories.includes(n)) return;
+    const curr = Array.isArray(data?.categories) && data.categories.length > 0 ? data.categories : [...DEFAULT_CATEGORIES];
+    const updated = Array.from(new Set([...curr, n]));
     patch(d => {
-      if (!d.categories) d.categories = [...DEFAULT_CATEGORIES];
-      d.categories.push(n);
+      d.categories = updated;
     });
     setCatName("");
   };
 
   const removeCat = (cName) => {
     if (!confirm(`Remove "${cName}" category tag?`)) return;
+    const curr = Array.isArray(data?.categories) && data.categories.length > 0 ? data.categories : [...DEFAULT_CATEGORIES];
+    const updated = curr.filter(x => x !== cName);
     patch(d => {
-      d.categories = (d.categories || DEFAULT_CATEGORIES).filter(x => x !== cName);
+      d.categories = updated;
     });
   };
 
@@ -14043,7 +14067,7 @@ const avg = (v) => v === null ? "—" : v.toFixed(1);
 /* ================================================================== */
 /*  DASHBOARD — team rollup + per-person drill-down                    */
 /* ================================================================== */
-function PeopleView({ orgCtx, meId }){
+function PeopleView({ orgCtx, meId, data }){
   const [members, setMembers] = useState(null);
   const [planners, setPlanners] = useState(null); // [{userId, plan}]
   const [kpiData, setKpiData] = useState(null);   // {kpis, values} or null if unavailable
@@ -14056,37 +14080,51 @@ function PeopleView({ orgCtx, meId }){
   const myDept = orgCtx?.membership?.department || "";
   const orgId = orgCtx?.org?.id || null;
 
+  const depts = getCompanyDepartments(data, orgCtx);
+
   useEffect(() => {
     let cancelled = false;
-    if (!orgId) { setMembers([]); setPlanners([]); return; }
-    Promise.all([loadTeam(orgId), loadAllVisiblePlanners()])
-      .then(([m, p]) => { if (!cancelled) { setMembers(m); setPlanners(p); } })
-      .catch(e => { if (!cancelled) { setErr(e.message || "Couldn't load your team."); setMembers([]); setPlanners([]); } });
-    // KPIs are a separate, optional concern
-    loadAllVisibleKpis([monthPeriod(), quarterPeriod()])
-      .then(k => { if (!cancelled) setKpiData(k); })
-      .catch(() => { if (!cancelled) setKpiData(null); });
+    if (!orgId) {
+      setMembers([]); setPlanners([]); setKpiData({ kpis:[], values:[] });
+      return;
+    }
+    Promise.all([
+      loadTeam(orgId),
+      loadAllPlanners(orgId),
+      loadAllKpis(orgId).catch(() => null),
+    ]).then(([m, pl, kp]) => {
+      if (cancelled) return;
+      setMembers(m || []);
+      setPlanners(pl || []);
+      setKpiData(kp);
+    }).catch(e => {
+      if (cancelled) return;
+      setErr(e.message || "Couldn't load team data.");
+      setMembers([]); setPlanners([]);
+    });
     return () => { cancelled = true; };
   }, [orgId]);
 
-  // Average attainment across a person's KPIs for the CURRENT month/quarter.
-  const kpiAttainFor = (userId) => {
-    if (!kpiData) return null;
-    const scores = kpiData.kpis
-      .filter(k => k.user_id === userId)
-      .map(k => {
-        const v = kpiData.values.find(x => x.kpi_id === k.id && x.period === periodFor(k.cadence));
-        return kpiAttainment(k, v && v.actual);
-      })
-      .filter(x => x !== null);
-    return scores.length ? Math.round(scores.reduce((a,b)=>a+b,0) / scores.length) : null;
-  };
+  if (members === null || planners === null) return <Ghost>Loading team metrics…</Ghost>;
 
-  if (members === null || planners === null) return <Ghost>Loading your team…</Ghost>;
-
-  // Strict role and department isolation
-  const visible = filterVisibleTeamMembers(members || [], meId, myRole, myDept)
+  // Strict role and department filtering
+  const visible = filterVisibleTeamMembers(members, meId, myRole, myDept)
     .filter(m => deptFilter === "ALL" || (m.department || "General").toLowerCase() === deptFilter.toLowerCase());
+
+  // KPI attainment helper
+  const kpiAttainFor = (uid) => {
+    if (!kpiData || !kpiData.kpis.length) return null;
+    const userKpis = kpiData.kpis.filter(k => k.user_id === uid);
+    if (!userKpis.length) return null;
+    const curMonth = monthPeriod();
+    const curQtr   = quarterOfMonth(curMonth);
+    const scores = userKpis.map(k => {
+      const v = (kpiData.values || []).find(x => x.kpi_id === k.id && x.period === (k.cadence === "quarterly" ? curQtr : curMonth));
+      if (!v || v.actual === null || v.actual === undefined) return null;
+      return kpiAttainment(k, v.actual);
+    }).filter(s => s !== null);
+    return scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : null;
+  };
 
   const days = lastNDayKeys(PERIODS.find(p => p.id === period).days);
   const planOf = (uid) => (planners.find(p => p.userId === uid) || {}).plan || null;
@@ -14137,7 +14175,7 @@ function PeopleView({ orgCtx, meId }){
           >
             All Departments
           </button>
-          {DEPARTMENTS.map(d => (
+          {depts.map(d => (
             <button
               key={d}
               onClick={() => setDeptFilter(d)}
@@ -14440,7 +14478,7 @@ function PersonSnapshot({ person, plan, metrics, periodLabel }){
 /* ================================================================== */
 /*  TEAM — owner-only member and invite management                     */
 /* ================================================================== */
-function TeamView({ orgCtx, meId }){
+function TeamView({ orgCtx, meId, data }){
   const [members, setMembers] = useState(null);
   const [invites, setInvites] = useState([]);
   const [email, setEmail] = useState("");
@@ -14453,6 +14491,8 @@ function TeamView({ orgCtx, meId }){
   const orgId = orgCtx?.org?.id || null;
   const myRole = orgCtx?.membership?.role || "owner";
   const myRank = getRoleRank(myRole);
+
+  const depts = getCompanyDepartments(data, orgCtx);
 
   const refresh = () => {
     if (!orgId) { setMembers([]); setInvites([]); return Promise.resolve(); }
@@ -14468,7 +14508,7 @@ function TeamView({ orgCtx, meId }){
     if (!e) { setMsg("Enter an email address."); return; }
     setBusy(true); setMsg("");
     try {
-      const row = await sendInvite(orgId, e, role, department || "General", managerId || null, meId);
+      const row = await sendInvite(orgId, e, role, department || depts[0] || "General", managerId || null, meId);
       setEmail(""); setManagerId("");
       setMsg(await inviteNote(row.id, e, { ...row, orgName: orgCtx?.org?.name }));
       await refresh();
@@ -14592,7 +14632,7 @@ function TeamView({ orgCtx, meId }){
               onChange={e=>setDepartment(e.target.value)}
               className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none"
             >
-              {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+              {depts.map(d => <option key={d} value={d}>{d}</option>)}
             </select>
 
             {getRoleRank(role) < 3 && managers.length > 0 ? (
@@ -14705,7 +14745,7 @@ function TeamView({ orgCtx, meId }){
               >
                 All Departments
               </button>
-              {DEPARTMENTS.map(d => (
+              {depts.map(d => (
                 <button
                   key={d}
                   onClick={() => setDeptFilter(d)}
@@ -14763,7 +14803,7 @@ function TeamView({ orgCtx, meId }){
                     onChange={e=>change(m, { department: e.target.value })}
                     className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none"
                   >
-                    {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                    {depts.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
 
                   <button 
@@ -14947,6 +14987,12 @@ function InvoiceModal({ orgCtx, plan, sub, used, onClose }){
   );
 }
 
+const FALLBACK_PLANS = [
+  { code: "solo", name: "Solo Executive", seat_limit: 1, price_display: "₹399 / mo", price_display_yearly: "₹299 / mo", trial_days: 15, sort_order: 0 },
+  { code: "starter", name: "Business Starter", seat_limit: 3, price_display: "₹999 / mo", price_display_yearly: "₹749 / mo", trial_days: 15, sort_order: 1 },
+  { code: "growth", name: "Scale & Growth", seat_limit: 10, price_display: "₹2,999 / mo", price_display_yearly: "₹2,249 / mo", trial_days: 15, sort_order: 2 }
+];
+
 function BillingSection({ orgCtx, userId }){
   const [state, setState] = useState(null);   // {sub, plans}
   const [used, setUsed] = useState(null);
@@ -14958,27 +15004,69 @@ function BillingSection({ orgCtx, userId }){
   const [extraCount, setExtraCount] = useState(1);
   const [showInvoice, setShowInvoice] = useState(false);
   const membership = orgCtx && orgCtx.membership;
-  const isOwner = membership && membership.role === "owner";
+  const isOwner = membership && (membership.role === "owner" || membership.role === "ceo" || membership.role === "admin");
 
   const reloadRequest = (orgId) => loadMyRequest(orgId).then(setPendingReq).catch(()=>{});
 
   const reloadBillingData = async () => {
-    if (!membership) return;
-    const [b, u] = await Promise.all([loadBilling(membership.org_id), loadSeatUsage(membership.org_id)]);
-    setState(b); setUsed(u);
+    if (!membership?.org_id) return;
+    try {
+      const [b, u] = await Promise.all([loadBilling(membership.org_id), loadSeatUsage(membership.org_id)]);
+      setState(b || { sub: null, plans: FALLBACK_PLANS });
+      setUsed(u || { totalUsed: 1, activeCount: 1, pendingCount: 0, members: [], invites: [] });
+    } catch (err) {
+      console.warn("Reload billing error:", err);
+      setState({ sub: null, plans: FALLBACK_PLANS });
+      setUsed({ totalUsed: 1, activeCount: 1, pendingCount: 0, members: [], invites: [] });
+    }
   };
 
   useEffect(() => {
-    if (!membership) return;
+    if (!membership?.org_id) return;
     let cancelled = false;
     Promise.all([loadBilling(membership.org_id), loadSeatUsage(membership.org_id)])
-      .then(([b, u]) => { if (!cancelled) { setState(b); setUsed(u); } })
-      .catch(() => { if (!cancelled) setUnavailable(true); });
+      .then(([b, u]) => { 
+        if (!cancelled) { 
+          setState(b || { sub: null, plans: FALLBACK_PLANS }); 
+          setUsed(u || { totalUsed: 1, activeCount: 1, pendingCount: 0, members: [], invites: [] }); 
+        } 
+      })
+      .catch((e) => { 
+        console.warn("loadBilling caught:", e);
+        if (!cancelled) {
+          setState({ sub: null, plans: FALLBACK_PLANS });
+          setUsed({ totalUsed: 1, activeCount: 1, pendingCount: 0, members: [], invites: [] });
+        }
+      });
     reloadRequest(membership.org_id);
     return () => { cancelled = true; };
   }, [membership && membership.org_id]);
 
-  if (!membership) return null;
+  if (!membership) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-900 text-lg font-black">💳</span>
+          <div>
+            <h3 className="font-bold text-base text-slate-950">Subscription & Billing</h3>
+            <p className="text-xs text-slate-500">Manage plan tier, multi-seat allowances, and invoices.</p>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 space-y-3">
+          <h4 className="text-xs font-black uppercase tracking-wider text-amber-950">Personal Mode Active</h4>
+          <p className="text-xs text-slate-700 leading-relaxed">
+            You are currently using FlowDirector in standalone personal mode. Organizational multi-seat billing and Razorpay invoices become active when you create or join a company workspace.
+          </p>
+          <button 
+            onClick={() => navigate("/settings/company")}
+            className="rounded-xl bg-slate-950 text-white px-4 py-2 text-xs font-black hover:bg-slate-800 transition shadow-xs"
+          >
+            Go to Company & Team Setup →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (unavailable) {
     return (
@@ -14992,10 +15080,14 @@ function BillingSection({ orgCtx, userId }){
   }
   if (!state || used === null) return <div className="rounded-2xl border border-slate-200 bg-white p-6 text-xs text-slate-500 font-medium">Loading subscription details…</div>;
 
+  const sub = state.sub || null;
+  const plans = (Array.isArray(state.plans) && state.plans.length > 0) ? state.plans : FALLBACK_PLANS;
+  const plan = plans.find(p => p.code === sub?.plan_code) || null;
+
   const usedData = typeof used === "object" && used !== null ? used : { totalUsed: used || 0, activeCount: used || 0, pendingCount: 0, members: [], invites: [] };
-  const usedCount = usedData.totalUsed;
-  const activeCount = usedData.activeCount;
-  const pendingCount = usedData.pendingCount;
+  const usedCount = usedData.totalUsed || 0;
+  const activeCount = usedData.activeCount || 0;
+  const pendingCount = usedData.pendingCount || 0;
   const pendingInvites = usedData.invites || [];
   const limit = seatLimitOf(sub, plans);
   const full = limit != null && usedCount >= limit;
@@ -17594,7 +17686,7 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                   Invite your executives, managers, and assistants. Assign direct reporting hierarchies and permissions.
                 </p>
               </div>
-              <TeamView orgCtx={orgCtx} meId={userId} />
+              <TeamView orgCtx={orgCtx} meId={userId} data={data} />
             </div>
           )}
           <TeamSection data={data} patch={patch} inCompany={!!(orgCtx && orgCtx.membership)} />
@@ -17604,7 +17696,7 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
       {/* Sub-tab 4: Categories & Task Labels */}
       {subTab === "labels" && (
         <div className="space-y-6">
-          <CategoriesSection data={data} patch={patch} />
+          <CategoriesSection data={data} patch={patch} orgCtx={orgCtx} />
           <TaskTypeLabelsSection data={data} patch={patch} />
         </div>
       )}
