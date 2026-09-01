@@ -5923,7 +5923,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
   const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 3500); };
 
   const handlePostUpdate = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!noteText.trim() && selectedStatus === task.status) return;
     setPosting(true);
     try {
@@ -5948,6 +5948,69 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
     }
   };
 
+  const handleReportBlockerPrompt = async () => {
+    const reason = window.prompt("⚠️ What is blocking you on this deliverable? (Explain so leadership can help resolve)", "");
+    if (!reason || !reason.trim()) return;
+    setPosting(true);
+    try {
+      await onAddNote(task.id, `⚠️ BLOCKER REPORTED: ${reason.trim()}`, meName, meEmail, "blocked");
+      setSelectedStatus("blocked");
+      say("⚠️ Blocker reported & leadership alerted live!");
+    } catch (err) {
+      alert("Failed to report blocker: " + err.message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleSubmitDeliverablePrompt = async () => {
+    const deliverable = window.prompt("✓ Enter deliverable link or completion summary notes:", task.link || "");
+    if (deliverable === null) return;
+    setPosting(true);
+    try {
+      const note = deliverable.trim() ? `Deliverable Submitted: ${deliverable.trim()}` : "Deliverable submitted for leadership review.";
+      await onAddNote(task.id, note, meName, meEmail, "under_review");
+      if (deliverable.trim() && deliverable.startsWith("http")) {
+        await onUpdateTask(task.id, { link: deliverable.trim() });
+      }
+      setSelectedStatus("under_review");
+      say("✓ Deliverable submitted for leadership review!");
+    } catch (err) {
+      alert("Failed to submit deliverable: " + err.message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleApproveDeliverable = async () => {
+    if (!confirm(`Approve deliverable and mark "${task.title}" as completed?`)) return;
+    setPosting(true);
+    try {
+      await onAddNote(task.id, `✓ Deliverable signed off & approved by leadership. Great work!`, meName, meEmail, "completed");
+      setSelectedStatus("completed");
+      say("✓ Task approved & marked completed!");
+    } catch (err) {
+      alert("Failed to approve: " + err.message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleRequestChanges = async () => {
+    const feedback = window.prompt("🔄 What changes or corrections are needed before sign-off?", "");
+    if (!feedback || !feedback.trim()) return;
+    setPosting(true);
+    try {
+      await onAddNote(task.id, `🔄 CHANGES REQUESTED: ${feedback.trim()}`, meName, meEmail, "in_progress");
+      setSelectedStatus("in_progress");
+      say("🔄 Changes requested & assignee notified!");
+    } catch (err) {
+      alert("Failed to request changes: " + err.message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
   const handleSaveMeta = async () => {
     try {
       await onUpdateTask(task.id, { due_date: newDueDate, link: newLink.trim() || null });
@@ -5960,6 +6023,9 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
 
   const statusCfg = TASK_STATUS_CONFIG[task.status] || TASK_STATUS_CONFIG.pending;
   const updates = Array.isArray(task.updates) ? task.updates : [];
+  const isReview = task.status === "under_review" || task.status === "review";
+  const isBlocked = task.status === "blocked";
+  const isDone = task.status === "completed";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
@@ -5984,7 +6050,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
         </div>
 
         {notice && (
-          <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs font-black text-emerald-900 text-center">
+          <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 text-xs font-black text-emerald-900 text-center animate-fade-in">
             {notice}
           </div>
         )}
@@ -6010,7 +6076,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
               </div>
             </div>
 
-            {/* Context Details / Links */}
+            {/* Context Details / Instructions */}
             {task.details && (
               <div className="pt-2 border-t border-slate-200/80">
                 <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">Details / Instructions:</span>
@@ -6027,7 +6093,57 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
               </div>
             )}
 
-            {/* Quick Status Buttons Strip */}
+            {/* Quick Action Shortcuts for Delegator & Assignee */}
+            <div className="pt-2 border-t border-slate-200/80 space-y-2">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Workflow Actions:</span>
+              <div className="flex flex-wrap gap-2">
+                {isAssignee && !isDone && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleReportBlockerPrompt}
+                      className="rounded-xl border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                    >
+                      <span>⚠️</span>
+                      <span>{isBlocked ? "Update Blocker" : "Flag Blocker"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSubmitDeliverablePrompt}
+                      className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                    >
+                      <span>👀</span>
+                      <span>Submit for Review</span>
+                    </button>
+                  </>
+                )}
+
+                {isDelegator && isReview && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleApproveDeliverable}
+                      className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                    >
+                      <span>✓</span>
+                      <span>Approve &amp; Complete</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRequestChanges}
+                      className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                    >
+                      <span>🔄</span>
+                      <span>Request Changes</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Change Status Dropdown Chips */}
             <div className="pt-2 border-t border-slate-200/80">
               <span className="text-[10px] font-black uppercase text-slate-400 block mb-1.5">Change Task Status:</span>
               <div className="flex flex-wrap gap-1.5">
@@ -6066,20 +6182,33 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
                 </div>
               )}
 
-              {updates.map(u => (
-                <div key={u.id} className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-1.5">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-2">
-                      <span className="font-extrabold text-slate-900">{u.author_name}</span>
-                      {u.author_email && <span className="text-slate-400">({u.author_email})</span>}
+              {updates.map(u => {
+                const isAuthDelegator = u.author_email && task.delegator_email && u.author_email.toLowerCase() === task.delegator_email.toLowerCase();
+                return (
+                  <div 
+                    key={u.id} 
+                    className={`rounded-2xl border p-3.5 shadow-2xs space-y-1.5 ${
+                      isAuthDelegator ? "border-amber-200 bg-amber-50/40" : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-slate-900">{u.author_name}</span>
+                        <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
+                          isAuthDelegator ? "bg-amber-200 text-amber-950" : "bg-slate-100 text-slate-600"
+                        }`}>
+                          {isAuthDelegator ? "👑 Leader" : "👤 Assignee"}
+                        </span>
+                        {u.author_email && <span className="text-slate-400 hidden sm:inline">({u.author_email})</span>}
+                      </div>
+                      <span className="text-slate-400 font-medium">
+                        {u.created_at ? new Date(u.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      </span>
                     </div>
-                    <span className="text-slate-400 font-medium">
-                      {u.created_at ? new Date(u.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : ""}
-                    </span>
+                    <p className="text-xs text-slate-800 whitespace-pre-wrap font-medium">{u.text}</p>
                   </div>
-                  <p className="text-xs text-slate-800 whitespace-pre-wrap font-medium">{u.text}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -6104,7 +6233,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
             <textarea
               value={noteText}
               onChange={e => setNoteText(e.target.value)}
-              placeholder="E.g. Started drafting presentation, client review scheduled for 3 PM, link to draft..."
+              placeholder="E.g. Draft presentation completed, uploaded to Google Drive, waiting for review..."
               rows={2}
               className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-900 outline-none focus:border-amber-500 focus:bg-white"
             />
@@ -6130,7 +6259,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
             Close
           </button>
 
-          {task.status !== "completed" ? (
+          {!isDone ? (
             <button
               onClick={() => handleStatusQuickChange("completed")}
               className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 text-xs font-black transition shadow-md flex items-center gap-1.5"
@@ -6799,7 +6928,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
         {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} orgCtx={orgCtx} meId={userId} />}
         {tab==="followup" && <FollowUpView data={data} patch={patch} orgCtx={orgCtx} meId={userId} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
-        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} orgCtx={orgCtx} onOpenCapture={() => setTab("capture")} />}
+        {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} orgCtx={orgCtx} onOpenCapture={() => setTab("capture")} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} onGoToTab={setTab} />}
         {tab==="weekly" && <WeeklyView data={data} patch={patch} orgCtx={orgCtx} />}
         {tab==="monthly" && <MonthlyView data={data} patch={patch} onGoToDay={(dateStr)=>{setDailyDate(dateStr); setTab("daily");}} />}
         {tab==="ideas" && <IdeasAndReferenceView data={data} patch={patch} />}
@@ -7646,6 +7775,25 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
           </button>
         </div>
       </div>
+
+      {/* Real-time Blocker Alert Bar */}
+      {delegatedToTeam.filter(t => t.status === "blocked").length > 0 && (
+        <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 text-xs text-rose-950 font-bold flex flex-wrap items-center justify-between gap-3 shadow-xs animate-pulse">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xl">⚠️</span>
+            <div>
+              <span className="font-black uppercase tracking-wider block">Action Required: {delegatedToTeam.filter(t => t.status === "blocked").length} Team Deliverable(s) Blocked</span>
+              <span className="font-medium text-rose-800">Team members have flagged blockers requiring leadership decision or unblocking.</span>
+            </div>
+          </div>
+          <button
+            onClick={() => { setSubTab("delegated"); setStatusFilter("blocked"); }}
+            className="rounded-xl bg-rose-600 text-white px-3.5 py-1.5 text-xs font-black shadow-2xs hover:bg-rose-700 transition"
+          >
+            Filter Blocked Tasks →
+          </button>
+        </div>
+      )}
 
       {/* Department Filter Pills Bar */}
       {myRank >= 4 && (
@@ -9510,13 +9658,111 @@ function DailyDelegateModal({ target, orgCtx, meId, onDelegateSuccess, onClose }
   );
 }
 
-function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
+function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTasks = [], setDbTasks, onOpenTask, onGoToTab }){
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [delegateModalTarget, setDelegateModalTarget] = useState(null);
   const [myKras, setMyKras] = useState([]);
   const [notice, setNotice] = useState("");
   const [mobileScheduleTab, setMobileScheduleTab] = useState("plan"); // "plan" | "actual"
   
+  const myEmail = (orgCtx?.profile?.email || "").toLowerCase();
+  const myName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Leader";
+
+  // 1. Delegated Tasks by Me (Active & Completed Today)
+  const myDelegatedTasks = (dbTasks || []).filter(t => t.delegated_by === userId);
+  const activeDelegatedByMe = myDelegatedTasks.filter(t => t.status !== "completed");
+  const blockedDelegatedByMe = myDelegatedTasks.filter(t => t.status === "blocked");
+  const reviewDelegatedByMe = myDelegatedTasks.filter(t => t.status === "under_review" || t.status === "review");
+  const completedTodayByMe = myDelegatedTasks.filter(t => t.status === "completed" && (t.completed_at?.startsWith(dk) || t.updated_at?.startsWith(dk)));
+
+  // 2. Incoming Tasks Assigned to Me (Not Completed)
+  const myIncomingTasks = (dbTasks || []).filter(t => 
+    (t.assignee_id === userId || (t.assignee_email && t.assignee_email.toLowerCase() === myEmail)) && 
+    t.status !== "completed"
+  );
+
+  // 3. Quick Actions for Tasks
+  const handleQuickStart = async (task, e) => {
+    if (e) e.stopPropagation();
+    try {
+      const updated = await addDelegatedTaskUpdate(task.id, `Started working on deliverable.`, myName, myEmail, "in_progress");
+      if (updated && setDbTasks) {
+        setDbTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+      }
+      setNotice(`🚀 Marked "${task.title}" as In Progress!`);
+      setTimeout(() => setNotice(""), 3500);
+    } catch (err) {
+      alert("Failed to update task: " + err.message);
+    }
+  };
+
+  const handleQuickBlockerPrompt = async (task, e) => {
+    if (e) e.stopPropagation();
+    const reason = window.prompt(`⚠️ What is blocking you on "${task.title}"?`, "");
+    if (!reason || !reason.trim()) return;
+    try {
+      const updated = await addDelegatedTaskUpdate(task.id, `⚠️ BLOCKER: ${reason.trim()}`, myName, myEmail, "blocked");
+      if (updated && setDbTasks) {
+        setDbTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+      }
+      setNotice(`⚠️ Blocker logged & leadership alerted!`);
+      setTimeout(() => setNotice(""), 4000);
+    } catch (err) {
+      alert("Failed to report blocker: " + err.message);
+    }
+  };
+
+  const handleQuickSubmitPrompt = async (task, e) => {
+    if (e) e.stopPropagation();
+    const deliverable = window.prompt(`✓ Enter deliverable link or completion summary notes for "${task.title}":`, task.link || "");
+    if (deliverable === null) return;
+    try {
+      const note = deliverable.trim() ? `Deliverable Submitted: ${deliverable.trim()}` : `Deliverable ready for review.`;
+      const updated = await addDelegatedTaskUpdate(task.id, note, myName, myEmail, "under_review");
+      if (deliverable.trim() && deliverable.startsWith("http")) {
+        await updateDelegatedTask(task.id, { link: deliverable.trim() });
+      }
+      if (updated && setDbTasks) {
+        setDbTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+      }
+      setNotice(`✓ Deliverable submitted for leadership review!`);
+      setTimeout(() => setNotice(""), 4000);
+    } catch (err) {
+      alert("Failed to submit deliverable: " + err.message);
+    }
+  };
+
+  const handleQuickApprove = async (task, e) => {
+    if (e) e.stopPropagation();
+    if (!confirm(`Approve deliverable and mark "${task.title}" as completed?`)) return;
+    try {
+      const updated = await addDelegatedTaskUpdate(task.id, `✓ Deliverable approved & signed off by leadership.`, myName, myEmail, "completed");
+      if (updated && setDbTasks) {
+        setDbTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+      }
+      setNotice(`✓ Approved and completed "${task.title}"!`);
+      setTimeout(() => setNotice(""), 4000);
+    } catch (err) {
+      alert("Failed to approve: " + err.message);
+    }
+  };
+
+  // 4. Live Outcome & Priority Task Resolution
+  const liveOutcomeTask = (dbTasks || []).find(t => 
+    (day.outcomeTaskId && t.id === day.outcomeTaskId) || 
+    (day.outcomeDelegatedTo && (t.title === day.outcome || (t.due_date === dk && t.delegated_by === userId)))
+  );
+
+  const getLivePriorityTask = (idx) => {
+    const pTaskId = day.priorityTaskId?.[idx];
+    const pDelTo = day.priorityDelegatedTo?.[idx];
+    const pText = day.priorities?.[idx];
+    return (dbTasks || []).find(t => 
+      (pTaskId && t.id === pTaskId) || 
+      (pDelTo && t.title === pText)
+    );
+  };
+
   const blank = () => ({ 
     outcome: "", 
     outcomeMark: "", 
@@ -9887,6 +10133,258 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
         </div>
       )}
 
+      {/* 4.1. INCOMING DELEGATED DELIVERABLES WIDGET (For Assignees / Specialists) */}
+      {myIncomingTasks.length > 0 && (
+        <div className="rounded-3xl border-2 border-indigo-200 bg-linear-to-br from-indigo-50/90 via-sky-50/40 to-white p-5 shadow-xs space-y-3 animate-fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-indigo-600 text-white text-base shadow-2xs">📥</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Delegated Deliverables Assigned to You</h3>
+                  <span className="rounded-full bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5">{myIncomingTasks.length}</span>
+                </div>
+                <p className="text-xs text-slate-500 font-medium">Deliverables assigned by leadership. Update your status in real-time or schedule into your day.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            {myIncomingTasks.map(t => {
+              const cfg = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.pending;
+              const updates = Array.isArray(t.updates) ? t.updates : [];
+              const latestNote = updates.length > 0 ? updates[updates.length - 1] : null;
+              const isBlocked = t.status === "blocked";
+              const isInProgress = t.status === "in_progress";
+              const isUnderReview = t.status === "under_review" || t.status === "review";
+
+              return (
+                <div 
+                  key={t.id}
+                  onClick={() => onOpenTask && onOpenTask(t)}
+                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-2xs hover:border-indigo-300 hover:shadow-xs transition cursor-pointer space-y-2.5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="space-y-1 flex-1 min-w-[200px]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-black ${cfg.badge}`}>
+                          <span>{cfg.icon}</span>
+                          <span>{cfg.label}</span>
+                        </span>
+                        {t.due_date && (
+                          <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                            t.due_date < dk ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700"
+                          }`}>
+                            📅 Due: {t.due_date}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm font-black text-slate-900 break-words">{t.title}</h4>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span>👑 Delegated by: <b className="text-slate-800">{t.delegator_name || "Leadership"}</b></span>
+                        {t.link && (
+                          <a 
+                            href={t.link} target="_blank" rel="noopener noreferrer" 
+                            onClick={e => e.stopPropagation()} 
+                            className="text-blue-700 font-bold hover:underline"
+                          >
+                            🔗 Attached Doc ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons Strip */}
+                    <div className="flex flex-wrap items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      {!isInProgress && !isUnderReview && (
+                        <button
+                          onClick={e => handleQuickStart(t, e)}
+                          className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                        >
+                          <span>🚀</span>
+                          <span>Start Working</span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={e => handleQuickBlockerPrompt(t, e)}
+                        className={`rounded-xl border px-2.5 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1 ${
+                          isBlocked 
+                            ? "bg-rose-600 text-white border-rose-600" 
+                            : "bg-white border-rose-200 text-rose-700 hover:bg-rose-50"
+                        }`}
+                        title="Report a blocker to leadership"
+                      >
+                        <span>⚠️</span>
+                        <span>{isBlocked ? "Update Blocker" : "Flag Blocker"}</span>
+                      </button>
+
+                      {!isUnderReview ? (
+                        <button
+                          onClick={e => handleQuickSubmitPrompt(t, e)}
+                          className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                        >
+                          <span>✓</span>
+                          <span>Submit Deliverable</span>
+                        </button>
+                      ) : (
+                        <span className="rounded-xl bg-purple-100 border border-purple-300 text-purple-900 px-3 py-1 text-xs font-black">
+                          👀 In Review
+                        </span>
+                      )}
+
+                      <button
+                        onClick={() => onOpenTask && onOpenTask(t)}
+                        className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-2.5 py-1.5 text-xs font-bold transition shadow-2xs"
+                      >
+                        💬 Notes ({updates.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Latest update note */}
+                  {latestNote && (
+                    <div className="rounded-xl border border-slate-100 bg-slate-50/80 p-2 text-xs text-slate-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-extrabold text-slate-900">{latestNote.author_name}:</span>
+                        <span className="truncate italic font-medium">"{latestNote.text}"</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-bold shrink-0 ml-2">
+                        {latestNote.created_at ? new Date(latestNote.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 4.2. LIVE DELEGATION WATCHLIST WIDGET (For Leaders / Delegators) */}
+      {(activeDelegatedByMe.length > 0 || completedTodayByMe.length > 0) && (
+        <div className="rounded-3xl border-2 border-slate-200 bg-white p-5 shadow-xs space-y-3 animate-fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-950 text-amber-400 text-base shadow-2xs">👥</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Live Delegation Watchlist</h3>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-black">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
+                    Live Sync
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 font-medium">Real-time status of deliverables assigned to your team members.</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-1 font-bold">
+                ⚡ {activeDelegatedByMe.length} Active
+              </span>
+              {blockedDelegatedByMe.length > 0 && (
+                <span className="rounded-full bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-1 font-black animate-pulse">
+                  ⚠️ {blockedDelegatedByMe.length} Blocked
+                </span>
+              )}
+              {reviewDelegatedByMe.length > 0 && (
+                <span className="rounded-full bg-purple-100 text-purple-800 border border-purple-200 px-2.5 py-1 font-black">
+                  👀 {reviewDelegatedByMe.length} Ready for Review
+                </span>
+              )}
+              {completedTodayByMe.length > 0 && (
+                <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 font-black">
+                  ✓ {completedTodayByMe.length} Completed Today
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2.5">
+            {[...activeDelegatedByMe, ...completedTodayByMe].map(t => {
+              const cfg = TASK_STATUS_CONFIG[t.status] || TASK_STATUS_CONFIG.pending;
+              const updates = Array.isArray(t.updates) ? t.updates : [];
+              const latestNote = updates.length > 0 ? updates[updates.length - 1] : null;
+              const isBlocked = t.status === "blocked";
+              const isReview = t.status === "under_review" || t.status === "review";
+              const isDone = t.status === "completed";
+
+              return (
+                <div 
+                  key={t.id}
+                  onClick={() => onOpenTask && onOpenTask(t)}
+                  className={`rounded-2xl border p-3.5 transition cursor-pointer space-y-2 ${
+                    isBlocked 
+                      ? "border-rose-300 bg-rose-50/40 hover:bg-rose-50/70"
+                      : isReview
+                      ? "border-purple-300 bg-purple-50/40 hover:bg-purple-50/70"
+                      : isDone
+                      ? "border-emerald-200 bg-emerald-50/30 opacity-80"
+                      : "border-slate-200 bg-slate-50/50 hover:bg-white hover:border-amber-300 hover:shadow-2xs"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[200px]">
+                      <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-black ${cfg.badge}`}>
+                        <span>{cfg.icon}</span>
+                        <span>{cfg.label}</span>
+                      </span>
+                      <span className="font-extrabold text-xs text-slate-900">{t.title}</span>
+                      <span className="text-xs text-slate-500">→ <strong className="text-slate-800">{t.assignee_name}</strong></span>
+                      {t.due_date && (
+                        <span className="text-[11px] text-slate-400 font-medium">· 📅 {t.due_date}</span>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      {isReview && (
+                        <button
+                          onClick={e => handleQuickApprove(t, e)}
+                          className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                        >
+                          <span>✓</span>
+                          <span>Approve Deliverable</span>
+                        </button>
+                      )}
+                      {isBlocked && (
+                        <button
+                          onClick={() => onOpenTask && onOpenTask(t)}
+                          className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                        >
+                          <span>⚠️</span>
+                          <span>Help Resolve</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => onOpenTask && onOpenTask(t)}
+                        className="rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 px-2.5 py-1 text-xs font-bold transition shadow-2xs"
+                      >
+                        💬 Notes ({updates.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Latest note / blocker description preview */}
+                  {latestNote && (
+                    <div className="rounded-xl border border-slate-200/60 bg-white p-2 text-xs text-slate-700 flex items-center justify-between">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="font-black text-slate-900">{latestNote.author_name}:</span>
+                        <span className="truncate italic font-medium">"{latestNote.text}"</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-bold shrink-0 ml-2">
+                        {latestNote.created_at ? new Date(latestNote.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : ""}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 5. One Main Outcome & Top 3 Priorities vs Backup List */}
       <div className="grid gap-5 lg:grid-cols-12">
         {/* Outcome & Priorities Column (7 cols on large screens) */}
@@ -9941,19 +10439,51 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
             {/* Main Outcome Action Strip */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
               <div className="flex flex-wrap items-center gap-2">
-                {/* 1-Click Delegate Button */}
-                <button
-                  onClick={() => setDelegateModalTarget({ type: "outcome", title: day.outcome || "Main Outcome", dk })}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs border ${
-                    day.outcomeDelegatedTo
-                      ? "bg-sky-100 border-sky-300 text-sky-950 hover:bg-sky-200"
-                      : "bg-white border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
-                  }`}
-                  title="Assign this outcome to a team member"
-                >
-                  <span>👥</span>
-                  <span>{day.outcomeDelegatedTo ? `Delegated → ${day.outcomeDelegatedTo}` : "Delegate to Team"}</span>
-                </button>
+                {/* 1-Click Delegate Button / Live Status Chip */}
+                {liveOutcomeTask ? (
+                  <div 
+                    onClick={() => onOpenTask && onOpenTask(liveOutcomeTask)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer transition shadow-2xs border ${
+                      liveOutcomeTask.status === "completed" 
+                        ? "bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200"
+                        : liveOutcomeTask.status === "blocked"
+                        ? "bg-rose-100 border-rose-300 text-rose-950 animate-pulse hover:bg-rose-200"
+                        : liveOutcomeTask.status === "in_progress"
+                        ? "bg-blue-100 border-blue-300 text-blue-950 hover:bg-blue-200"
+                        : liveOutcomeTask.status === "under_review" || liveOutcomeTask.status === "review"
+                        ? "bg-purple-100 border-purple-300 text-purple-950 hover:bg-purple-200"
+                        : "bg-sky-100 border-sky-300 text-sky-950 hover:bg-sky-200"
+                    }`}
+                    title="Click to view live activity & chat"
+                  >
+                    <span>{liveOutcomeTask.status === "completed" ? "✓" : liveOutcomeTask.status === "blocked" ? "⚠️" : liveOutcomeTask.status === "in_progress" ? "🚀" : (liveOutcomeTask.status === "under_review" || liveOutcomeTask.status === "review") ? "👀" : "👥"}</span>
+                    <span>
+                      {liveOutcomeTask.status === "completed" 
+                        ? `Done → ${liveOutcomeTask.assignee_name}`
+                        : liveOutcomeTask.status === "blocked"
+                        ? `Blocked ⚠️ (${liveOutcomeTask.assignee_name})`
+                        : liveOutcomeTask.status === "in_progress"
+                        ? `In Progress (${liveOutcomeTask.assignee_name})`
+                        : (liveOutcomeTask.status === "under_review" || liveOutcomeTask.status === "review")
+                        ? `Review Ready (${liveOutcomeTask.assignee_name})`
+                        : `Delegated → ${liveOutcomeTask.assignee_name}`}
+                    </span>
+                    <span className="text-[10px] opacity-75 font-normal ml-0.5">💬 {liveOutcomeTask.updates?.length || 0}</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setDelegateModalTarget({ type: "outcome", title: day.outcome || "Main Outcome", dk })}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs border ${
+                      day.outcomeDelegatedTo
+                        ? "bg-sky-100 border-sky-300 text-sky-950 hover:bg-sky-200"
+                        : "bg-white border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
+                    }`}
+                    title="Assign this outcome to a team member"
+                  >
+                    <span>👥</span>
+                    <span>{day.outcomeDelegatedTo ? `Delegated → ${day.outcomeDelegatedTo}` : "Delegate to Team"}</span>
+                  </button>
+                )}
 
                 {/* 1-Click Time Block Placement with Mode Selection */}
                 <select
@@ -10033,6 +10563,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
                 const isDropped = mark === "dropped";
                 const delTo = day.priorityDelegatedTo && day.priorityDelegatedTo[i];
                 const kraTag = day.priorityKra && day.priorityKra[i];
+                const livePriorityTask = getLivePriorityTask(i);
 
                 return (
                   <div 
@@ -10111,24 +10642,56 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture }){
                     {/* Action Strip on each priority row */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100/80 text-xs">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {/* 1-Click Delegate Button */}
-                        <button
-                          onClick={() => setDelegateModalTarget({ 
-                            type: "priority", 
-                            priorityIndex: i, 
-                            title: (day.priorities && day.priorities[i]) || `Priority #${i+1}`,
-                            dk
-                          })}
-                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition border ${
-                            delTo 
-                              ? "bg-sky-100 border-sky-300 text-sky-900" 
-                              : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
-                          }`}
-                          title="Delegate this priority to a team member"
-                        >
-                          <span>👥</span>
-                          <span>{delTo ? `Delegated → ${delTo}` : "Delegate"}</span>
-                        </button>
+                        {/* 1-Click Delegate Button / Live Status Chip */}
+                        {livePriorityTask ? (
+                          <div 
+                            onClick={() => onOpenTask && onOpenTask(livePriorityTask)}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer transition shadow-2xs border ${
+                              livePriorityTask.status === "completed" 
+                                ? "bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200"
+                                : livePriorityTask.status === "blocked"
+                                ? "bg-rose-100 border-rose-300 text-rose-950 animate-pulse hover:bg-rose-200"
+                                : livePriorityTask.status === "in_progress"
+                                ? "bg-blue-100 border-blue-300 text-blue-950 hover:bg-blue-200"
+                                : (livePriorityTask.status === "under_review" || livePriorityTask.status === "review")
+                                ? "bg-purple-100 border-purple-300 text-purple-950 hover:bg-purple-200"
+                                : "bg-sky-100 border-sky-300 text-sky-950 hover:bg-sky-200"
+                            }`}
+                            title="Click to view live notes & chat"
+                          >
+                            <span>{livePriorityTask.status === "completed" ? "✓" : livePriorityTask.status === "blocked" ? "⚠️" : livePriorityTask.status === "in_progress" ? "🚀" : (livePriorityTask.status === "under_review" || livePriorityTask.status === "review") ? "👀" : "👥"}</span>
+                            <span>
+                              {livePriorityTask.status === "completed" 
+                                ? `Done (${livePriorityTask.assignee_name})`
+                                : livePriorityTask.status === "blocked"
+                                ? `Blocked ⚠️ (${livePriorityTask.assignee_name})`
+                                : livePriorityTask.status === "in_progress"
+                                ? `In Progress (${livePriorityTask.assignee_name})`
+                                : (livePriorityTask.status === "under_review" || livePriorityTask.status === "review")
+                                ? `Review Ready (${livePriorityTask.assignee_name})`
+                                : `Delegated → ${livePriorityTask.assignee_name}`}
+                            </span>
+                            <span className="text-[10px] opacity-75 font-normal ml-0.5">💬 {livePriorityTask.updates?.length || 0}</span>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDelegateModalTarget({ 
+                              type: "priority", 
+                              priorityIndex: i, 
+                              title: (day.priorities && day.priorities[i]) || `Priority #${i+1}`,
+                              dk
+                            })}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition border ${
+                              delTo 
+                                ? "bg-sky-100 border-sky-300 text-sky-900" 
+                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
+                            }`}
+                            title="Delegate this priority to a team member"
+                          >
+                            <span>👥</span>
+                            <span>{delTo ? `Delegated → ${delTo}` : "Delegate"}</span>
+                          </button>
+                        )}
 
                         {/* Block in Schedule with Mode Selection */}
                         <select
