@@ -767,6 +767,7 @@ async function loadAllVisiblePlanners(){
   if (error) throw error;
   return (data||[]).map(r => ({ userId:r.user_id, plan:{ ...structuredClone(SEED), ...(r.data||{}) } }));
 }
+const loadAllPlanners = loadAllVisiblePlanners;
 
 /* ================================================================== */
 /*  Goals layer — KRAs and KPIs (Phase 3)                              */
@@ -1613,6 +1614,7 @@ async function loadAllVisibleKpis(periods){
   }
   return { kpis: kpis || [], values };
 }
+const loadAllKpis = (orgId, periods = [monthPeriod(), quarterPeriod()]) => loadAllVisibleKpis(periods);
 
 /* ================================================================== */
 /*  Router & Path Navigation                                           */
@@ -14024,12 +14026,14 @@ const dayWasClosed = (rec) => {
 };
 
 function personMetrics(plan, dayKeys){
+  if (!plan) return null;
   let daysPlanned = 0, prioSet = 0, prioDone = 0, prioMoved = 0, prioDropped = 0, prioDelegated = 0;
   let scoreSum = 0, scoreDays = 0;
   const scoreSeries = [];
 
+  const daily = plan.daily || {};
   dayKeys.forEach(k => {
-    const rec = (plan.daily || {})[k];
+    const rec = daily[k];
     if (!rec) { scoreSeries.push(null); return; }
     if ((rec.outcome || "").trim()) daysPlanned++;
     (rec.priorities || []).forEach((p, i) => {
@@ -14042,7 +14046,7 @@ function personMetrics(plan, dayKeys){
         case "delegated": prioDelegated++; break;
       }
     });
-    if (dayWasClosed(rec)) { scoreSum += (rec.closure.score || 0); scoreDays++; scoreSeries.push(rec.closure.score || 0); }
+    if (dayWasClosed(rec)) { scoreSum += (rec.closure?.score || 0); scoreDays++; scoreSeries.push(rec.closure?.score || 0); }
     else scoreSeries.push(null);
   });
 
@@ -14057,7 +14061,7 @@ function personMetrics(plan, dayKeys){
     });
   });
 
-  const { overdue, today } = collectDueItems(plan);
+  const { overdue, today } = collectDueItems(plan || {});
   const openDelegated = (plan.dailyBackup || [])
     .filter(b => ["DELEGATE","WAITING-FOR"].includes(b.taskType) && !b.done);
   const overdueDelegated = openDelegated.filter(b => b.due && b.due < todayKey());
@@ -14080,7 +14084,7 @@ function personMetrics(plan, dayKeys){
 // Tiny inline bar chart. Null entries render as a faint "no data" tick so a
 // gap reads as "didn't close the day" rather than "scored zero".
 function Sparkline({ series, width=104, height=26 }){
-  if (!series.length) return null;
+  if (!series || !series.length) return null;
   const n = series.length;
   const bw = width / n;
   return (
@@ -14106,8 +14110,8 @@ const Metric = ({ label, value, sub, tone }) => (
   </div>
 );
 
-const pct = (v) => v === null ? "—" : v + "%";
-const avg = (v) => v === null ? "—" : v.toFixed(1);
+const pct = (v) => v === null || v === undefined || isNaN(v) ? "—" : v + "%";
+const avg = (v) => v === null || v === undefined || isNaN(v) ? "—" : v.toFixed(1);
 
 /* ================================================================== */
 /*  DASHBOARD — team rollup + per-person drill-down                    */
@@ -14134,21 +14138,48 @@ function PeopleView({ orgCtx, meId, data }){
       return;
     }
     Promise.all([
-      loadTeam(orgId),
-      loadAllPlanners(orgId),
-      loadAllKpis(orgId).catch(() => null),
+      loadTeam(orgId).catch(e => { console.warn("loadTeam error:", e); return []; }),
+      loadAllVisiblePlanners().catch(e => { console.warn("loadAllVisiblePlanners error:", e); return []; }),
+      loadAllVisibleKpis([monthPeriod(), quarterPeriod()]).catch(e => { console.warn("loadAllVisibleKpis error:", e); return { kpis:[], values:[] }; }),
     ]).then(([m, pl, kp]) => {
       if (cancelled) return;
       setMembers(m || []);
       setPlanners(pl || []);
-      setKpiData(kp);
+      setKpiData(kp || { kpis:[], values:[] });
     }).catch(e => {
       if (cancelled) return;
+      console.warn("PeopleView data error:", e);
       setErr(e.message || "Couldn't load team data.");
-      setMembers([]); setPlanners([]);
+      setMembers([]); setPlanners([]); setKpiData({ kpis:[], values:[] });
     });
     return () => { cancelled = true; };
   }, [orgId]);
+
+  if (!orgCtx?.membership) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-xs space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-100 text-amber-950 text-xl font-black">📊</span>
+          <div>
+            <h3 className="font-extrabold text-base text-slate-950">Team Execution Dashboard</h3>
+            <p className="text-xs text-slate-500">Live team follow-through, standup adherence, and KPI attainment rollup.</p>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 space-y-3">
+          <h4 className="text-xs font-black uppercase tracking-wider text-amber-950">Personal Workspace Active</h4>
+          <p className="text-xs text-slate-700 leading-relaxed">
+            Team dashboard metrics and member drill-downs become active once you start a company workspace and invite executives, managers, or employees.
+          </p>
+          <button 
+            onClick={() => navigate("/settings/company")}
+            className="rounded-xl bg-slate-950 text-white px-4 py-2.5 text-xs font-black hover:bg-slate-800 transition shadow-xs"
+          >
+            Go to Company & Team Setup →
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (members === null || planners === null) return <Ghost>Loading team metrics…</Ghost>;
 
@@ -14158,16 +14189,16 @@ function PeopleView({ orgCtx, meId, data }){
 
   // KPI attainment helper
   const kpiAttainFor = (uid) => {
-    if (!kpiData || !kpiData.kpis.length) return null;
+    if (!kpiData || !Array.isArray(kpiData.kpis) || !kpiData.kpis.length) return null;
     const userKpis = kpiData.kpis.filter(k => k.user_id === uid);
     if (!userKpis.length) return null;
     const curMonth = monthPeriod();
-    const curQtr   = quarterOfMonth(curMonth);
+    const curQtr   = quarterOfMonth ? quarterOfMonth(curMonth) : quarterPeriod();
     const scores = userKpis.map(k => {
       const v = (kpiData.values || []).find(x => x.kpi_id === k.id && x.period === (k.cadence === "quarterly" ? curQtr : curMonth));
-      if (!v || v.actual === null || v.actual === undefined) return null;
+      if (!v || v.actual === null || v.actual === undefined || v.actual === "") return null;
       return kpiAttainment(k, v.actual);
-    }).filter(s => s !== null);
+    }).filter(s => s !== null && !isNaN(s));
     return scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : null;
   };
 
@@ -14179,13 +14210,13 @@ function PeopleView({ orgCtx, meId, data }){
     return { member:m, plan, metrics: plan ? personMetrics(plan, days) : null,
              kpiAttain: kpiAttainFor(m.user_id) };
   });
-  const kpiScores = rows.map(r => r.kpiAttain).filter(v => v !== null);
+  const kpiScores = rows.map(r => r.kpiAttain).filter(v => v !== null && !isNaN(v));
   const teamKpi = kpiScores.length ? Math.round(kpiScores.reduce((a,b)=>a+b,0)/kpiScores.length) : null;
-  const anyKpis = !!(kpiData && kpiData.kpis.length);
+  const anyKpis = !!(kpiData && Array.isArray(kpiData.kpis) && kpiData.kpis.length);
 
   const withData = rows.filter(r => r.metrics);
   const agg = (pick) => {
-    const vals = withData.map(r => pick(r.metrics)).filter(v => v !== null && v !== undefined);
+    const vals = withData.map(r => pick(r.metrics)).filter(v => v !== null && v !== undefined && !isNaN(v));
     return vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : null;
   };
   const total = (pick) => withData.reduce((a,r) => a + (pick(r.metrics) || 0), 0);
@@ -14343,10 +14374,11 @@ function PeopleView({ orgCtx, meId, data }){
 }
 
 function PersonSnapshot({ person, plan, metrics, periodLabel }){
+  if (!plan) return null;
   const dk = todayKey();
-  const day = plan.daily[dk] || {};
-  const { overdue, today } = collectDueItems(plan);
-  const delegated = plan.dailyBackup.filter(b=>["DELEGATE","WAITING-FOR"].includes(b.taskType) && !b.done);
+  const day = (plan.daily && plan.daily[dk]) || {};
+  const { overdue, today } = collectDueItems(plan || {});
+  const delegated = (Array.isArray(plan.dailyBackup) ? plan.dailyBackup : []).filter(b=>["DELEGATE","WAITING-FOR"].includes(b.taskType) && !b.done);
   const stat = (label, value, tone="slate") => (
     <div className={"rounded-lg border p-3 "+(tone==="rose"?"border-rose-200 bg-rose-50":"border-slate-200 bg-white")}>
       <div className={"mono text-xl font-bold "+(tone==="rose"?"text-rose-600":"text-slate-800")}>{value}</div>
@@ -14451,7 +14483,7 @@ function PersonSnapshot({ person, plan, metrics, periodLabel }){
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stat("Due today", today.length)}
         {stat("Overdue", overdue.length, overdue.length ? "rose" : "slate")}
-        {stat("In backup", plan.dailyBackup.filter(b=>!b.done).length)}
+        {stat("In backup", (Array.isArray(plan.dailyBackup) ? plan.dailyBackup : []).filter(b=>!b.done).length)}
         {stat("Waiting on others", delegated.length)}
       </div>
 
