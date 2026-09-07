@@ -630,7 +630,7 @@ async function updateDelegatedTask(taskId, patchObj) {
   }
 }
 
-async function addDelegatedTaskUpdate(taskId, noteText, authorName, authorEmail, newStatus = null) {
+async function addDelegatedTaskUpdate(taskId, noteText, authorName, authorEmail, newStatus = null, extraPatch = {}) {
   if (!sb || !taskId || !noteText.trim()) return null;
   try {
     // Fetch current task updates array
@@ -645,17 +645,24 @@ async function addDelegatedTaskUpdate(taskId, noteText, authorName, authorEmail,
       return null;
     }
 
+    const isPing = !!extraPatch?.is_status_request;
     const newNote = {
       id: uid(),
       text: noteText.trim(),
       author_name: authorName || "Team Member",
       author_email: authorEmail || "",
       created_at: new Date().toISOString(),
-      status_after: newStatus || currentTask?.status || "pending"
+      status_after: newStatus || currentTask?.status || "pending",
+      is_status_request: isPing
     };
 
     const updatedList = [...(currentTask?.updates || []), newNote];
-    const patchPayload = { updates: updatedList };
+    const patchPayload = { 
+      updates: updatedList,
+      ...(extraPatch || {})
+    };
+    delete patchPayload.is_status_request;
+
     if (newStatus) {
       patchPayload.status = newStatus;
       if (newStatus === "completed") {
@@ -6748,6 +6755,33 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
     }
   };
 
+  const handleRequestStatusUpdate = async () => {
+    const defaultMsg = "Please share your current progress and estimated completion time.";
+    const msg = window.prompt(`⚡ Ask ${task.assignee_name || "assignee"} for a status update on "${task.title}":\n\n(Enter custom question/message or leave default)`, defaultMsg);
+    if (msg === null) return;
+    setPosting(true);
+    try {
+      const text = `⚡ STATUS UPDATE REQUESTED: ${(msg.trim() || defaultMsg)}`;
+      await onAddNote(task.id, text, meName, meEmail, null, { is_status_request: true });
+      if (task.assignee_email) {
+        sendTransactionalEmail("task_delegated", task.assignee_email, {
+          task_title: task.title,
+          delegator_name: meName,
+          company_name: orgCtx?.org?.name || "Workspace",
+          due_date: task.due_date || todayKey(),
+          link: task.link || "",
+          notes: text,
+          member_name: task.assignee_name || task.assignee_email
+        });
+      }
+      say(`⚡ Status update requested & instant notification sent to ${task.assignee_name || "assignee"}!`);
+    } catch (err) {
+      alert("Failed to request status update: " + err.message);
+    } finally {
+      setPosting(false);
+    }
+  };
+
   const handleSaveMeta = async () => {
     try {
       await onUpdateTask(task.id, { due_date: newDueDate, link: newLink.trim() || null });
@@ -6764,6 +6798,15 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
   const isBlocked = task.status === "blocked";
   const isDone = task.status === "completed";
 
+  const lastRequest = [...updates].reverse().find(u => u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED")));
+  const lastAssigneeReply = [...updates].reverse().find(u => {
+    if (u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED"))) return false;
+    const isAssigneeAuthor = (u.author_email && task.assignee_email && u.author_email.toLowerCase() === task.assignee_email.toLowerCase()) ||
+                             (u.author_name && task.assignee_name && u.author_name.toLowerCase() === task.assignee_name.toLowerCase());
+    return isAssigneeAuthor && (!lastRequest || new Date(u.created_at) >= new Date(lastRequest.created_at));
+  });
+  const isStatusRequested = !!lastRequest && !lastAssigneeReply && !isDone;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -6775,6 +6818,12 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                 <span>{statusCfg.icon}</span>
                 <span>{statusCfg.label}</span>
               </span>
+              {isStatusRequested && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 text-amber-950 px-2.5 py-1 text-xs font-black animate-pulse">
+                  <span>⚡</span>
+                  <span>Update Requested</span>
+                </span>
+              )}
               {task.due_date && (
                 <span className="rounded-lg bg-white border border-slate-200 px-2 py-0.5 text-xs font-bold text-slate-600">
                   📅 Due: {task.due_date}
@@ -6856,6 +6905,18 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                   </>
                 )}
 
+                {(isDelegator || getRoleRank(orgCtx?.membership?.role) >= 4) && !isDone && (
+                  <button
+                    type="button"
+                    onClick={handleRequestStatusUpdate}
+                    className="rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                    title="Ask assignee for an instant status update"
+                  >
+                    <span>⚡</span>
+                    <span>Ask for Status Update</span>
+                  </button>
+                )}
+
                 {isDelegator && isReview && (
                   <>
                     <button
@@ -6914,6 +6975,45 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
             </div>
           </div>
 
+          {/* Prominent Status Update Callout Banner (If update requested) */}
+          {isStatusRequested && (
+            <div className="rounded-2xl border-2 border-amber-400 bg-amber-50/90 p-4 shadow-xs space-y-2.5 animate-fade-in">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-400 text-slate-950 text-xs font-black shadow-xs">⚡</span>
+                  <span className="text-xs font-black text-amber-950 uppercase tracking-wider">
+                    {isAssignee ? `Status Update Requested by ${lastRequest?.author_name || "Leadership"}` : `Status Update Requested from ${task.assignee_name || "Assignee"}`}
+                  </span>
+                </div>
+                <span className="text-[10px] font-extrabold text-amber-800 bg-amber-200/70 px-2 py-0.5 rounded-full">
+                  {lastRequest?.created_at ? new Date(lastRequest.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "Pending Reply"}
+                </span>
+              </div>
+              <p className="text-xs font-semibold text-slate-800 bg-white p-3 rounded-xl border border-amber-200">
+                "{lastRequest?.text?.replace(/^⚡ STATUS UPDATE REQUESTED:\s*/, "") || "Please share your current progress and estimated completion time."}"
+              </p>
+              {isAssignee && (
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[11px] text-amber-900 font-medium">Please post an update note below or click reply to update leadership:</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const reply = window.prompt(`💬 Reply to status update request for "${task.title}":`, "");
+                      if (reply && reply.trim()) {
+                        onAddNote(task.id, `💬 STATUS UPDATE: ${reply.trim()}`, meName, meEmail, task.status || "in_progress");
+                        say("✓ Status update reply sent to leadership!");
+                      }
+                    }}
+                    className="rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-400 px-3.5 py-1.5 text-xs font-black transition shadow-xs flex items-center gap-1"
+                  >
+                    <span>💬</span>
+                    <span>Reply Now</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Discussion & Progress Updates Timeline */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -6933,20 +7033,35 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
 
               {updates.map(u => {
                 const isAuthDelegator = u.author_email && task.delegator_email && u.author_email.toLowerCase() === task.delegator_email.toLowerCase();
+                const isPing = u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED"));
+                const isReply = u.text && u.text.startsWith("💬 STATUS UPDATE:");
+
                 return (
                   <div 
                     key={u.id} 
                     className={`rounded-2xl border p-3.5 shadow-2xs space-y-1.5 ${
-                      isAuthDelegator ? "border-amber-200 bg-amber-50/40" : "border-slate-200 bg-white"
+                      isPing 
+                        ? "border-amber-400 bg-amber-50/70 ring-1 ring-amber-300"
+                        : isReply
+                        ? "border-emerald-300 bg-emerald-50/40"
+                        : isAuthDelegator 
+                        ? "border-amber-200 bg-amber-50/40" 
+                        : "border-slate-200 bg-white"
                     }`}
                   >
                     <div className="flex items-center justify-between text-[11px]">
                       <div className="flex items-center gap-2">
                         <span className="font-extrabold text-slate-900">{u.author_name}</span>
                         <span className={`text-[10px] font-black px-1.5 py-0.2 rounded ${
-                          isAuthDelegator ? "bg-amber-200 text-amber-950" : "bg-slate-100 text-slate-600"
+                          isPing
+                            ? "bg-amber-300 text-amber-950"
+                            : isReply
+                            ? "bg-emerald-200 text-emerald-950"
+                            : isAuthDelegator 
+                            ? "bg-amber-200 text-amber-950" 
+                            : "bg-slate-100 text-slate-600"
                         }`}>
-                          {isAuthDelegator ? "👑 Leader" : "👤 Assignee"}
+                          {isPing ? "⚡ Status Ping" : isReply ? "💬 Assignee Reply" : isAuthDelegator ? "👑 Leader" : "👤 Assignee"}
                         </span>
                         {u.author_email && <span className="text-slate-400 hidden sm:inline">({u.author_email})</span>}
                       </div>
@@ -7208,10 +7323,12 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               const lastNote = (newRow.updates || [])[(newRow.updates || []).length - 1];
               if (lastNote && lastNote.author_email !== myEmail) {
                 playNotificationChime();
+                const isPing = lastNote.is_status_request || (lastNote.text && lastNote.text.startsWith("⚡ STATUS UPDATE REQUESTED"));
+                const isReply = lastNote.text && lastNote.text.startsWith("💬 STATUS UPDATE:");
                 const toast = {
                   id: uid(),
-                  title: `💬 New Note: ${newRow.title}`,
-                  body: `${lastNote.author_name}: "${lastNote.text}"`,
+                  title: isPing ? `⚡ Status Update Requested: ${newRow.title}` : isReply ? `💬 Status Update Reply: ${newRow.title}` : `💬 New Note: ${newRow.title}`,
+                  body: `${lastNote.author_name}: "${lastNote.text.replace(/^⚡ STATUS UPDATE REQUESTED:\s*/, "").replace(/^💬 STATUS UPDATE:\s*/, "")}"`,
                   time: "Just now",
                   task: newRow,
                   created_at: new Date().toISOString()
@@ -7868,8 +7985,8 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               setSelectedTaskModal(updated);
             }
           }}
-          onAddNote={async (taskId, text, authorName, authorEmail, newStatus) => {
-            const updated = await addDelegatedTaskUpdate(taskId, text, authorName, authorEmail, newStatus);
+          onAddNote={async (taskId, text, authorName, authorEmail, newStatus, extraPatch) => {
+            const updated = await addDelegatedTaskUpdate(taskId, text, authorName, authorEmail, newStatus, extraPatch);
             if (updated) {
               setDbTasks(prev => prev.map(t => t.id === taskId ? updated : t));
               setSelectedTaskModal(updated);
@@ -7890,7 +8007,10 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
             selectedTaskModal.assignee_id === userId ||
             (selectedTaskModal.assignee_email && selectedTaskModal.assignee_email.toLowerCase() === (session?.user?.email || "").toLowerCase())
           }
-          isDelegator={selectedTaskModal.delegated_by === userId}
+          isDelegator={
+            selectedTaskModal.delegated_by === userId ||
+            (selectedTaskModal.delegator_email && selectedTaskModal.delegator_email.toLowerCase() === (session?.user?.email || "").toLowerCase())
+          }
           orgCtx={orgCtx}
         />
       )}
@@ -8489,6 +8609,29 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
     say(`✓ Follow-up email notification sent to ${task.assignee_name || task.assignee_email}!`);
   };
 
+  const handleRequestStatusUpdate = async (task) => {
+    const defaultMsg = "Please share your current progress and estimated completion time.";
+    const msg = window.prompt(`⚡ Ask ${task.assignee_name || "assignee"} for a status update on "${task.title}":\n\n(Enter custom question/message or leave default)`, defaultMsg);
+    if (msg === null) return;
+    const text = `⚡ STATUS UPDATE REQUESTED: ${(msg.trim() || defaultMsg)}`;
+    const updated = await addDelegatedTaskUpdate(task.id, text, myName, myEmail, null, { is_status_request: true });
+    if (updated && setDbTasks) {
+      setDbTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+    }
+    if (task.assignee_email) {
+      sendTransactionalEmail("task_delegated", task.assignee_email, {
+        task_title: task.title,
+        delegator_name: myName,
+        company_name: orgCtx?.org?.name || "Workspace",
+        due_date: task.due_date || today,
+        link: task.link || "",
+        notes: text,
+        member_name: task.assignee_name || task.assignee_email
+      });
+    }
+    say(`⚡ Status update requested from ${task.assignee_name || task.assignee_email}!`);
+  };
+
   // Group active list
   const activeList = subTab === "delegated" ? delegatedToTeam : assignedToMe;
   const filteredList = activeList.filter(t => {
@@ -8550,11 +8693,9 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
             }`}
           >
             <span>📥 Assigned to Me</span>
-            {assignedToMe.filter(t => t.status !== "completed").length > 0 && (
-              <span className="rounded-full bg-amber-400 text-slate-950 px-1.5 py-0.2 text-[10px] font-bold">
-                {assignedToMe.filter(t => t.status !== "completed").length}
-              </span>
-            )}
+            <span className="rounded-full bg-slate-800 text-amber-400 px-1.5 py-0.2 text-[10px] font-bold">
+              {assignedToMe.filter(t => t.status !== "completed").length}
+            </span>
           </button>
 
           <button
@@ -8563,112 +8704,105 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
               subTab === "standups" ? "bg-slate-950 text-white shadow-xs" : "text-slate-600 hover:text-slate-950"
             }`}
           >
-            <span>🎯 Live Standups</span>
-            <span className="text-[10px] font-bold text-slate-400">({filteredTeamMembers.length})</span>
+            <span>🎯 Team Standups (Today)</span>
+            <span className="rounded-full bg-slate-800 text-amber-400 px-1.5 py-0.2 text-[10px] font-bold">
+              {filteredTeamMembers.length}
+            </span>
           </button>
         </div>
       </div>
 
-      {/* Real-time Blocker Alert Bar */}
-      {delegatedToTeam.filter(t => t.status === "blocked").length > 0 && (
-        <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-4 text-xs text-rose-950 font-bold flex flex-wrap items-center justify-between gap-3 shadow-xs animate-pulse">
-          <div className="flex items-center gap-2.5">
-            <span className="text-xl">⚠️</span>
-            <div>
-              <span className="font-black uppercase tracking-wider block">Action Required: {delegatedToTeam.filter(t => t.status === "blocked").length} Team Deliverable(s) Blocked</span>
-              <span className="font-medium text-rose-800">Team members have flagged blockers requiring leadership decision or unblocking.</span>
-            </div>
-          </div>
-          <button
-            onClick={() => { setSubTab("delegated"); setStatusFilter("blocked"); }}
-            className="rounded-xl bg-rose-600 text-white px-3.5 py-1.5 text-xs font-black shadow-2xs hover:bg-rose-700 transition"
-          >
-            Filter Blocked Tasks →
-          </button>
-        </div>
-      )}
-
-      {/* Department Filter Strip */}
-      {myRank >= 4 && (
-        <DepartmentFilterStrip depts={depts} deptFilter={deptFilter} setDeptFilter={setDeptFilter} />
-      )}
-
+      {/* Filter and Search Bar for Delegated & Assigned Tasks */}
       {(subTab === "delegated" || subTab === "assigned_to_me") && (
-        <div className="space-y-5">
-          {/* Quick Delegate Input Bar */}
+        <div className="space-y-4">
+          {/* Quick Delegation Bar (Only for Leaders delegating to team) */}
           {subTab === "delegated" && (
-            <div className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs space-y-3">
-              <form onSubmit={handleQuickDelegate} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-600 text-white text-xs font-bold shrink-0">＋</span>
-                  <input 
-                    value={newTaskText}
-                    onChange={e => setNewTaskText(e.target.value)}
-                    placeholder="What deliverable needs to be delegated? (e.g. Prepare Charter Quotation for Mumbai Flight)"
-                    className="flex-1 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-900 outline-none focus:border-indigo-600 focus:bg-white transition"
-                  />
-                </div>
+            <form onSubmit={handleQuickDelegate} className="rounded-3xl border-2 border-indigo-200 bg-indigo-50/40 p-4 sm:p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>⚡</span>
+                  <span>Quick Delegate New Task to Team Member</span>
+                </span>
+                <span className="text-[11px] font-bold text-indigo-700 hidden sm:inline">Dispatches instant real-time sync + email notification</span>
+              </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <select 
-                      value={newAssignee} 
-                      onChange={e => setNewAssignee(e.target.value)}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
-                    >
-                      <option value="">👤 Assign to Team Member…</option>
-                      {team.map(m => <option key={m.id} value={m.name}>{m.label}</option>)}
-                    </select>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                <input
+                  value={newTaskText}
+                  onChange={e => setNewTaskText(e.target.value)}
+                  placeholder="Task title or deliverable commitment..."
+                  className="sm:col-span-4 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500"
+                />
 
-                    <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 shadow-2xs">
-                      <span className="text-[11px] font-bold text-slate-400">📅 Due:</span>
-                      <input 
-                        type="date"
-                        value={newDue}
-                        onChange={e => setNewDue(e.target.value)}
-                        className="bg-transparent font-bold text-slate-800 outline-none text-xs"
-                      />
-                    </div>
+                <select
+                  value={newAssignee}
+                  onChange={e => setNewAssignee(e.target.value)}
+                  className="sm:col-span-3 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+                >
+                  <option value="">— Assign to Member —</option>
+                  {visibleTeamMembers.map(m => (
+                    <option key={m.id || m.email} value={m.name || m.email}>
+                      {m.name || m.email} ({ROLE_LABEL[m.role] || m.role})
+                    </option>
+                  ))}
+                </select>
 
-                    <input 
-                      value={newLink}
-                      onChange={e => setNewLink(e.target.value)}
-                      placeholder="🔗 Doc / Loom link (optional)"
-                      className="w-48 sm:w-60 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-600 shadow-2xs"
-                    />
-                  </div>
+                <select
+                  value={newDepartment}
+                  onChange={e => setNewDepartment(e.target.value)}
+                  className="sm:col-span-2 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+                >
+                  {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
 
-                  <button 
-                    type="submit" 
-                    className="rounded-xl bg-slate-950 text-white px-4 py-2 text-xs font-black hover:bg-slate-800 transition shadow-xs flex items-center gap-1.5"
-                  >
-                    <span>⚡</span>
-                    <span>Delegate Deliverable</span>
-                  </button>
-                </div>
-              </form>
-            </div>
+                <input
+                  type="date"
+                  value={newDue}
+                  onChange={e => setNewDue(e.target.value)}
+                  className="sm:col-span-2 rounded-xl border border-indigo-200 bg-white px-2 py-2 text-xs font-bold text-slate-700 outline-none"
+                />
+
+                <button
+                  type="submit"
+                  disabled={!newTaskText.trim() || !newAssignee}
+                  className="sm:col-span-1 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs py-2 transition shadow-xs disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  <span>Delegate</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-[11px] font-bold text-indigo-900 shrink-0">Doc / Link (Optional):</span>
+                <input
+                  value={newLink}
+                  onChange={e => setNewLink(e.target.value)}
+                  placeholder="https://docs.google.com/... or Figma link"
+                  className="flex-1 rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs text-slate-700 outline-none placeholder-indigo-300"
+                />
+              </div>
+            </form>
           )}
 
-          {/* Status Filter Tabs */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Filter Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs">
             <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs font-black text-slate-400 uppercase mr-1">Status:</span>
               <button
                 onClick={() => setStatusFilter("ALL")}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition border ${
-                  statusFilter === "ALL" ? "bg-slate-950 text-white border-slate-950" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition ${
+                  statusFilter === "ALL" ? "bg-slate-950 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
                 All ({activeList.length})
               </button>
               {Object.entries(TASK_STATUS_CONFIG).map(([stKey, stVal]) => {
-                const count = activeList.filter(t => (t.status || "pending") === stKey).length;
+                const count = activeList.filter(t => t.status === stKey).length;
                 return (
                   <button
                     key={stKey}
                     onClick={() => setStatusFilter(stKey)}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-bold transition border flex items-center gap-1 ${
-                      statusFilter === stKey ? "bg-slate-950 text-white border-slate-950" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                    className={`rounded-xl px-2.5 py-1 text-xs font-bold transition flex items-center gap-1 ${
+                      statusFilter === stKey ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200"
                     }`}
                   >
                     <span>{stVal.icon}</span>
@@ -8678,15 +8812,26 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                 );
               })}
             </div>
-            <span className="text-xs text-slate-500 font-medium">Click any task to view full notes &amp; attachments</span>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-slate-400 uppercase">Dept:</span>
+              <select
+                value={deptFilter}
+                onChange={e => setDeptFilter(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 outline-none"
+              >
+                <option value="ALL">All Departments</option>
+                {depts.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
           </div>
 
-          {/* Task Cards List */}
+          {/* Tasks List */}
           {filteredList.length === 0 && (
-            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center space-y-2">
-              <span className="text-3xl block">🎉</span>
-              <h3 className="text-sm font-bold text-slate-800">No tasks in this view right now</h3>
-              <p className="text-xs text-slate-500">Assign a new task using the bar above or adjust your filters.</p>
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center space-y-3">
+              <span className="text-3xl block">📂</span>
+              <h4 className="text-sm font-bold text-slate-800">No tasks found matching current filter</h4>
+              <p className="text-xs text-slate-500">Try changing the status or department filters above.</p>
             </div>
           )}
 
@@ -8696,11 +8841,22 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
               const updates = Array.isArray(task.updates) ? task.updates : [];
               const latestNote = updates.length > 0 ? updates[updates.length - 1] : null;
 
+              const lastRequest = [...updates].reverse().find(u => u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED")));
+              const lastAssigneeReply = [...updates].reverse().find(u => {
+                if (u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED"))) return false;
+                const isAssigneeAuthor = (u.author_email && task.assignee_email && u.author_email.toLowerCase() === task.assignee_email.toLowerCase()) ||
+                                         (u.author_name && task.assignee_name && u.author_name.toLowerCase() === task.assignee_name.toLowerCase());
+                return isAssigneeAuthor && (!lastRequest || new Date(u.created_at) >= new Date(lastRequest.created_at));
+              });
+              const isStatusRequested = !!lastRequest && !lastAssigneeReply && task.status !== "completed";
+
               return (
                 <div
                   key={task.id}
                   onClick={() => onOpenTask && onOpenTask(task)}
-                  className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-2xs hover:shadow-md hover:border-amber-300 transition cursor-pointer space-y-3"
+                  className={`rounded-3xl border bg-white p-4 sm:p-5 shadow-2xs hover:shadow-md transition cursor-pointer space-y-3 ${
+                    isStatusRequested ? "border-amber-300 ring-1 ring-amber-200 hover:border-amber-400" : "border-slate-200 hover:border-amber-300"
+                  }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1 space-y-1.5">
@@ -8709,6 +8865,12 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                           <span>{cfg.icon}</span>
                           <span>{cfg.label}</span>
                         </span>
+                        {isStatusRequested && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 text-amber-950 px-2.5 py-0.5 text-[11px] font-black animate-pulse">
+                            <span>⚡</span>
+                            <span>Update Requested</span>
+                          </span>
+                        )}
                         {task.department && (
                           <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-black text-blue-700 border border-blue-100">
                             📁 {task.department}
@@ -8750,6 +8912,17 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                         <span>💬</span>
                         <span>Notes ({updates.length})</span>
                       </button>
+
+                      {(subTab === "delegated" || myRank >= 4) && task.status !== "completed" && (
+                        <button
+                          onClick={() => handleRequestStatusUpdate(task)}
+                          title="Ask assignee for an instant status update"
+                          className="rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 px-2.5 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                        >
+                          <span>⚡</span>
+                          <span>Ask Update</span>
+                        </button>
+                      )}
 
                       {subTab === "delegated" && task.assignee_email && (
                         <button
@@ -9858,11 +10031,24 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab, dbTasks = [
             const updates = Array.isArray(t.updates) ? t.updates : [];
             const latestNote = updates.length > 0 ? updates[updates.length - 1] : null;
 
+            const lastRequest = [...updates].reverse().find(u => u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED")));
+            const lastAssigneeReply = [...updates].reverse().find(u => {
+              if (u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED"))) return false;
+              const isAssigneeAuthor = (u.author_email && t.assignee_email && u.author_email.toLowerCase() === t.assignee_email.toLowerCase()) ||
+                                       (u.author_name && t.assignee_name && u.author_name.toLowerCase() === t.assignee_name.toLowerCase());
+              return isAssigneeAuthor && (!lastRequest || new Date(u.created_at) >= new Date(lastRequest.created_at));
+            });
+            const isStatusRequested = !!lastRequest && !lastAssigneeReply && t.status !== "completed";
+
             return (
               <div 
                 key={t.id} 
                 onClick={() => onOpenTask && onOpenTask(t)}
-                className="rounded-2xl border border-slate-200 bg-white p-4 hover:border-amber-300 shadow-2xs transition cursor-pointer space-y-3"
+                className={`rounded-2xl border p-4 shadow-2xs transition cursor-pointer space-y-3 ${
+                  isStatusRequested 
+                    ? "border-amber-300 ring-2 ring-amber-200 bg-amber-50/20 hover:border-amber-400" 
+                    : "border-slate-200 bg-white hover:border-amber-300"
+                }`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1.5 flex-1 min-w-[240px]">
@@ -9871,6 +10057,13 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab, dbTasks = [
                         <span>{cfg.icon}</span>
                         <span>{cfg.label}</span>
                       </span>
+
+                      {isStatusRequested && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 text-amber-950 px-2.5 py-0.5 text-[11px] font-black animate-pulse">
+                          <span>⚡</span>
+                          <span>Update Requested by Leadership</span>
+                        </span>
+                      )}
 
                       {t.delegator_name && (
                         <span className="text-xs font-bold text-slate-600">
@@ -9904,13 +10097,23 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab, dbTasks = [
 
                   {/* Actions */}
                   <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                    <button
-                      onClick={() => onOpenTask && onOpenTask(t)}
-                      className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1"
-                    >
-                      <span>✍️</span>
-                      <span>Note / Update ({updates.length})</span>
-                    </button>
+                    {isStatusRequested ? (
+                      <button
+                        onClick={() => onOpenTask && onOpenTask(t)}
+                        className="rounded-xl bg-slate-950 hover:bg-slate-800 text-amber-400 px-3 py-1.5 text-xs font-black transition shadow-xs flex items-center gap-1"
+                      >
+                        <span>💬</span>
+                        <span>Reply to Ping</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onOpenTask && onOpenTask(t)}
+                        className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1"
+                      >
+                        <span>✍️</span>
+                        <span>Note / Update ({updates.length})</span>
+                      </button>
+                    )}
 
                     <select
                       value={t.status || "pending"}
@@ -10617,6 +10820,35 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
       alert("Failed to approve: " + err.message);
     }
   };
+
+  const handleQuickRequestStatusUpdate = async (task, e) => {
+    if (e) e.stopPropagation();
+    const defaultMsg = "Please share your current progress and estimated completion time.";
+    const msg = window.prompt(`⚡ Ask ${task.assignee_name || "assignee"} for a status update on "${task.title}":\n\n(Enter custom question/message or leave default)`, defaultMsg);
+    if (msg === null) return;
+    try {
+      const text = `⚡ STATUS UPDATE REQUESTED: ${(msg.trim() || defaultMsg)}`;
+      const updated = await addDelegatedTaskUpdate(task.id, text, myName, myEmail, null, { is_status_request: true });
+      if (updated && setDbTasks) {
+        setDbTasks(prev => prev.map(t => t.id === task.id ? updated : t));
+      }
+      if (task.assignee_email) {
+        sendTransactionalEmail("task_delegated", task.assignee_email, {
+          task_title: task.title,
+          delegator_name: myName,
+          company_name: orgCtx?.org?.name || "Workspace",
+          due_date: task.due_date || dk,
+          link: task.link || "",
+          notes: text,
+          member_name: task.assignee_name || task.assignee_email
+        });
+      }
+      setNotice(`⚡ Status update requested from ${task.assignee_name || "assignee"}!`);
+      setTimeout(() => setNotice(""), 3500);
+    } catch (err) {
+      alert("Failed to request update: " + err.message);
+    }
+  };
   
   // Load KRAs for tagging
   useEffect(() => {
@@ -11142,6 +11374,15 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
               const isReview = t.status === "under_review" || t.status === "review";
               const isDone = t.status === "completed";
 
+              const lastRequest = [...updates].reverse().find(u => u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED")));
+              const lastAssigneeReply = [...updates].reverse().find(u => {
+                if (u.is_status_request || (u.text && u.text.startsWith("⚡ STATUS UPDATE REQUESTED"))) return false;
+                const isAssigneeAuthor = (u.author_email && t.assignee_email && u.author_email.toLowerCase() === t.assignee_email.toLowerCase()) ||
+                                         (u.author_name && t.assignee_name && u.author_name.toLowerCase() === t.assignee_name.toLowerCase());
+                return isAssigneeAuthor && (!lastRequest || new Date(u.created_at) >= new Date(lastRequest.created_at));
+              });
+              const isStatusRequested = !!lastRequest && !lastAssigneeReply && !isDone;
+
               return (
                 <div 
                   key={t.id}
@@ -11151,6 +11392,8 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                       ? "border-rose-300 bg-rose-50/40 hover:bg-rose-50/70"
                       : isReview
                       ? "border-purple-300 bg-purple-50/40 hover:bg-purple-50/70"
+                      : isStatusRequested
+                      ? "border-amber-400 bg-amber-50/30 ring-1 ring-amber-300 hover:bg-amber-50/50"
                       : isDone
                       ? "border-emerald-200 bg-emerald-50/30 opacity-80"
                       : "border-slate-200 bg-slate-50/50 hover:bg-white hover:border-amber-300 hover:shadow-2xs"
@@ -11162,6 +11405,12 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                         <span>{cfg.icon}</span>
                         <span>{cfg.label}</span>
                       </span>
+                      {isStatusRequested && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 text-amber-950 px-2 py-0.5 text-[10px] font-black animate-pulse">
+                          <span>⚡</span>
+                          <span>Update Requested</span>
+                        </span>
+                      )}
                       <span className="font-extrabold text-xs text-slate-900">{t.title}</span>
                       <span className="text-xs text-slate-500">→ <strong className="text-slate-800">{t.assignee_name}</strong></span>
                       {t.due_date && (
@@ -11171,13 +11420,23 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
 
                     {/* Action Buttons */}
                     <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                      {!isDone && (
+                        <button
+                          onClick={e => handleQuickRequestStatusUpdate(t, e)}
+                          title="Ask assignee for an instant status update"
+                          className="rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 px-2.5 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                        >
+                          <span>⚡</span>
+                          <span>Ask Update</span>
+                        </button>
+                      )}
                       {isReview && (
                         <button
                           onClick={e => handleQuickApprove(t, e)}
                           className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
                         >
                           <span>✓</span>
-                          <span>Approve Deliverable</span>
+                          <span>Approve</span>
                         </button>
                       )}
                       {isBlocked && (
@@ -11186,7 +11445,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                           className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white px-3 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
                         >
                           <span>⚠️</span>
-                          <span>Help Resolve</span>
+                          <span>Resolve</span>
                         </button>
                       )}
                       <button
