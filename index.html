@@ -166,8 +166,45 @@ const SEED = {
 const Field = (props) => (
   <input {...props} className={"w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-300 "+(props.className||"")} />
 );
-const Ghost = ({children}) => <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-slate-400">{children}</div>;
 const Callout = ({children}) => <p className="mb-4 rounded-md border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm italic text-amber-800">{children}</p>;
+const Ghost = ({children}) => <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 px-4 py-8 text-center text-xs font-bold text-slate-400">{children}</div>;
+
+function DepartmentFilterStrip({ depts = [], deptFilter, setDeptFilter, label = "Department" }) {
+  if (!Array.isArray(depts) || depts.length <= 1) return null;
+  return (
+    <div className="flex items-center gap-2 bg-white/90 backdrop-blur-sm p-1.5 sm:p-2 rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+      <div className="flex items-center gap-1 pl-1.5 shrink-0 text-slate-400">
+        <span className="text-xs">🏢</span>
+        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 hidden sm:inline">{label}:</span>
+      </div>
+      <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar flex-1">
+        <button
+          onClick={() => setDeptFilter("ALL")}
+          className={`shrink-0 rounded-xl px-3 py-1 text-xs font-bold transition-all ${
+            deptFilter === "ALL" 
+              ? "bg-slate-950 text-white shadow-xs" 
+              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+          }`}
+        >
+          All Departments
+        </button>
+        {depts.map(d => (
+          <button
+            key={d}
+            onClick={() => setDeptFilter(d)}
+            className={`shrink-0 rounded-xl px-2.5 py-1 text-xs font-bold transition-all ${
+              deptFilter === d 
+                ? "bg-slate-950 text-white shadow-xs" 
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {d}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -808,11 +845,11 @@ const kpiAttainment = (kpi, actual) => {
   const a = Number(actual), t = Number(kpi.target);
   if (isNaN(a)) return null;
   if (kpi.direction === "down") {
-    if (a <= 0) return 200;                 // nothing at all beats any target
-    return t <= 0 ? (a > 0 ? 0 : 100) : Math.round((t / a) * 100);
+    if (a <= 0) return 100;
+    return t <= 0 ? (a > 0 ? 0 : 100) : Math.min(150, Math.round((t / a) * 100));
   }
-  if (t <= 0) return a > 0 ? 200 : 100;
-  return Math.round((a / t) * 100);
+  if (t <= 0) return a > 0 ? 100 : 0;
+  return Math.min(150, Math.round((a / t) * 100));
 };
 
 const kpiTone = (attain) =>
@@ -5612,7 +5649,14 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
 /*  Interactive 3-Step Quick-Start Trial Activation Banner            */
 /* ================================================================== */
 function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem("flowdirector_quickstart_dismissed") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+
   const ohv = Math.round((data.settings.income || 0) / (data.settings.hours || 1));
   const hasOhv = ohv > 0;
   const hasCaptures = (data.captures && data.captures.length > 0) || (data.dailyBackup && data.dailyBackup.length > 0);
@@ -5621,6 +5665,13 @@ function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
   const stepCount = [hasOhv, hasCaptures, hasThemes].filter(Boolean).length;
 
   if (dismissed || stepCount === 3) return null;
+
+  const handleDismiss = () => {
+    setDismissed(true);
+    try {
+      localStorage.setItem("flowdirector_quickstart_dismissed", "true");
+    } catch (e) {}
+  };
 
   const loadBlueprint = () => {
     if (window.confirm("Load Executive Blueprint sample data? This will pre-fill realistic high-leverage themes, tasks, and settings that you can explore and edit.")) {
@@ -5637,58 +5688,64 @@ function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
   };
 
   return (
-    <div className="mb-6 rounded-3xl border border-blue-200 bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-white p-5 sm:p-6 text-slate-900 shadow-sm relative overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-blue-100 pb-3">
+    <div className="mb-5 rounded-2xl border border-blue-200/80 bg-linear-to-r from-blue-50/90 via-indigo-50/50 to-white p-3.5 sm:p-4 text-slate-900 shadow-2xs relative">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100/80 pb-2.5">
         <div className="flex items-center gap-2">
-          <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-xs">🚀</span>
-          <span className="text-xs font-bold uppercase tracking-wider text-blue-950">Quick-Start Mastery Guide ({stepCount}/3 Completed)</span>
+          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-600 text-[10px] font-bold text-white">🚀</span>
+          <span className="text-xs font-black uppercase tracking-wider text-blue-950">Quick-Start Guide ({stepCount}/3 Done)</span>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={loadBlueprint} className="text-xs font-bold text-blue-700 hover:text-blue-900 underline flex items-center gap-1">
-            <span>✨ Load Executive Sample Blueprint</span>
+          <button onClick={loadBlueprint} className="text-xs font-bold text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-1">
+            <span>✨ Load Sample Blueprint</span>
           </button>
-          <button onClick={() => setDismissed(true)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+          <button 
+            onClick={handleDismiss} 
+            className="flex h-5 w-5 items-center justify-center rounded-md text-slate-400 hover:bg-blue-100 hover:text-slate-700 text-xs font-bold transition"
+            title="Dismiss guide"
+          >
+            ✕
+          </button>
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className={`rounded-2xl border p-3.5 transition ${hasOhv ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
+      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        <div className={`rounded-xl border p-2.5 transition ${hasOhv ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Step 1</span>
-            {hasOhv ? <span className="text-emerald-700 font-bold text-xs">✓ Done</span> : <span className="text-slate-400 text-xs">Pending</span>}
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">1. Owner Value</span>
+            {hasOhv ? <span className="text-emerald-700 font-extrabold text-[11px]">✓ Set</span> : <span className="text-slate-400 text-[11px]">Pending</span>}
           </div>
-          <div className="text-xs font-bold text-slate-950 mt-1">Calculate Owner Hour Value</div>
-          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">Set your income goal & hours to calculate hourly delegation baseline.</p>
+          <div className="text-xs font-bold text-slate-950 mt-0.5">Calculate OHV</div>
+          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">Calculate your hourly delegation rate.</p>
           {!hasOhv && (
-            <button onClick={() => onGoToTab("settings")} className="mt-2.5 rounded-lg bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800 transition">
-              Calculate OHV →
+            <button onClick={() => onGoToTab("settings")} className="mt-1.5 rounded-lg bg-slate-950 px-2.5 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 transition">
+              Calculate →
             </button>
           )}
         </div>
 
-        <div className={`rounded-2xl border p-3.5 transition ${hasThemes ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
+        <div className={`rounded-xl border p-2.5 transition ${hasThemes ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Step 2</span>
-            {hasThemes ? <span className="text-emerald-700 font-bold text-xs">✓ Done</span> : <span className="text-slate-400 text-xs">Pending</span>}
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">2. Weekly Themes</span>
+            {hasThemes ? <span className="text-emerald-700 font-extrabold text-[11px]">✓ Set</span> : <span className="text-slate-400 text-[11px]">Pending</span>}
           </div>
-          <div className="text-xs font-bold text-slate-950 mt-1">Set Weekly Focus Themes</div>
-          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">Assign strategic themes to each day (e.g. Sales, Team, Strategy).</p>
+          <div className="text-xs font-bold text-slate-950 mt-0.5">Set Focus Themes</div>
+          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">Assign themes to each weekday.</p>
           {!hasThemes && (
-            <button onClick={() => onGoToTab("weekly")} className="mt-2.5 rounded-lg bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800 transition">
-              Configure Themes →
+            <button onClick={() => onGoToTab("weekly")} className="mt-1.5 rounded-lg bg-slate-950 px-2.5 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 transition">
+              Set Themes →
             </button>
           )}
         </div>
 
-        <div className={`rounded-2xl border p-3.5 transition ${hasCaptures ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
+        <div className={`rounded-xl border p-2.5 transition ${hasCaptures ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Step 3</span>
-            {hasCaptures ? <span className="text-emerald-700 font-bold text-xs">✓ Done</span> : <span className="text-slate-400 text-xs">Pending</span>}
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">3. Delegation</span>
+            {hasCaptures ? <span className="text-emerald-700 font-extrabold text-[11px]">✓ Ready</span> : <span className="text-slate-400 text-[11px]">Pending</span>}
           </div>
-          <div className="text-xs font-bold text-slate-950 mt-1">Capture & Delegate Tasks</div>
-          <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">Capture all open loops and mark low-OHV items as DELEGATE or AUTOMATE.</p>
+          <div className="text-xs font-bold text-slate-950 mt-0.5">Capture &amp; Triage</div>
+          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">Capture loops and delegate low-OHV tasks.</p>
           {!hasCaptures && (
-            <button onClick={() => onGoToTab("capture")} className="mt-2.5 rounded-lg bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800 transition">
+            <button onClick={() => onGoToTab("capture")} className="mt-1.5 rounded-lg bg-slate-950 px-2.5 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 transition">
               Open Capture →
             </button>
           )}
@@ -7847,67 +7904,64 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
         </div>
       )}
 
-      {/* Department Filter Pills Bar */}
+      {/* Department Filter Strip */}
       {myRank >= 4 && (
-        <div className="flex flex-wrap items-center gap-1.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-black uppercase tracking-wider text-slate-400 mr-2">Department:</span>
-          <button
-            onClick={() => setDeptFilter("ALL")}
-            className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
-              deptFilter === "ALL" ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-          >
-            All Departments
-          </button>
-          {depts.map(d => (
-            <button
-              key={d}
-              onClick={() => setDeptFilter(d)}
-              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
-                deptFilter === d ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              {d}
-            </button>
-          ))}
-        </div>
+        <DepartmentFilterStrip depts={depts} deptFilter={deptFilter} setDeptFilter={setDeptFilter} />
       )}
 
       {(subTab === "delegated" || subTab === "assigned_to_me") && (
         <div className="space-y-5">
           {/* Quick Delegate Input Bar */}
           {subTab === "delegated" && (
-            <div className="rounded-3xl border-2 border-slate-200 bg-white p-4 sm:p-5 shadow-xs">
-              <form onSubmit={handleQuickDelegate} className="flex flex-wrap items-center gap-2.5">
-                <input 
-                  value={newTaskText}
-                  onChange={e => setNewTaskText(e.target.value)}
-                  placeholder="+ Delegate a new deliverable or task to a team member..."
-                  className="flex-1 min-w-[240px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
-                />
-                <input 
-                  value={newLink}
-                  onChange={e => setNewLink(e.target.value)}
-                  placeholder="Attach Google Doc / Loom / Figma link..."
-                  className="w-56 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-blue-600 focus:bg-white"
-                />
-                <select 
-                  value={newAssignee} 
-                  onChange={e => setNewAssignee(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none"
-                >
-                  <option value="">— Assign to Team Member —</option>
-                  {team.map(m => <option key={m.id} value={m.name}>{m.label}</option>)}
-                </select>
-                <input 
-                  type="date"
-                  value={newDue}
-                  onChange={e => setNewDue(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 outline-none"
-                />
-                <button type="submit" className="rounded-xl bg-slate-950 text-white px-4 py-2 text-xs font-black hover:bg-slate-800 transition shadow-xs">
-                  ⚡ Delegate Task
-                </button>
+            <div className="rounded-3xl border border-slate-200/90 bg-white p-4 sm:p-5 shadow-xs space-y-3">
+              <form onSubmit={handleQuickDelegate} className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-600 text-white text-xs font-bold shrink-0">＋</span>
+                  <input 
+                    value={newTaskText}
+                    onChange={e => setNewTaskText(e.target.value)}
+                    placeholder="What deliverable needs to be delegated? (e.g. Prepare Charter Quotation for Mumbai Flight)"
+                    className="flex-1 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 text-xs sm:text-sm font-semibold text-slate-900 outline-none focus:border-indigo-600 focus:bg-white transition"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select 
+                      value={newAssignee} 
+                      onChange={e => setNewAssignee(e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
+                    >
+                      <option value="">👤 Assign to Team Member…</option>
+                      {team.map(m => <option key={m.id} value={m.name}>{m.label}</option>)}
+                    </select>
+
+                    <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 shadow-2xs">
+                      <span className="text-[11px] font-bold text-slate-400">📅 Due:</span>
+                      <input 
+                        type="date"
+                        value={newDue}
+                        onChange={e => setNewDue(e.target.value)}
+                        className="bg-transparent font-bold text-slate-800 outline-none text-xs"
+                      />
+                    </div>
+
+                    <input 
+                      value={newLink}
+                      onChange={e => setNewLink(e.target.value)}
+                      placeholder="🔗 Doc / Loom link (optional)"
+                      className="w-48 sm:w-60 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-indigo-600 shadow-2xs"
+                    />
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    className="rounded-xl bg-slate-950 text-white px-4 py-2 text-xs font-black hover:bg-slate-800 transition shadow-xs flex items-center gap-1.5"
+                  >
+                    <span>⚡</span>
+                    <span>Delegate Deliverable</span>
+                  </button>
+                </div>
               </form>
             </div>
           )}
@@ -10466,14 +10520,14 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                     const next = day.outcomeMark === "done" ? "" : "done";
                     upd(x => { x.outcomeMark = next; });
                   }}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black transition shadow-2xs border ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition shadow-2xs border ${
                     day.outcomeMark === "done" 
                       ? "bg-emerald-600 text-white border-emerald-700" 
                       : "bg-white/90 text-slate-700 border-amber-300 hover:bg-amber-100/60"
                   }`}
                   title={day.outcomeMark === "done" ? "Mark Incomplete" : "Mark as Completed Victory"}
                 >
-                  <span>{day.outcomeMark === "done" ? "✓ Done" : "Mark Done"}</span>
+                  <span>{day.outcomeMark === "done" ? "✓ Completed Victory" : "Mark Done"}</span>
                 </button>
               </div>
             </div>
@@ -10495,7 +10549,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                 {liveOutcomeTask ? (
                   <div 
                     onClick={() => onOpenTask && onOpenTask(liveOutcomeTask)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black cursor-pointer transition shadow-2xs border ${
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black cursor-pointer transition shadow-2xs border ${
                       liveOutcomeTask.status === "completed" 
                         ? "bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200"
                         : liveOutcomeTask.status === "blocked"
@@ -10525,7 +10579,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                 ) : (
                   <button
                     onClick={() => setDelegateModalTarget({ type: "outcome", title: day.outcome || "Main Outcome", dk })}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition shadow-2xs border ${
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition shadow-2xs border ${
                       day.outcomeDelegatedTo
                         ? "bg-sky-100 border-sky-300 text-sky-950 hover:bg-sky-200"
                         : "bg-white border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
@@ -10537,7 +10591,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                   </button>
                 )}
 
-                {/* 1-Click Time Block Placement with Mode Selection */}
+                {/* 1-Click Time Block Placement */}
                 <select
                   value=""
                   onChange={e => {
@@ -10548,7 +10602,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                       e.target.value = "";
                     }
                   }}
-                  className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
+                  className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
                 >
                   <option value="" disabled>⏱️ Schedule 15-Min Slot...</option>
                   <optgroup label="⏱️ Block 15-Min Slot">
@@ -10567,7 +10621,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                   <select
                     value={day.outcomeKra || ""}
                     onChange={e => upd(x => { x.outcomeKra = e.target.value; })}
-                    className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
+                    className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
                   >
                     <option value="">🎯 Link to KRA...</option>
                     {myKras.map(k => <option key={k.id} value={k.title}>{k.title}</option>)}
@@ -10622,9 +10676,9 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                     key={i} 
                     className={`rounded-2xl border p-3.5 transition space-y-2.5 ${
                       isDone 
-                        ? "border-emerald-200 bg-emerald-50/50" 
+                        ? "border-emerald-200 bg-emerald-50/40" 
                         : isDelegated
-                        ? "border-sky-200 bg-sky-50/40"
+                        ? "border-sky-200 bg-sky-50/30"
                         : isMoved
                         ? "border-amber-200 bg-amber-50/30"
                         : isDropped
@@ -10681,7 +10735,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                           x.marks = x.marks || ["", "", ""];
                           x.marks[i] = e.target.value; 
                         })}
-                        className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 outline-none hover:bg-slate-50 transition shadow-2xs"
+                        className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-800 outline-none hover:bg-slate-50 transition shadow-2xs"
                       >
                         <option value="">🔘 Open Focus</option>
                         <option value="done">✅ Completed</option>
@@ -10691,14 +10745,14 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                       </select>
                     </div>
 
-                    {/* Action Strip on each priority row */}
+                    {/* Action Strip & Badges */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100/80 text-xs">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        {/* 1-Click Delegate Button / Live Status Chip */}
+                        {/* Live Task Badge or Delegate Button */}
                         {livePriorityTask ? (
                           <div 
                             onClick={() => onOpenTask && onOpenTask(livePriorityTask)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer transition shadow-2xs border ${
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-black cursor-pointer transition shadow-2xs border ${
                               livePriorityTask.status === "completed" 
                                 ? "bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200"
                                 : livePriorityTask.status === "blocked"
@@ -10733,7 +10787,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                               title: (day.priorities && day.priorities[i]) || `Priority #${i+1}`,
                               dk
                             })}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition border ${
+                            className={`flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition border ${
                               delTo 
                                 ? "bg-sky-100 border-sky-300 text-sky-900" 
                                 : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
@@ -10756,7 +10810,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                               e.target.value = "";
                             }
                           }}
-                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-700 outline-none hover:bg-white transition"
+                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 outline-none hover:bg-white transition"
                         >
                           <option value="" disabled>⏱️ 15-Min Slot...</option>
                           <optgroup label="⏱️ Block 15-Min Slot">
@@ -10778,7 +10832,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                               x.priorityKra = x.priorityKra || ["", "", ""];
                               x.priorityKra[i] = e.target.value;
                             })}
-                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-700 outline-none hover:bg-white transition"
+                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 outline-none hover:bg-white transition"
                           >
                             <option value="">🎯 KRA Tag...</option>
                             {myKras.map(k => <option key={k.id} value={k.title}>{k.title}</option>)}
@@ -10789,7 +10843,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                         {!isDone && day.priorities && day.priorities[i] && (
                           <button
                             onClick={() => handlePushToTomorrow(i, day.priorities[i])}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-500 hover:bg-amber-50 hover:text-amber-900 transition"
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold text-slate-500 hover:bg-amber-50 hover:text-amber-900 transition"
                             title="Push this priority to tomorrow's planner"
                           >
                             <span>→ Tomorrow</span>
@@ -10842,15 +10896,15 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
         </div>
       </div>
 
-      {/* 6. Hourly Schedule Timeline (Desktop Table + Mobile Vertical Cards) */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">⏰</span>
+      {/* 6. Grouped Hourly Schedule Timeline (Morning, Afternoon, Evening) */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-6 shadow-xs space-y-6">
+        <div className="flex items-center justify-between flex-wrap gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-amber-400 text-lg shadow-2xs">⏰</span>
             <div>
-              <h3 className="text-base font-black text-slate-950">Hourly Schedule &amp; Time-Blocking</h3>
-              <p className="text-[11px] text-slate-400 font-bold">
-                Planned focus blocks with 15-min task precision
+              <h3 className="text-base font-black text-slate-950">Daily Time-Blocking Schedule</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                Structured in 3 focused blocks: Morning Focus, Afternoon Execution, and Evening Wrap-up.
               </p>
             </div>
           </div>
@@ -10876,113 +10930,169 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
           </div>
         </div>
 
-        {/* Desktop View Table (>= md) */}
-        <div className="hidden md:block space-y-2">
-          <div 
-            className="grid gap-3 text-xs font-black uppercase tracking-wider text-slate-400 pb-1 border-b border-slate-100" 
-            style={{ gridTemplateColumns: "100px minmax(0, 1fr) minmax(0, 1fr)" }}
-          >
-            <span>Time</span>
-            <span>Planned Focus Block</span>
-            <span>What Actually Happened</span>
-          </div>
-
-          <div className="space-y-1.5">
-            {DAILY_SLOTS.map((s, si) => (
-              <div 
-                key={s} 
-                className="grid items-start gap-3 py-1 border-b border-slate-50 last:border-0" 
-                style={{ gridTemplateColumns: "100px minmax(0, 1fr) minmax(0, 1fr)" }}
-              >
-                <span className="mono text-xs font-black text-slate-500 pt-2">{s}</span>
-                <div className="space-y-1">
-                  <Field 
-                    value={day.blocks[s] || ""} 
-                    onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
-                    placeholder="Deep work, client call, review…" 
-                  />
-                  {slotItems[si] && slotItems[si].map((it, idx) => (
-                    it.source && SLOT_ARRAY[it.source] ? (
-                      <div key={it.id} className="mt-1">
-                        <BackupItemRow 
-                          item={it} 
-                          data={data}
-                          onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
-                          onRemove={() => removeSlotItem(it.source, it.id)}
-                          onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
-                        />
-                      </div>
-                    ) : (
-                      <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800" title={it.text}>
-                        📌 {it.text}
-                      </div>
-                    )
-                  ))}
-                </div>
-                <input 
-                  value={day.actual[s] || ""} 
-                  onChange={e => upd(x => { x.actual[s] = e.target.value; })}
-                  placeholder="Actual review / notes…"
-                  className="w-full rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:bg-white focus:border-slate-400 transition" 
-                />
+        {/* Schedule Groups (Morning, Afternoon, Evening) */}
+        {[
+          {
+            id: "morning",
+            icon: "🌅",
+            title: "Morning Focus",
+            range: "7:00 AM – 12:00 PM",
+            desc: "Deep work & high-leverage needle-movers",
+            slots: ["7–8 AM", "8–9 AM", "9–10 AM", "10–11 AM", "11–12"],
+            headerBg: "bg-amber-50/70 border-amber-200 text-amber-950",
+            badgeBg: "bg-amber-200 text-amber-900"
+          },
+          {
+            id: "afternoon",
+            icon: "☀️",
+            title: "Afternoon Execution",
+            range: "12:00 PM – 5:00 PM",
+            desc: "Team collaboration, operations & client calls",
+            slots: ["12–1 PM", "1–2 PM", "2–3 PM", "3–4 PM", "4–5 PM"],
+            headerBg: "bg-sky-50/70 border-sky-200 text-sky-950",
+            badgeBg: "bg-sky-200 text-sky-900"
+          },
+          {
+            id: "evening",
+            icon: "🌙",
+            title: "Evening Wrap-up",
+            range: "5:00 PM – 10:00 PM",
+            desc: "Delegation review, shutdown ritual & next-day setup",
+            slots: ["5–6 PM", "6–7 PM", "7–8 PM", "8–9 PM", "9–10 PM"],
+            headerBg: "bg-indigo-50/70 border-indigo-200 text-indigo-950",
+            badgeBg: "bg-indigo-200 text-indigo-900"
+          }
+        ].map(group => (
+          <div key={group.id} className="space-y-3">
+            {/* Section Header Strip */}
+            <div className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3.5 py-2 ${group.headerBg}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-base">{group.icon}</span>
+                <span className="text-xs font-black uppercase tracking-wider">{group.title}</span>
+                <span className="text-[11px] opacity-75 font-medium">({group.range})</span>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Mobile View Stack (< md) */}
-        <div className="block md:hidden space-y-3">
-          {DAILY_SLOTS.map((s, si) => (
-            <div key={s} className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="mono text-xs font-black text-slate-900 bg-white border border-slate-200 px-2.5 py-0.5 rounded-lg">
-                  {s}
-                </span>
-                {day.blocks[s] && (
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
-                    Scheduled
-                  </span>
-                )}
-              </div>
-
-              {mobileScheduleTab === "plan" ? (
-                <div className="space-y-1.5">
-                  <Field 
-                    value={day.blocks[s] || ""} 
-                    onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
-                    placeholder="Add planned focus…" 
-                  />
-                  {slotItems[si] && slotItems[si].map((it, idx) => (
-                    it.source && SLOT_ARRAY[it.source] ? (
-                      <div key={it.id} className="mt-1">
-                        <BackupItemRow 
-                          item={it} 
-                          data={data}
-                          onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
-                          onRemove={() => removeSlotItem(it.source, it.id)}
-                          onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
-                        />
-                      </div>
-                    ) : (
-                      <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800">
-                        📌 {it.text}
-                      </div>
-                    )
-                  ))}
-                </div>
-              ) : (
-                <div>
-                  <input 
-                    value={day.actual[s] || ""} 
-                    onChange={e => upd(x => { x.actual[s] = e.target.value; })}
-                    placeholder="What actually happened…"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none" 
-                  />
-                </div>
-              )}
+              <span className="text-[11px] font-medium opacity-85 hidden sm:inline">{group.desc}</span>
             </div>
-          ))}
-        </div>
+
+            {/* Desktop Table for this Group */}
+            <div className="hidden md:block space-y-1.5">
+              <div 
+                className="grid gap-3 text-[11px] font-black uppercase tracking-wider text-slate-400 px-2 pb-1" 
+                style={{ gridTemplateColumns: "110px minmax(0, 1.2fr) minmax(0, 0.8fr)" }}
+              >
+                <span>Time Slot</span>
+                <span>Planned Focus Block / Assigned Deliverable</span>
+                <span>What Actually Happened (Review)</span>
+              </div>
+
+              {group.slots.map(s => {
+                const si = DAILY_SLOTS.indexOf(s);
+                return (
+                  <div 
+                    key={s} 
+                    className="grid items-start gap-3 p-2 rounded-2xl border border-slate-100 hover:border-slate-300 bg-slate-50/30 hover:bg-white transition" 
+                    style={{ gridTemplateColumns: "110px minmax(0, 1.2fr) minmax(0, 0.8fr)" }}
+                  >
+                    <div className="pt-1.5 flex items-center gap-1.5">
+                      <span className="mono text-xs font-black text-slate-700 bg-white border border-slate-200/80 px-2 py-0.5 rounded-lg shadow-2xs">
+                        {s}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      <Field 
+                        value={day.blocks[s] || ""} 
+                        onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
+                        placeholder="Planned deep work, meeting, or review…" 
+                        className="bg-white"
+                      />
+                      {slotItems[si] && slotItems[si].map((it, idx) => (
+                        it.source && SLOT_ARRAY[it.source] ? (
+                          <div key={it.id} className="mt-1">
+                            <BackupItemRow 
+                              item={it} 
+                              data={data}
+                              onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
+                              onRemove={() => removeSlotItem(it.source, it.id)}
+                              onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
+                            />
+                          </div>
+                        ) : (
+                          <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2.5 py-1 text-xs font-bold text-sky-800" title={it.text}>
+                            📌 {it.text}
+                          </div>
+                        )
+                      ))}
+                    </div>
+                    <input 
+                      value={day.actual[s] || ""} 
+                      onChange={e => upd(x => { x.actual[s] = e.target.value; })}
+                      placeholder="Actual review / execution notes…"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-slate-400 transition" 
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Mobile View Stack for this Group */}
+            <div className="block md:hidden space-y-2.5">
+              {group.slots.map(s => {
+                const si = DAILY_SLOTS.indexOf(s);
+                return (
+                  <div key={s} className="rounded-2xl border border-slate-200 bg-white p-3 space-y-2 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <span className="mono text-xs font-black text-slate-900 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-lg">
+                        {s}
+                      </span>
+                      {day.blocks[s] && (
+                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
+                          Scheduled
+                        </span>
+                      )}
+                    </div>
+
+                    {mobileScheduleTab === "plan" ? (
+                      <div className="space-y-1.5">
+                        <Field 
+                          value={day.blocks[s] || ""} 
+                          onChange={e => upd(x => { x.blocks[s] = e.target.value; })} 
+                          placeholder="Add planned focus…" 
+                          className="bg-slate-50"
+                        />
+                        {slotItems[si] && slotItems[si].map((it, idx) => (
+                          it.source && SLOT_ARRAY[it.source] ? (
+                            <div key={it.id} className="mt-1">
+                              <BackupItemRow 
+                                item={it} 
+                                data={data}
+                                onUpdate={(f, v) => updateSlotItem(it.source, it.id, f, v)}
+                                onRemove={() => removeSlotItem(it.source, it.id)}
+                                onToggleDone={() => updateSlotItem(it.source, it.id, "done", !it.done)} 
+                              />
+                            </div>
+                          ) : (
+                            <div key={idx} className="mt-1 truncate rounded-xl bg-sky-50 border border-sky-200 px-2 py-1 text-xs font-bold text-sky-800">
+                              📌 {it.text}
+                            </div>
+                          )
+                        ))}
+                      </div>
+                    ) : (
+                      <div>
+                        <input 
+                          value={day.actual[s] || ""} 
+                          onChange={e => upd(x => { x.actual[s] = e.target.value; })}
+                          placeholder="What actually happened…"
+                          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none" 
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* 7. Evening Closure Desk (5 min) */}
@@ -13814,7 +13924,7 @@ function KpiList({ kpis, valueOf, canManage, onActual, onEdit, onDelete, dailyLo
 
               {/* Attainment Percentage Ring / Pill */}
               <div className="text-right min-w-[65px] bg-white/80 px-2.5 py-1 rounded-xl border border-slate-200">
-                <span className={`text-xs font-black block ${tone === "emerald" ? "text-emerald-700" : tone === "rose" ? "text-rose-700" : "text-amber-700"}`}>
+                <span className={`text-xs font-black block ${tone === "green" ? "text-emerald-700" : tone === "red" ? "text-rose-700" : tone === "amber" ? "text-amber-700" : "text-slate-400"}`}>
                   {attain === null ? "—" : attain + "%"}
                 </span>
                 <span className="text-[9px] font-bold text-slate-400 uppercase">Score</span>
@@ -14239,48 +14349,29 @@ function PeopleView({ orgCtx, meId, data }){
       </Callout>
       {err && <p className="mb-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
 
-      {/* Department Filter Pills Bar */}
+      {/* Department Filter Strip */}
       {myRank >= 4 && (
-        <div className="mb-4 flex flex-wrap items-center gap-1.5 bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-black uppercase tracking-wider text-slate-400 mr-2">Department:</span>
-          <button
-            onClick={() => setDeptFilter("ALL")}
-            className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
-              deptFilter === "ALL" ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-          >
-            All Departments
-          </button>
-          {depts.map(d => (
-            <button
-              key={d}
-              onClick={() => setDeptFilter(d)}
-              className={`rounded-xl px-3 py-1 text-xs font-bold transition ${
-                deptFilter === d ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              {d}
-            </button>
-          ))}
+        <div className="mb-4">
+          <DepartmentFilterStrip depts={depts} deptFilter={deptFilter} setDeptFilter={setDeptFilter} />
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white p-2">
-        <div className="flex flex-wrap items-center gap-1">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white p-2.5 sm:p-3 shadow-2xs">
+        <div className="flex flex-wrap items-center gap-1.5">
           {PERIODS.map(p => (
             <button key={p.id} onClick={()=>setPeriod(p.id)}
-              className={"rounded-md px-3 py-1.5 text-xs sm:text-sm font-semibold transition "+
-                (period===p.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-stone-100")}>
+              className={"rounded-xl px-3.5 py-1.5 text-xs font-bold transition "+
+                (period===p.id ? "bg-slate-950 text-white shadow-xs" : "text-slate-600 hover:bg-slate-100")}>
               {p.label}
             </button>
           ))}
-          <span className="pl-2 text-xs text-slate-400 hidden sm:inline">{withData.length} of {visible.length} have planner data</span>
+          <span className="pl-2 text-xs font-medium text-slate-400 hidden sm:inline">{withData.length} of {visible.length} have planner data</span>
         </div>
 
         {myRank >= 4 && (
           <button 
             onClick={() => navigate("/settings/company")}
-            className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-1.5 text-xs font-bold transition shadow-2xs"
+            className="flex items-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3.5 py-1.5 text-xs font-black transition shadow-2xs"
           >
             <span>➕</span>
             <span>Invite Team Member</span>
@@ -14288,73 +14379,121 @@ function PeopleView({ orgCtx, meId, data }){
         )}
       </div>
 
-      <div className={"mb-5 grid grid-cols-2 gap-3 "+(anyKpis ? "md:grid-cols-6" : "md:grid-cols-5")}>
-        <Metric label="Priorities completed" value={pct(teamCompletion)} sub="team average" />
-        <Metric label="Days planned" value={pct(teamPlanRate)} sub="outcome set" />
-        <Metric label="Avg day score" value={avg(teamScore)} sub="out of 3" />
-        <Metric label="Overdue items" value={teamOverdue} tone={teamOverdue ? "rose" : "emerald"} sub="right now" />
-        <Metric label="Waiting on others" value={teamDelegated} sub="open delegations" />
-        {anyKpis && <Metric label="KPI attainment" value={pct(teamKpi)} sub="this month / quarter"
-          tone={teamKpi === null ? undefined : teamKpi >= 100 ? "emerald" : teamKpi < 80 ? "rose" : undefined} />}
+      {/* Executive Metric Cards */}
+      <div className={"mb-6 grid grid-cols-2 gap-3 "+(anyKpis ? "md:grid-cols-6" : "md:grid-cols-5")}>
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+          <div className="mono text-xl sm:text-2xl font-black text-slate-900">{pct(teamCompletion)}</div>
+          <div className="text-xs font-bold text-slate-700 mt-0.5">Priorities Done</div>
+          <div className="text-[10px] font-medium text-slate-400 mt-0.5">team average</div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+          <div className="mono text-xl sm:text-2xl font-black text-slate-900">{pct(teamPlanRate)}</div>
+          <div className="text-xs font-bold text-slate-700 mt-0.5">Days Planned</div>
+          <div className="text-[10px] font-medium text-slate-400 mt-0.5">outcome set</div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+          <div className="mono text-xl sm:text-2xl font-black text-slate-900">{avg(teamScore)}</div>
+          <div className="text-xs font-bold text-slate-700 mt-0.5">Avg Day Score</div>
+          <div className="text-[10px] font-medium text-slate-400 mt-0.5">out of 3.0</div>
+        </div>
+
+        <div className={`rounded-2xl border p-4 shadow-2xs ${teamOverdue ? "border-rose-200 bg-rose-50/50" : "border-slate-200/90 bg-white"}`}>
+          <div className={`mono text-xl sm:text-2xl font-black ${teamOverdue ? "text-rose-600" : "text-emerald-700"}`}>{teamOverdue}</div>
+          <div className="text-xs font-bold text-slate-700 mt-0.5">Overdue Items</div>
+          <div className="text-[10px] font-medium text-slate-400 mt-0.5">requires follow-up</div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-2xs">
+          <div className="mono text-xl sm:text-2xl font-black text-slate-900">{teamDelegated}</div>
+          <div className="text-xs font-bold text-slate-700 mt-0.5">Open Delegations</div>
+          <div className="text-[10px] font-medium text-slate-400 mt-0.5">in flight</div>
+        </div>
+
+        {anyKpis && (
+          <div className={`rounded-2xl border p-4 shadow-2xs ${teamKpi === null ? "border-slate-200/90 bg-white" : teamKpi >= 100 ? "border-emerald-200 bg-emerald-50/50" : teamKpi < 80 ? "border-rose-200 bg-rose-50/50" : "border-amber-200 bg-amber-50/50"}`}>
+            <div className={`mono text-xl sm:text-2xl font-black ${teamKpi === null ? "text-slate-400" : teamKpi >= 100 ? "text-emerald-700" : teamKpi < 80 ? "text-rose-600" : "text-amber-700"}`}>
+              {pct(teamKpi)}
+            </div>
+            <div className="text-xs font-bold text-slate-700 mt-0.5">KPI Attainment</div>
+            <div className="text-[10px] font-medium text-slate-400 mt-0.5">this period</div>
+          </div>
+        )}
       </div>
 
-      <div className="mb-2 flex items-baseline justify-between">
-        <h2 className="font-semibold text-slate-700">By person</h2>
-        <span className="text-xs text-slate-400">Click a row for the detail</span>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-black uppercase tracking-wider text-slate-900">Team Execution Roster</span>
+          <span className="rounded-full bg-slate-100 text-slate-700 px-2.5 py-0.5 text-xs font-bold">{rows.length}</span>
+        </div>
+        <span className="text-xs font-medium text-slate-400">Click any person for detail breakdown</span>
       </div>
-      <div className="space-y-2">
+
+      <div className="space-y-2.5">
         {rows.length === 0 && <Ghost>Nobody to show in this department.</Ghost>}
         {rows.map(({member:m, metrics:x, kpiAttain}) => (
           <button key={m.id} onClick={()=>setSel(sel && sel.id===m.id ? null : m)}
-            className={"block w-full rounded-lg border p-3 text-left transition "+
-              (sel && sel.id===m.id ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white hover:border-slate-300")}>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <div className="min-w-[8rem] flex-1">
-                <div className="truncate font-medium text-slate-800">
-                  {m.name}{m.user_id===meId && <span className="text-xs font-normal text-slate-400"> (you)</span>}
+            className={"block w-full rounded-2xl border p-3.5 sm:p-4 text-left transition shadow-2xs "+
+              (sel && sel.id===m.id ? "border-amber-400 bg-amber-50/60 ring-2 ring-amber-300/50" : "border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-xs")}>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3 justify-between">
+              <div className="flex items-center gap-3 min-w-[200px]">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-black text-amber-400 shrink-0 shadow-2xs">
+                  {(m.name || m.email || "U").charAt(0).toUpperCase()}
                 </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-xs text-slate-500 font-bold">{ROLE_LABEL[m.role] || m.role}</span>
-                  <span className="rounded-full bg-blue-50 px-2 py-0.2 text-[10px] font-bold text-blue-700 border border-blue-100">
-                    📁 {m.department || "General"}
-                  </span>
+                <div>
+                  <div className="font-extrabold text-sm text-slate-950">
+                    {m.name || m.email}{m.user_id===meId && <span className="text-xs font-normal text-slate-400"> (you)</span>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                    <span className="text-[11px] text-slate-500 font-bold">{ROLE_LABEL[m.role] || m.role}</span>
+                    <span className="rounded-md bg-blue-50 px-2 py-0.2 text-[10px] font-bold text-blue-700 border border-blue-100">
+                      📁 {m.department || "General"}
+                    </span>
+                  </div>
                 </div>
               </div>
-              {!x && <span className="text-xs text-slate-400">No planner data yet</span>}
-              {x && <>
-                <div className="text-center">
-                  <div className="mono text-sm font-bold text-slate-800">{pct(x.prioCompletion)}</div>
-                  <div className="text-[11px] text-slate-400">priorities</div>
-                </div>
-                <div className="text-center">
-                  <div className="mono text-sm font-bold text-slate-800">{x.daysPlanned}<span className="text-slate-400">/{x.daysInPeriod}</span></div>
-                  <div className="text-[11px] text-slate-400">days planned</div>
-                </div>
-                <div className="text-center">
-                  <div className="mono text-sm font-bold text-slate-800">{avg(x.avgScore)}</div>
-                  <div className="text-[11px] text-slate-400">avg score</div>
-                </div>
-                <div className="text-center">
-                  <div className={"mono text-sm font-bold "+(x.overdue?"text-rose-600":"text-slate-800")}>{x.overdue}</div>
-                  <div className="text-[11px] text-slate-400">overdue</div>
-                </div>
-                <div className="text-center">
-                  <div className={"mono text-sm font-bold "+(x.overdueDelegated?"text-amber-600":"text-slate-800")}>{x.openDelegated}</div>
-                  <div className="text-[11px] text-slate-400">waiting on</div>
-                </div>
-                {anyKpis && (
+
+              {!x ? (
+                <span className="text-xs font-medium text-slate-400 italic">No planner data recorded for this period</span>
+              ) : (
+                <div className="flex flex-wrap items-center gap-4 sm:gap-6">
                   <div className="text-center">
-                    <div className={"mono text-sm font-bold "+
-                      (kpiAttain === null ? "text-slate-400"
-                        : kpiAttain >= 100 ? "text-emerald-600"
-                        : kpiAttain >= 80 ? "text-amber-600" : "text-rose-600")}>
-                      {pct(kpiAttain)}
-                    </div>
-                    <div className="text-[11px] text-slate-400">KPIs</div>
+                    <div className="mono text-sm font-black text-slate-900">{pct(x.prioCompletion)}</div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Priorities</div>
                   </div>
-                )}
-                <div className="hidden sm:block"><Sparkline series={x.scoreSeries} /></div>
-              </>}
+                  <div className="text-center">
+                    <div className="mono text-sm font-black text-slate-900">{x.daysPlanned}<span className="text-slate-400 text-xs">/{x.daysInPeriod}</span></div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Planned</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="mono text-sm font-black text-slate-900">{avg(x.avgScore)}</div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Score</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={"mono text-sm font-black "+(x.overdue?"text-rose-600":"text-slate-900")}>{x.overdue}</div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Overdue</div>
+                  </div>
+                  <div className="text-center">
+                    <div className={"mono text-sm font-black "+(x.overdueDelegated?"text-amber-600":"text-slate-900")}>{x.openDelegated}</div>
+                    <div className="text-[10px] font-bold uppercase text-slate-400">Waiting</div>
+                  </div>
+                  {anyKpis && (
+                    <div className="text-center min-w-[50px]">
+                      <div className={"mono text-sm font-black "+
+                        (kpiAttain === null ? "text-slate-400"
+                          : kpiAttain >= 100 ? "text-emerald-700"
+                          : kpiAttain >= 80 ? "text-amber-700" : "text-rose-600")}>
+                        {pct(kpiAttain)}
+                      </div>
+                      <div className="text-[10px] font-bold uppercase text-slate-400">KPI Score</div>
+                    </div>
+                  )}
+                  <div className="hidden lg:block pl-2 border-l border-slate-100">
+                    <Sparkline series={x.scoreSeries} />
+                  </div>
+                </div>
+              )}
             </div>
           </button>
         ))}
