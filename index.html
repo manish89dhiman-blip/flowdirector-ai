@@ -55,34 +55,34 @@ const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(D
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
-const TASK_TYPES = ["SCHEDULE","DAILY","WEEKLY","MONTHLY","WAITING","WAITING-FOR","PROJECT","MAYBE","REFERENCE","DELEGATE","AUTOMATE","DELETE"];
+const TASK_TYPES = ["SCHEDULE","DAILY","DELEGATE","WAITING","WEEKLY","MONTHLY","REFERENCE","DELETE"];
 const TYPE_HELP = {
-  SCHEDULE:"Fixed date/time — goes to Daily backup to place in a block.",
-  DAILY:"Repeats every day — goes to Daily backup routine.",
-  WEEKLY:"Repeats every week — goes to Weekly someday column.",
-  MONTHLY:"Repeats every month (GST, salary) — goes to Monthly tray.",
-  WAITING:"Backup work for free time — goes to Daily backup.",
-  "WAITING-FOR":"Depends on someone — goes to Daily backup, chase it.",
-  PROJECT:"Many steps — goes to Daily backup; schedule next action.",
-  MAYBE:"Not committed — parks in the Maybe list with a revisit date.",
-  REFERENCE:"Info, no action — goes to Reference notes.",
-  DELEGATE:"Someone else's job — goes to Daily backup, track it.",
-  AUTOMATE:"A machine's job — goes to Reference notes.",
-  DELETE:"No value — removed. The most enjoyable type."
+  SCHEDULE: "Fixed date/time slot — goes to Daily Cockpit & schedule blocks.",
+  DAILY: "Daily repeating routine / habit — goes to Daily Routine.",
+  DELEGATE: "Assigned to team member — creates live Delegation Radar task & notifies assignee.",
+  WAITING: "Waiting on external client, vendor or blocker — goes to Follow-up tracking.",
+  "WAITING-FOR": "Waiting on external client, vendor or blocker — goes to Follow-up tracking.",
+  WEEKLY: "Planned for this week's horizon — goes to Weekly Someday dock.",
+  MONTHLY: "Monthly milestone / recurring compliance (GST, payroll, review) — goes to Monthly tray.",
+  REFERENCE: "Someday/maybe ideas, systems, SOPs, and notes — goes to Ideas & Reference desk.",
+  MAYBE: "Ideas & Someday/Maybe backlog — goes to Ideas & Reference desk.",
+  AUTOMATE: "Systems & automation notes — goes to Ideas & Reference desk.",
+  PROJECT: "Multi-step initiative — goes to Daily Schedule.",
+  DELETE: "No value / noise — permanently removed."
 };
 const DEFAULT_CATEGORIES = ["Hiring","Sales","Finance","Ops","Marketing","Admin","Personal","Decision"];
 const DEFAULT_TASK_TYPE_LABELS = {
-  "SCHEDULE": "📅 Daily Backup (Date/Time Slot)",
+  "SCHEDULE": "📅 Daily Schedule (Date/Time Slot)",
   "DAILY": "🔁 Daily Repeating Routine",
   "DELEGATE": "👥 Delegate to Team Member",
-  "WAITING": "⏳ Waiting / Follow-up (Daily Backup)",
+  "WAITING": "⏳ Waiting / Follow-up",
   "WAITING-FOR": "⏳ Waiting / Follow-up",
-  "PROJECT": "📂 Multi-Step Project (Daily Backup)",
   "WEEKLY": "🗓️ Weekly Someday Pool",
   "MONTHLY": "📌 Monthly Blueprint Tray",
+  "REFERENCE": "💡 Ideas & Reference Notes",
   "MAYBE": "💭 Someday / Maybe List",
-  "REFERENCE": "💡 Reference Notes",
   "AUTOMATE": "⚡ Automate / Systematize",
+  "PROJECT": "📂 Multi-Step Project",
   "DELETE": "✕ Drop / Delete"
 };
 
@@ -7205,7 +7205,7 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
       if (["SCHEDULE", "DAILY", "WAITING", "WAITING-FOR", "PROJECT", "DELEGATE"].includes(t)) { 
         d.dailyBackup = d.dailyBackup || [];
         d.dailyBackup.unshift(payload); 
-        dest = "Daily backup"; 
+        dest = t === "DELEGATE" ? "Delegation" : (t === "WAITING" || t === "WAITING-FOR") ? "Waiting / Follow-up" : "Daily schedule"; 
       }
       else if (t === "WEEKLY") { 
         d.weeklySomeday = d.weeklySomeday || [];
@@ -7440,7 +7440,7 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
                 <option value="4h">4 hours</option>
               </select>
 
-              {["DELEGATE", "WAITING-FOR"].includes(c.taskType) && (
+              {["DELEGATE", "WAITING", "WAITING-FOR"].includes(c.taskType) && (
                 <select 
                   value={c.assignee || ""} 
                   onChange={e => setAssignee(c.id, e.target.value)} 
@@ -8533,7 +8533,7 @@ function BackupItemRow({ item, data, onUpdate, onRemove, onToggleDone, prefix, e
           <option value="4h">4 hours</option>
         </select>
 
-        {["DELEGATE","WAITING-FOR"].includes(item.taskType) &&
+        {["DELEGATE","WAITING","WAITING-FOR"].includes(item.taskType) &&
           <select value={item.assignee||""} onChange={e=>onUpdate("assignee",e.target.value)} className="rounded border border-sky-200 bg-white px-1.5 py-1 text-xs outline-none">
             <option value="">— Assign to Team Member —</option>
             {team.map(m=><option key={m.id} value={m.name}>{m.label}</option>)}
@@ -13970,7 +13970,7 @@ function personMetrics(plan, dayKeys){
 
   const { overdue, today } = collectDueItems(plan || {});
   const openDelegated = (plan.dailyBackup || [])
-    .filter(b => ["DELEGATE","WAITING-FOR"].includes(b.taskType) && !b.done);
+    .filter(b => ["DELEGATE","WAITING","WAITING-FOR"].includes(b.taskType) && !b.done);
   const overdueDelegated = openDelegated.filter(b => b.due && b.due < todayKey());
 
   return {
@@ -14314,7 +14314,7 @@ function PersonSnapshot({ person, plan, metrics, periodLabel }){
   const dk = todayKey();
   const day = (plan.daily && plan.daily[dk]) || {};
   const { overdue, today } = collectDueItems(plan || {});
-  const delegated = (Array.isArray(plan.dailyBackup) ? plan.dailyBackup : []).filter(b=>["DELEGATE","WAITING-FOR"].includes(b.taskType) && !b.done);
+  const delegated = (Array.isArray(plan.dailyBackup) ? plan.dailyBackup : []).filter(b=>["DELEGATE","WAITING","WAITING-FOR"].includes(b.taskType) && !b.done);
   const stat = (label, value, tone="slate") => (
     <div className={"rounded-lg border p-3 "+(tone==="rose"?"border-rose-200 bg-rose-50":"border-slate-200 bg-white")}>
       <div className={"mono text-xl font-bold "+(tone==="rose"?"text-rose-600":"text-slate-800")}>{value}</div>
