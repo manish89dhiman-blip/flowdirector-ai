@@ -8543,11 +8543,13 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
 
   const handleQuickDelegate = async (e) => {
     e.preventDefault();
-    if (!newTaskText.trim()) return;
+    if (!newTaskText.trim() || !newAssignee) return;
 
     const memberObj = team.find(m => 
       (m.name && m.name.toLowerCase() === (newAssignee||"").toLowerCase()) || 
-      (m.email && m.email.toLowerCase() === (newAssignee||"").toLowerCase())
+      (m.email && m.email.toLowerCase() === (newAssignee||"").toLowerCase()) ||
+      m.id === newAssignee ||
+      m.user_id === newAssignee
     );
 
     if (orgCtx?.org?.id && newAssignee) {
@@ -8609,6 +8611,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
 
     setNewTaskText("");
     setNewLink("");
+    setNewAssignee("");
   };
 
   const handleStatusChange = async (taskId, newStatus) => {
@@ -8763,13 +8766,23 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
 
                 <select
                   value={newAssignee}
-                  onChange={e => setNewAssignee(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setNewAssignee(val);
+                    const selectedObj = team.find(x => 
+                      (x.name && x.name.toLowerCase() === val.toLowerCase()) || 
+                      (x.email && x.email.toLowerCase() === val.toLowerCase()) || 
+                      x.id === val || 
+                      x.user_id === val
+                    );
+                    if (selectedObj && selectedObj.department) setNewDepartment(selectedObj.department);
+                  }}
                   className="sm:col-span-3 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
                 >
                   <option value="">— Assign to Member —</option>
-                  {visibleTeamMembers.map(m => (
-                    <option key={m.id || m.email} value={m.name || m.email}>
-                      {m.name || m.email} ({ROLE_LABEL[m.role] || m.role})
+                  {team.map(m => (
+                    <option key={m.id || m.email || m.user_id} value={m.name || m.email}>
+                      {m.label || m.name || m.email}
                     </option>
                   ))}
                 </select>
