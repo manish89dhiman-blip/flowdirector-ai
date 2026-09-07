@@ -813,6 +813,63 @@ async function loadAllVisiblePlanners(){
 }
 const loadAllPlanners = loadAllVisiblePlanners;
 
+// Unified helper to extract a member's 3 standup priorities, outcome, and blockers
+// seamlessly whether recorded via Focus Desk (standups) or Daily Schedule (daily).
+function getMemberEffectiveStandup(plan, dateKey) {
+  if (!plan) return { p1: null, p2: null, p3: null, outcome: "", blocker: "", hasPriorities: false, totalCount: 0, completedCount: 0, submittedAt: null };
+  
+  const standup = plan.standups?.[dateKey] || {};
+  const day = (plan.daily && plan.daily[dateKey]) || {};
+  
+  const outcome = (standup.outcome || day.outcome || "").trim();
+  const blocker = (standup.blocker || "").trim();
+
+  let p1 = standup.p1 && standup.p1.text ? { ...standup.p1 } : null;
+  let p2 = standup.p2 && standup.p2.text ? { ...standup.p2 } : null;
+  let p3 = standup.p3 && standup.p3.text ? { ...standup.p3 } : null;
+
+  const dailyPriorities = Array.isArray(day.priorities) ? day.priorities : [];
+  const dailyMarks = Array.isArray(day.marks) ? day.marks : [];
+  const dailyKras = Array.isArray(day.priorityKra) ? day.priorityKra : [];
+
+  if (!p1 && dailyPriorities[0] && dailyPriorities[0].trim()) {
+    p1 = {
+      text: dailyPriorities[0].trim(),
+      kra: dailyKras[0] || "",
+      done: dailyMarks[0] === "done" || dailyMarks[0] === "x" || dailyMarks[0] === "✓"
+    };
+  }
+  if (!p2 && dailyPriorities[1] && dailyPriorities[1].trim()) {
+    p2 = {
+      text: dailyPriorities[1].trim(),
+      kra: dailyKras[1] || "",
+      done: dailyMarks[1] === "done" || dailyMarks[1] === "x" || dailyMarks[1] === "✓"
+    };
+  }
+  if (!p3 && dailyPriorities[2] && dailyPriorities[2].trim()) {
+    p3 = {
+      text: dailyPriorities[2].trim(),
+      kra: dailyKras[2] || "",
+      done: dailyMarks[2] === "done" || dailyMarks[2] === "x" || dailyMarks[2] === "✓"
+    };
+  }
+
+  const list = [p1, p2, p3].filter(Boolean);
+  const totalCount = list.length;
+  const completedCount = list.filter(p => p.done).length;
+  const hasPriorities = totalCount > 0;
+
+  return {
+    p1, p2, p3,
+    outcome,
+    blocker,
+    hasPriorities,
+    totalCount,
+    completedCount,
+    submittedAt: standup.submittedAt || (hasPriorities ? (plan.updated_at || new Date().toISOString()) : null)
+  };
+}
+
 /* ================================================================== */
 /*  Goals layer — KRAs and KPIs (Phase 3)                              */
 /*  KRA = a responsibility area. KPI = one number with a target,       */
@@ -8753,13 +8810,13 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filteredTeamMembers.map(m => {
               const memberPlan = (planners.find(p => p.userId === m.user_id) || {}).plan || {};
-              const memberStandup = memberPlan.standups?.[today] || {};
-              const p1 = memberStandup.p1;
-              const p2 = memberStandup.p2;
-              const p3 = memberStandup.p3;
-              const hasP = p1?.text || p2?.text || p3?.text;
-              const completedCount = [p1, p2, p3].filter(p => p?.text && p.done).length;
-              const totalCount = [p1, p2, p3].filter(p => p?.text).length;
+              const standup = getMemberEffectiveStandup(memberPlan, today);
+              const p1 = standup.p1;
+              const p2 = standup.p2;
+              const p3 = standup.p3;
+              const hasP = standup.hasPriorities || !!standup.outcome;
+              const completedCount = standup.completedCount;
+              const totalCount = standup.totalCount;
 
               return (
                 <div key={m.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs space-y-3">
@@ -8786,6 +8843,13 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
 
                   {hasP ? (
                     <div className="space-y-2 text-xs">
+                      {standup.outcome && (
+                        <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 text-xs">
+                          <span className="text-[10px] font-black uppercase text-amber-900 block mb-0.5">★ Today's Main Outcome:</span>
+                          <span className="font-bold text-slate-900">{standup.outcome}</span>
+                        </div>
+                      )}
+
                       {[p1, p2, p3].map((p, idx) => {
                         if (!p || !p.text) return null;
                         return (
@@ -8807,10 +8871,10 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                         );
                       })}
 
-                      {memberStandup.blocker && (
+                      {standup.blocker && (
                         <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 font-bold flex items-center gap-2">
                           <span>⚠️</span>
-                          <span><b>Blocker:</b> {memberStandup.blocker}</span>
+                          <span><b>Blocker:</b> {standup.blocker}</span>
                         </div>
                       )}
                     </div>
@@ -9341,28 +9405,49 @@ function TeamMemberFocusDesk({ data, patch, orgCtx, meId, onGoToTab, dbTasks = [
     refreshMyGoals();
   }, [meId]);
 
-  // Standup state for today
-  const standup = data.standups?.[today] || {
-    p1: { text: "", kra: "", done: false },
-    p2: { text: "", kra: "", done: false },
-    p3: { text: "", kra: "", done: false },
-    blocker: "",
-    submittedAt: null
+  // Standup state for today (unified with daily schedule priorities)
+  const standupEffective = getMemberEffectiveStandup(data, today);
+  const standup = {
+    p1: standupEffective.p1 || { text: "", kra: "", done: false },
+    p2: standupEffective.p2 || { text: "", kra: "", done: false },
+    p3: standupEffective.p3 || { text: "", kra: "", done: false },
+    outcome: standupEffective.outcome || "",
+    blocker: standupEffective.blocker || "",
+    submittedAt: standupEffective.submittedAt || null
   };
 
   const updateStandup = (fn) => {
     patch(d => {
       d.standups = d.standups || {};
-      const cur = d.standups[today] || {
-        p1: { text: "", kra: "", done: false },
-        p2: { text: "", kra: "", done: false },
-        p3: { text: "", kra: "", done: false },
-        blocker: "",
-        submittedAt: null
+      const curEff = getMemberEffectiveStandup(d, today);
+      const cur = {
+        p1: curEff.p1 || { text: "", kra: "", done: false },
+        p2: curEff.p2 || { text: "", kra: "", done: false },
+        p3: curEff.p3 || { text: "", kra: "", done: false },
+        outcome: curEff.outcome || "",
+        blocker: curEff.blocker || "",
+        submittedAt: curEff.submittedAt || null
       };
       fn(cur);
       cur.submittedAt = new Date().toISOString();
       d.standups[today] = cur;
+
+      // Two-way sync to daily schedule priorities & outcome
+      d.daily = d.daily || {};
+      d.daily[today] = d.daily[today] || {
+        outcome: "", outcomeMark: "", outcomeDelegatedTo: "", outcomeKra: "",
+        priorities: ["", "", ""], marks: ["", "", ""], priorityDelegatedTo: ["", "", ""], priorityKra: ["", "", ""],
+        blocks: {}, actual: {}, closure: { score: 0, ate: "", family: "" }, routineDone: {}
+      };
+      const day = d.daily[today];
+      day.priorities = [cur.p1?.text || "", cur.p2?.text || "", cur.p3?.text || ""];
+      day.marks = [
+        cur.p1?.done ? "done" : (day.marks?.[0] || ""),
+        cur.p2?.done ? "done" : (day.marks?.[1] || ""),
+        cur.p3?.done ? "done" : (day.marks?.[2] || "")
+      ];
+      day.priorityKra = [cur.p1?.kra || "", cur.p2?.kra || "", cur.p3?.kra || ""];
+      if (cur.outcome) day.outcome = cur.outcome;
     });
   };
 
@@ -10417,7 +10502,26 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
   });
   
   const day = (data && data.daily && data.daily[dk]) ? data.daily[dk] : blank();
-  const upd = (fn) => patch(d => { if (!d.daily) d.daily = {}; if (!d.daily[dk]) d.daily[dk] = blank(); fn(d.daily[dk]); });
+  const upd = (fn) => patch(d => { 
+    if (!d.daily) d.daily = {}; 
+    if (!d.daily[dk]) d.daily[dk] = blank(); 
+    fn(d.daily[dk]); 
+
+    // Two-way sync to standups for organization and live dashboard visibility
+    d.standups = d.standups || {};
+    const curSt = d.standups[dk] || { p1: { text: "", kra: "", done: false }, p2: { text: "", kra: "", done: false }, p3: { text: "", kra: "", done: false }, blocker: "", submittedAt: null };
+    const pList = d.daily[dk].priorities || ["", "", ""];
+    const mList = d.daily[dk].marks || ["", "", ""];
+    const kraList = d.daily[dk].priorityKra || ["", "", ""];
+    curSt.p1 = { text: pList[0] || "", kra: kraList[0] || curSt.p1?.kra || "", done: mList[0] === "done" || mList[0] === "x" || mList[0] === "✓" };
+    curSt.p2 = { text: pList[1] || "", kra: kraList[1] || curSt.p2?.kra || "", done: mList[1] === "done" || mList[1] === "x" || mList[1] === "✓" };
+    curSt.p3 = { text: pList[2] || "", kra: kraList[2] || curSt.p3?.kra || "", done: mList[2] === "done" || mList[2] === "x" || mList[2] === "✓" };
+    curSt.outcome = d.daily[dk].outcome || curSt.outcome || "";
+    if (pList.some(Boolean) || d.daily[dk].outcome) {
+      curSt.submittedAt = curSt.submittedAt || new Date().toISOString();
+    }
+    d.standups[dk] = curSt;
+  });
 
   // 1. Delegated Tasks by Me (Active & Completed Today)
   const myDelegatedTasks = (dbTasks || []).filter(t => t.delegated_by === userId);
@@ -14714,19 +14818,34 @@ function personMetrics(plan, dayKeys){
   const daily = plan.daily || {};
   dayKeys.forEach(k => {
     const rec = daily[k];
-    if (!rec) { scoreSeries.push(null); return; }
-    if ((rec.outcome || "").trim()) daysPlanned++;
-    (rec.priorities || []).forEach((p, i) => {
-      if (!(p || "").trim()) return;
-      prioSet++;
-      switch ((rec.marks || [])[i] || "") {
-        case "done":      prioDone++; break;
-        case "moved":     prioMoved++; break;
-        case "dropped":   prioDropped++; break;
-        case "delegated": prioDelegated++; break;
-      }
-    });
-    if (dayWasClosed(rec)) { scoreSum += (rec.closure?.score || 0); scoreDays++; scoreSeries.push(rec.closure?.score || 0); }
+    const su = getMemberEffectiveStandup(plan, k);
+
+    if (su.outcome || (rec && (rec.outcome || "").trim())) daysPlanned++;
+    else if (su.hasPriorities) daysPlanned++;
+
+    const pList = [su.p1, su.p2, su.p3].filter(Boolean);
+    if (pList.length > 0) {
+      pList.forEach(p => {
+        if (!(p.text || "").trim()) return;
+        prioSet++;
+        if (p.done) prioDone++;
+      });
+    } else if (rec) {
+      (rec.priorities || []).forEach((p, i) => {
+        if (!(p || "").trim()) return;
+        prioSet++;
+        switch ((rec.marks || [])[i] || "") {
+          case "done":
+          case "✓":
+          case "x":         prioDone++; break;
+          case "moved":     prioMoved++; break;
+          case "dropped":   prioDropped++; break;
+          case "delegated": prioDelegated++; break;
+        }
+      });
+    }
+
+    if (rec && dayWasClosed(rec)) { scoreSum += (rec.closure?.score || 0); scoreDays++; scoreSeries.push(rec.closure?.score || 0); }
     else scoreSeries.push(null);
   });
 
@@ -15110,13 +15229,13 @@ function PersonSnapshot({ person, plan, metrics, periodLabel }){
     </div>
   );
 
-  const memberStandup = plan.standups?.[dk];
+  const memberStandup = getMemberEffectiveStandup(plan, dk);
   const customDelegated = (plan.delegatedTasks || []).filter(t => !t.completed);
 
   return (
     <div className="space-y-4">
       {/* Live Morning Standup Card */}
-      {memberStandup && (memberStandup.p1?.text || memberStandup.p2?.text || memberStandup.p3?.text) && (
+      {memberStandup && (memberStandup.hasPriorities || memberStandup.outcome) && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50/70 p-4 space-y-3 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
@@ -15127,6 +15246,13 @@ function PersonSnapshot({ person, plan, metrics, periodLabel }){
               {prettyDate(dk)}
             </span>
           </div>
+
+          {memberStandup.outcome && (
+            <div className="p-2.5 rounded-xl bg-white border border-amber-200 text-xs">
+              <span className="text-[10px] font-black uppercase text-amber-900 block mb-0.5">★ Today's Main Outcome:</span>
+              <span className="font-bold text-slate-900">{memberStandup.outcome}</span>
+            </div>
+          )}
 
           <div className="space-y-1.5 text-xs">
             {[memberStandup.p1, memberStandup.p2, memberStandup.p3].map((p, idx) => {
