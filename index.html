@@ -5871,23 +5871,6 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, onClose }) {
             className="w-full rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-3 text-sm font-bold text-slate-950 outline-none focus:border-amber-500 focus:bg-white transition"
           />
 
-          {/* Quick Optional Category Chips (Click to toggle) */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] font-black uppercase text-slate-400 mr-1">Optional Tag:</span>
-            {getAvailableCategories(data).slice(0, 8).map(cat => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategory(prev => prev === cat ? "" : cat)}
-                className={`rounded-xl px-2.5 py-1 text-xs font-bold transition border ${
-                  category === cat ? "bg-slate-950 text-white border-slate-950 shadow-xs" : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Destination</label>
@@ -7245,7 +7228,6 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 /* ================================================================== */
 function CaptureView({ data, patch, ohv, orgCtx, meId }){
   const [text, setText] = useState("");
-  const [selectedCat, setSelectedCat] = useState("Deep Focus");
   const [selectedType, setSelectedType] = useState("SCHEDULE");
   const [filterCat, setFilterCat] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
@@ -7261,7 +7243,7 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
         id: uid(),
         date: new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short" }),
         item: t,
-        category: selectedCat,
+        category: "",
         taskType: selectedType,
         details: "",
         status: "Open"
@@ -7393,24 +7375,6 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
             <span>+</span>
             <span>Capture</span>
           </button>
-        </div>
-
-        {/* Quick Category Chips */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <span className="text-[11px] font-bold text-slate-400 mr-1">Category:</span>
-          {["Deep Focus", "Meeting", "Finance", "Sales", "Ops & Admin", "Personal"].map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCat(cat)}
-              className={`rounded-xl px-3 py-1 text-xs font-bold transition border ${
-                selectedCat === cat 
-                  ? "bg-slate-950 text-white border-slate-950 shadow-2xs" 
-                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
         </div>
       </div>
 
