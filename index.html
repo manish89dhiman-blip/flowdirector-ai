@@ -11001,15 +11001,6 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
 /* ================================================================== */
 const mondayOf=(k)=>{const d=new Date(k+"T00:00:00");d.setDate(d.getDate()-((d.getDay()+6)%7));return dateKey(d);};
 
-const THEME_PRESETS = [
-  "🎯 Deep Tech & Product",
-  "👥 Team & Operations",
-  "💼 Sales & Client Success",
-  "📈 Finance & Strategy",
-  "🌱 Review & Delegation",
-  "🧹 Catch-up & Buffer"
-];
-
 const getBlockCategoryStyle = (text) => {
   const t = (text || "").toLowerCase();
   if (/meet|call|sync|1:1|standup|client|customer|interview|demo|zoom|google meet/i.test(t)) {
@@ -11032,8 +11023,7 @@ function WeeklyView({ data, patch, orgCtx }){
   const [viewMode, setViewMode] = useState("5day");
   const [selectedMobileDay, setSelectedMobileDay] = useState(dayOfWeekKey(todayKey()) || "mon");
   const [editingSlot, setEditingSlot] = useState(null);
-  const [showThemePicker, setShowThemePicker] = useState(null);
-  const [showSomedayDrawer, setShowSomedayDrawer] = useState(true);
+  const [showSomedayDrawer, setShowSomedayDrawer] = useState(false);
 
   const blankWeek = () => ({ grid: {}, nonneg: { focus: false, review: false, family: false }, somedayDone: {} });
   const week = data.weekly[wk] || blankWeek();
@@ -11169,11 +11159,12 @@ function WeeklyView({ data, patch, orgCtx }){
           <button
             onClick={() => setShowSomedayDrawer(!showSomedayDrawer)}
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition shadow-2xs ${
-              showSomedayDrawer ? "border-amber-300 bg-amber-50 text-amber-950" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+              showSomedayDrawer ? "border-amber-400 bg-amber-100 text-amber-950 font-black" : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
             }`}
           >
             <span>📥</span>
-            <span>Backup ({otherSomeday.length})</span>
+            <span>Someday / Backup ({otherSomeday.length + recurringWeekly.length})</span>
+            <span className="text-[10px]">{showSomedayDrawer ? "▲" : "▼"}</span>
           </button>
         </div>
       </div>
@@ -11224,7 +11215,97 @@ function WeeklyView({ data, patch, orgCtx }){
         </div>
       </div>
 
-      {/* 4. Mobile Day Selector Bar (Visible on Mobile Screens < md) */}
+      {/* 4. Collapsible Top Someday & Backup Dock */}
+      {showSomedayDrawer && (
+        <div className="rounded-2xl border border-amber-200/90 bg-gradient-to-r from-amber-50/80 via-white to-slate-50 p-3.5 sm:p-4 shadow-xs space-y-3 animate-fade-in">
+          <div className="flex items-center justify-between border-b border-amber-100 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📥</span>
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-900">
+                  Weekly Someday &amp; Backup Pool ({otherSomeday.length + recurringWeekly.length} items)
+                </h4>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  When scheduled blocks free up, pull high-value backlog tasks from here into your weekly timeline.
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setShowSomedayDrawer(false)}
+              className="text-xs font-bold text-slate-500 hover:text-slate-900 bg-white border border-slate-200 rounded-xl px-2.5 py-1 transition shadow-2xs flex items-center gap-1"
+              title="Collapse Backup Pool"
+            >
+              <span>Collapse</span>
+              <span>▲</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-56 overflow-y-auto pr-1">
+            {/* Recurring Weekly */}
+            {recurringWeekly.length > 0 && (
+              <div className="space-y-1.5 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5 mb-1">
+                  <span>🔁</span>
+                  <span>Recurring This Week ({recurringWeekly.length})</span>
+                </div>
+                <div className="space-y-1">
+                  {recurringWeekly.map(b => {
+                    const done = !!week.somedayDone?.[b.id];
+                    return (
+                      <BackupItemRow 
+                        key={b.id} 
+                        item={b} 
+                        data={data}
+                        orgCtx={orgCtx}
+                        onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
+                        onRemove={() => removeSomeday(b.id)}
+                        prefix={
+                          <button 
+                            onClick={() => toggleSomedayDone(b.id)} 
+                            title="Done this week"
+                            className={"shrink-0 rounded-lg p-1 transition " + (done ? "bg-emerald-100 text-emerald-700 font-bold" : "text-slate-300 hover:bg-slate-100")}
+                          >
+                            <Ic n="check"/>
+                          </button>
+                        } 
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Other Someday Items */}
+            <div className={`space-y-1.5 rounded-xl border border-slate-200 bg-white p-3 shadow-2xs ${recurringWeekly.length === 0 ? "md:col-span-2" : ""}`}>
+              <div className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5 mb-1">
+                <span>📦</span>
+                <span>Backlog &amp; Overflow Items ({otherSomeday.length})</span>
+              </div>
+              {otherSomeday.length === 0 ? (
+                <p className="py-4 text-center text-xs font-medium text-slate-400">
+                  No backlog items. Transfer tasks from Daily Backup or Capture desk.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {otherSomeday.map(b => (
+                    <BackupItemRow 
+                      key={b.id} 
+                      item={b} 
+                      data={data}
+                      orgCtx={orgCtx}
+                      onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
+                      onRemove={() => removeSomeday(b.id)}
+                      onToggleDone={() => updateSomedayField(b.id, "done", !b.done)} 
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Mobile Day Selector Bar (Visible on Mobile Screens < md) */}
       <div className="block md:hidden">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {activeDayKeys.map((dayKey, i) => {
@@ -11256,7 +11337,7 @@ function WeeklyView({ data, patch, orgCtx }){
         </div>
       </div>
 
-      {/* 5. Mobile Single-Day Focused Timeline (< md) */}
+      {/* 6. Mobile Single-Day Focused Timeline (< md) */}
       <div className="block md:hidden space-y-3">
         {(() => {
           const d = selectedMobileDay || "mon";
@@ -11320,7 +11401,7 @@ function WeeklyView({ data, patch, orgCtx }){
                       <span className="w-16 shrink-0 font-mono text-[11px] font-bold text-slate-500 pt-1">{s}</span>
                       <div className="flex-1 space-y-1.5">
                         {isEditing ? (
-                          <div className="rounded-xl border-2 border-amber-400 bg-white p-2 shadow-md space-y-2">
+                          <div className="rounded-xl border-2 border-amber-400 bg-white p-2 shadow-md">
                             <input
                               autoFocus
                               value={val}
@@ -11330,21 +11411,6 @@ function WeeklyView({ data, patch, orgCtx }){
                               placeholder="Focus block or meeting..."
                               className="w-full bg-transparent text-xs font-bold text-slate-900 outline-none"
                             />
-                            <div className="flex flex-wrap gap-1">
-                              {["Deep Focus", "Meeting", "Finance", "Admin", "Family"].map(preset => (
-                                <button
-                                  key={preset}
-                                  onMouseDown={e => {
-                                    e.preventDefault();
-                                    upd(x => { x.grid[kk] = `[${preset}] ${val.replace(/^\[[^\]]+\]\s*/, "")}`; });
-                                    setEditingSlot(null);
-                                  }}
-                                  className="rounded bg-slate-100 hover:bg-amber-100 hover:text-amber-950 px-2 py-0.5 text-[10px] font-bold text-slate-700"
-                                >
-                                  {preset}
-                                </button>
-                              ))}
-                            </div>
                           </div>
                         ) : val ? (
                           <div 
@@ -11384,261 +11450,149 @@ function WeeklyView({ data, patch, orgCtx }){
         })()}
       </div>
 
-      {/* 6. Desktop Multi-Column Grid Canvas (Visible on Tablet & Desktop >= md) */}
-      <div className={`hidden md:grid grid-cols-1 gap-4 ${showSomedayDrawer ? "lg:grid-cols-[minmax(0,1fr)_280px]" : "grid-cols-1"}`}>
-        {/* Weekly Grid Canvas */}
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
-          <table className="w-full border-collapse text-sm min-w-[640px]">
-            <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/80">
-                <th className="w-20 p-2.5 text-center align-middle font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 border-r border-slate-200">
-                  Time
-                </th>
-                {activeDayKeys.map((d, i) => {
-                  const colDate = shiftDay(wk, i);
-                  const isToday = colDate === todayKey();
-                  const [yS, mS, dS] = colDate.split("-");
-                  const colMk = `${yS}-${mS}`;
-                  const colDom = parseInt(dS, 10);
-                  const colMonthObj = data.monthly?.[colMk] || {};
-                  const colMonthlyText = colMonthObj.days?.[colDom] || colMonthObj.days?.[dS] || "";
-                  const colIsBuffer = (colMonthObj.buffers || []).includes(colDom);
-                  const colRecurring = (data.recurringMonthly || []).filter(r => r.day === colDom);
+      {/* 7. Desktop Multi-Column Grid Canvas (Full Width 100%) */}
+      <div className="hidden md:block w-full overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs">
+        <table className="w-full border-collapse text-sm min-w-[640px]">
+          <thead>
+            <tr className="border-b border-slate-200 bg-slate-50/80">
+              <th className="w-20 p-2.5 text-center align-middle font-mono text-[11px] font-bold uppercase tracking-wider text-slate-500 border-r border-slate-200">
+                Time
+              </th>
+              {activeDayKeys.map((d, i) => {
+                const colDate = shiftDay(wk, i);
+                const isToday = colDate === todayKey();
+                const [yS, mS, dS] = colDate.split("-");
+                const colMk = `${yS}-${mS}`;
+                const colDom = parseInt(dS, 10);
+                const colMonthObj = data.monthly?.[colMk] || {};
+                const colMonthlyText = colMonthObj.days?.[colDom] || colMonthObj.days?.[dS] || "";
+                const colIsBuffer = (colMonthObj.buffers || []).includes(colDom);
+                const colRecurring = (data.recurringMonthly || []).filter(r => r.day === colDom);
 
-                  return (
-                    <th key={d} className={`p-2.5 align-top border-r border-slate-200 last:border-r-0 transition-colors ${isToday ? "bg-amber-50/50" : ""}`}>
-                      {/* Day Header Top */}
-                      <div className="flex items-center justify-between gap-1 mb-1.5">
-                        <div className="flex items-baseline gap-1.5">
-                          <span className={`text-xs font-black uppercase tracking-wider ${isToday ? "text-amber-900" : "text-slate-900"}`}>
-                            {DAY_LABEL[d]}
-                          </span>
-                          <span className={`text-[11px] font-bold ${isToday ? "text-amber-700" : "text-slate-500"}`}>
-                            {new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(colDate + "T00:00:00"))}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {isToday && (
-                            <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.2 text-[9px] font-black shadow-2xs">
-                              TODAY
-                            </span>
-                          )}
-                          {colIsBuffer && (
-                            <span className="rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.2 text-[9px] font-black shadow-2xs" title="Protected Zero-Meeting Buffer Day">
-                              ⭐ Buffer
-                            </span>
-                          )}
-                        </div>
+                return (
+                  <th key={d} className={`p-2.5 align-top border-r border-slate-200 last:border-r-0 transition-colors ${isToday ? "bg-amber-50/50" : ""}`}>
+                    {/* Day Header Top */}
+                    <div className="flex items-center justify-between gap-1 mb-1.5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className={`text-xs font-black uppercase tracking-wider ${isToday ? "text-amber-900" : "text-slate-900"}`}>
+                          {DAY_LABEL[d]}
+                        </span>
+                        <span className={`text-[11px] font-bold ${isToday ? "text-amber-700" : "text-slate-500"}`}>
+                          {new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date(colDate + "T00:00:00"))}
+                        </span>
                       </div>
-
-                      {/* Day Theme Pill with Preset Selector */}
-                      <div className="relative mb-1">
-                        <div className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50/90 px-2 py-1 shadow-2xs">
-                          <input 
-                            value={data.dayThemes[d] || ""} 
-                            onChange={e => setTheme(d, e.target.value)}
-                            placeholder="Day theme..." 
-                            className="w-full bg-transparent text-[11px] font-bold text-amber-950 outline-none placeholder:text-amber-400"
-                          />
-                          <button
-                            onClick={() => setShowThemePicker(showThemePicker === d ? null : d)}
-                            className="text-[10px] text-amber-700 hover:text-amber-950 shrink-0 font-bold"
-                            title="Pick Theme Preset"
-                          >
-                            ▾
-                          </button>
-                        </div>
-
-                        {showThemePicker === d && (
-                          <div className="absolute left-0 top-full z-30 mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl text-left space-y-0.5">
-                            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1.5 py-0.5">
-                              Theme Presets
-                            </div>
-                            {THEME_PRESETS.map(preset => (
-                              <button
-                                key={preset}
-                                onClick={() => { setTheme(d, preset); setShowThemePicker(null); }}
-                                className="w-full rounded-lg px-2 py-1 text-left text-[11px] font-semibold text-slate-800 hover:bg-amber-50 hover:text-amber-950 transition"
-                              >
-                                {preset}
-                              </button>
-                            ))}
-                          </div>
+                      <div className="flex items-center gap-1">
+                        {isToday && (
+                          <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.2 text-[9px] font-black shadow-2xs">
+                            TODAY
+                          </span>
+                        )}
+                        {colIsBuffer && (
+                          <span className="rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 px-1.5 py-0.2 text-[9px] font-black shadow-2xs" title="Protected Zero-Meeting Buffer Day">
+                            ⭐ Buffer
+                          </span>
                         )}
                       </div>
+                    </div>
 
-                      {/* Horizon Badges (Monthly Blueprint & Statutory Tax Dates) */}
-                      {colMonthlyText && (
-                        <div className="mb-1 rounded-lg bg-amber-100/90 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-950 truncate text-left" title={"Monthly Blueprint: " + colMonthlyText}>
-                          📅 {colMonthlyText}
+                    {/* Day Theme Pill (Direct clean text input, no preset dropdown) */}
+                    <div className="mb-1">
+                      <input 
+                        value={data.dayThemes[d] || ""} 
+                        onChange={e => setTheme(d, e.target.value)}
+                        placeholder="Day theme..." 
+                        className="w-full rounded-xl border border-amber-200 bg-amber-50/90 px-2.5 py-1 text-[11px] font-bold text-amber-950 outline-none placeholder:text-amber-400 shadow-2xs focus:ring-1 focus:ring-amber-400"
+                      />
+                    </div>
+
+                    {/* Horizon Badges (Monthly Blueprint & Statutory Tax Dates) */}
+                    {colMonthlyText && (
+                      <div className="mb-1 rounded-lg bg-amber-100/90 border border-amber-300 px-2 py-0.5 text-[10px] font-bold text-amber-950 truncate text-left" title={"Monthly Blueprint: " + colMonthlyText}>
+                        📅 {colMonthlyText}
+                      </div>
+                    )}
+                    {colRecurring.map(r => (
+                      <div key={r.id} className="mb-0.5 rounded-lg bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900 truncate text-left" title={"Monthly Recurring: " + r.text}>
+                        🔁 {r.text}
+                      </div>
+                    ))}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+
+          <tbody>
+            {WEEK_SLOTS.map((s, si) => (
+              <tr key={s} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/40 transition-colors">
+                <td className="w-20 p-2 text-center align-middle font-mono text-[11px] font-bold text-slate-500 border-r border-slate-200 bg-slate-50/40">
+                  {s}
+                </td>
+
+                {activeDayKeys.map(d => {
+                  const kk = `${s}|${d}`;
+                  const val = week.grid[kk] || "";
+                  const badges = slotMap[`${si}|${d}`] || [];
+                  const isEditing = editingSlot === kk;
+                  const cat = getBlockCategoryStyle(val);
+
+                  return (
+                    <td key={d} className="p-1 align-top border-r border-slate-100 last:border-r-0 relative group">
+                      {isEditing ? (
+                        <div className="rounded-xl border-2 border-amber-400 bg-white p-1.5 shadow-md">
+                          <input
+                            autoFocus
+                            value={val}
+                            onChange={e => upd(x => { x.grid[kk] = e.target.value; })}
+                            onBlur={() => setEditingSlot(null)}
+                            onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setEditingSlot(null); }}
+                            placeholder="Focus block or meeting..."
+                            className="w-full bg-transparent text-xs font-bold text-slate-900 outline-none"
+                          />
+                        </div>
+                      ) : val ? (
+                        <div 
+                          onClick={() => setEditingSlot(kk)}
+                          className={"rounded-xl border p-2 text-xs font-bold transition shadow-2xs cursor-pointer group/card relative " + cat.bg + " " + cat.border + " " + cat.text}
+                        >
+                          <div className="flex items-start justify-between gap-1">
+                            <span className="break-words leading-tight flex-1">{val}</span>
+                            <button
+                              onClick={e => {
+                                e.stopPropagation();
+                                upd(x => { delete x.grid[kk]; });
+                              }}
+                              className="text-slate-400 hover:text-rose-600 opacity-0 group-hover/card:opacity-100 transition shrink-0 text-xs font-black"
+                              title="Clear slot"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => setEditingSlot(kk)}
+                          className="h-9 rounded-xl border border-dashed border-transparent hover:border-slate-300 hover:bg-slate-50/80 transition-all flex items-center justify-center cursor-pointer"
+                        >
+                          <span className="text-[10px] font-bold text-slate-400 opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
+                            <span>+</span> Add Block
+                          </span>
                         </div>
                       )}
-                      {colRecurring.map(r => (
-                        <div key={r.id} className="mb-0.5 rounded-lg bg-blue-50 border border-blue-200 px-2 py-0.5 text-[10px] font-bold text-blue-900 truncate text-left" title={"Monthly Recurring: " + r.text}>
-                          🔁 {r.text}
+
+                      {/* All Tasks with Time & Pinned Badges */}
+                      {badges.map((b, idx) => (
+                        <div key={idx} className="mt-1 break-words rounded-lg bg-sky-50 border border-sky-200 px-2 py-0.5 text-[10px] font-bold text-sky-800 shadow-2xs" title={b.text}>
+                          📌 {b.time ? `${b.time} · ` : ""}{b.text}
                         </div>
                       ))}
-                    </th>
+                    </td>
                   );
                 })}
               </tr>
-            </thead>
-
-            <tbody>
-              {WEEK_SLOTS.map((s, si) => (
-                <tr key={s} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/40 transition-colors">
-                  <td className="w-20 p-2 text-center align-middle font-mono text-[11px] font-bold text-slate-500 border-r border-slate-200 bg-slate-50/40">
-                    {s}
-                  </td>
-
-                  {activeDayKeys.map(d => {
-                    const kk = `${s}|${d}`;
-                    const val = week.grid[kk] || "";
-                    const badges = slotMap[`${si}|${d}`] || [];
-                    const isEditing = editingSlot === kk;
-                    const cat = getBlockCategoryStyle(val);
-
-                    return (
-                      <td key={d} className="p-1 align-top border-r border-slate-100 last:border-r-0 relative group">
-                        {isEditing ? (
-                          <div className="rounded-xl border-2 border-amber-400 bg-white p-1.5 shadow-md space-y-1">
-                            <input
-                              autoFocus
-                              value={val}
-                              onChange={e => upd(x => { x.grid[kk] = e.target.value; })}
-                              onBlur={() => setEditingSlot(null)}
-                              onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") setEditingSlot(null); }}
-                              placeholder="Focus block or meeting..."
-                              className="w-full bg-transparent text-xs font-bold text-slate-900 outline-none"
-                            />
-                            <div className="flex flex-wrap gap-1 pt-0.5">
-                              {["Deep Focus", "Meeting", "Finance", "Admin", "Family"].map(preset => (
-                                <button
-                                  key={preset}
-                                  onMouseDown={e => {
-                                    e.preventDefault();
-                                    upd(x => { x.grid[kk] = `[${preset}] ${val.replace(/^\[[^\]]+\]\s*/, "")}`; });
-                                    setEditingSlot(null);
-                                  }}
-                                  className="rounded bg-slate-100 hover:bg-amber-100 hover:text-amber-950 px-1.5 py-0.5 text-[9px] font-bold text-slate-700 transition"
-                                >
-                                  {preset}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        ) : val ? (
-                          <div 
-                            onClick={() => setEditingSlot(kk)}
-                            className={"rounded-xl border p-2 text-xs font-bold transition shadow-2xs cursor-pointer group/card relative " + cat.bg + " " + cat.border + " " + cat.text}
-                          >
-                            <div className="flex items-start justify-between gap-1">
-                              <span className="break-words leading-tight flex-1">{val}</span>
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  upd(x => { delete x.grid[kk]; });
-                                }}
-                                className="text-slate-400 hover:text-rose-600 opacity-0 group-hover/card:opacity-100 transition shrink-0 text-xs font-black"
-                                title="Clear slot"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            onClick={() => setEditingSlot(kk)}
-                            className="h-9 rounded-xl border border-dashed border-transparent hover:border-slate-300 hover:bg-slate-50/80 transition-all flex items-center justify-center cursor-pointer"
-                          >
-                            <span className="text-[10px] font-bold text-slate-400 opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
-                              <span>+</span> Add Block
-                            </span>
-                          </div>
-                        )}
-
-                        {/* All Tasks with Time & Pinned Badges */}
-                        {badges.map((b, idx) => (
-                          <div key={idx} className="mt-1 break-words rounded-lg bg-sky-50 border border-sky-200 px-2 py-0.5 text-[10px] font-bold text-sky-800 shadow-2xs" title={b.text}>
-                            📌 {b.time ? `${b.time} · ` : ""}{b.text}
-                          </div>
-                        ))}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* 7. Someday / Backup Tray Dock */}
-        {showSomedayDrawer && (
-          <div className="space-y-4">
-            {recurringWeekly.length > 0 && (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-2">
-                <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                  <span>🔁</span>
-                  <span>Recurring This Week</span>
-                </div>
-                <div className="space-y-1.5">
-                  {recurringWeekly.map(b => {
-                    const done = !!week.somedayDone?.[b.id];
-                    return (
-                      <BackupItemRow 
-                        key={b.id} 
-                        item={b} 
-                        data={data}
-                        orgCtx={orgCtx}
-                        onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
-                        onRemove={() => removeSomeday(b.id)}
-                        prefix={
-                          <button 
-                            onClick={() => toggleSomedayDone(b.id)} 
-                            title="Done this week"
-                            className={"shrink-0 rounded-lg p-1 transition " + (done ? "bg-emerald-100 text-emerald-700" : "text-slate-300 hover:bg-slate-100")}
-                          >
-                            <Ic n="check"/>
-                          </button>
-                        } 
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                  <span>📥</span>
-                  <span>Someday / Backup ({otherSomeday.length})</span>
-                </div>
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                When a scheduled block frees up, pull high-value backlog tasks from here.
-              </p>
-              <div className="space-y-1.5">
-                {otherSomeday.length === 0 && (
-                  <p className="py-6 text-center text-xs font-medium text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                    No backlog items. Transfer tasks from Daily Backup or Capture.
-                  </p>
-                )}
-                {otherSomeday.map(b => (
-                  <BackupItemRow 
-                    key={b.id} 
-                    item={b} 
-                    data={data}
-                    orgCtx={orgCtx}
-                    onUpdate={(f, v) => updateSomedayField(b.id, f, v)} 
-                    onRemove={() => removeSomeday(b.id)}
-                    onToggleDone={() => updateSomedayField(b.id, "done", !b.done)} 
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <p className="text-center text-xs text-slate-400 font-medium pt-2">
