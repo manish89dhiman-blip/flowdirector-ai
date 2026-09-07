@@ -698,17 +698,14 @@ function getEffectiveTeam(data, orgCtx) {
   const list = [];
   const seen = new Set();
   const myRole = orgCtx?.membership?.role || "owner";
-  const myId = orgCtx?.membership?.user_id;
-  const myDept = orgCtx?.membership?.department || "";
   const myRank = getRoleRank(myRole);
 
-  // 1. Registered organization members (Filtered strictly by role hierarchy & department)
+  // 1. Registered organization members (Universal: anyone can delegate to any org member across ranks & departments)
   const rawMembers = Array.isArray(orgCtx?.allMembers) && orgCtx.allMembers.length > 0
     ? orgCtx.allMembers
     : (Array.isArray(orgCtx?.teamMembers) ? orgCtx.teamMembers : []);
-  const allowedMembers = filterVisibleTeamMembers(rawMembers, myId, myRole, myDept);
 
-  allowedMembers.forEach(m => {
+  rawMembers.forEach(m => {
     const name = m.name || m.full_name || m.email;
     if (name && !seen.has(name.toLowerCase())) {
       seen.add(name.toLowerCase());
@@ -725,18 +722,11 @@ function getEffectiveTeam(data, orgCtx) {
     }
   });
 
-  // 2. Pending invited team members (Strictly filtered by hierarchy & department)
+  // 2. Pending invited team members (Universal: can delegate to invited members)
   if (orgCtx && Array.isArray(orgCtx.orgInvites)) {
     orgCtx.orgInvites.forEach(inv => {
       const email = inv.email;
-      const invRank = getRoleRank(inv.role);
-      const invDept = (inv.department || "General").trim().toLowerCase();
-      
-      let canSee = false;
-      if (myRank >= 5) canSee = true; // Owner/CEO sees all
-      else if (myRank >= 3 && invRank < 3 && (!myDept || myDept.toLowerCase() === invDept)) canSee = true;
-
-      if (canSee && email && !seen.has(email.toLowerCase())) {
+      if (email && !seen.has(email.toLowerCase())) {
         seen.add(email.toLowerCase());
         const shortName = email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         const deptLabel = inv.department && inv.department !== "General" ? ` · ${inv.department}` : "";
@@ -754,8 +744,8 @@ function getEffectiveTeam(data, orgCtx) {
     });
   }
 
-  // 3. Custom team members stored in user data (Only for solo/owner)
-  if (myRank >= 3 && data && Array.isArray(data.team)) {
+  // 3. Custom team members stored in user data
+  if (data && Array.isArray(data.team)) {
     data.team.forEach(t => {
       if (t.name && !seen.has(t.name.toLowerCase())) {
         seen.add(t.name.toLowerCase());
@@ -772,8 +762,8 @@ function getEffectiveTeam(data, orgCtx) {
     });
   }
 
-  // Fallback defaults if no team members are present and user is owner
-  if (list.length === 0 && myRank >= 4) {
+  // Fallback defaults if no team members are present
+  if (list.length === 0) {
     const defaults = ["Operations Lead", "Executive Assistant", "Sales Team", "Finance & Accounts"];
     defaults.forEach(d => {
       list.push({
@@ -6345,7 +6335,7 @@ function CompanyKickstartWizardModal({ data, patch, orgCtx, session, onClose, on
 /* ================================================================== */
 /*  Planner shell                                                      */
 /* ================================================================== */
-function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, onClose }) {
+function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, dbTasks, setDbTasks, onClose }) {
   const [text, setText] = useState("");
   const [category, setCategory] = useState("");
   const [taskType, setTaskType] = useState(""); // Default to "" which means Inbox (Decide Later)
@@ -6376,18 +6366,26 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, onClose }) {
     // If delegating to a team member in an organization, create live delegated task & dispatch email
     if (taskType === "DELEGATE" && assignee && orgCtx?.org?.id) {
       const mem = team.find(m => m.name.toLowerCase() === assignee.toLowerCase() || (m.email && m.email.toLowerCase() === assignee.toLowerCase()));
+      const delegatorName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership";
+      const delegatorEmail = (orgCtx?.profile?.email || "").toLowerCase();
       createDelegatedTask(orgCtx.org.id, meId, {
         assignee_id: mem?.user_id || null,
         assignee_email: mem?.email || "",
         assignee_name: mem?.name || assignee,
+        department: mem?.department || "General",
         title: t,
         details: details || "",
         due_date: due || todayKey()
-      });
+      }, delegatorName, delegatorEmail).then(created => {
+        if (created && setDbTasks) {
+          setDbTasks(prev => [created, ...prev.filter(x => x.id !== created.id)]);
+        }
+      }).catch(console.warn);
+
       if (mem?.email) {
         sendTransactionalEmail("task_delegated", mem.email, {
           task_title: t,
-          delegator_name: orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership",
+          delegator_name: delegatorName,
           company_name: orgCtx?.org?.name || "Workspace",
           due_date: due || todayKey(),
           notes: details || "",
@@ -6586,7 +6584,7 @@ const TASK_STATUS_CONFIG = {
   blocked: { label: "Blocked / Need Help", icon: "⚠️", badge: "bg-rose-100 text-rose-900 border-rose-300", dot: "bg-rose-600" }
 };
 
-function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meName, meEmail, isAssignee, isDelegator, orgCtx }) {
+function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDeleteTask, meName, meEmail, isAssignee, isDelegator, orgCtx }) {
   const [noteText, setNoteText] = useState("");
   const [selectedStatus, setSelectedStatus] = useState(task.status || "pending");
   const [posting, setPosting] = useState(false);
@@ -6596,6 +6594,13 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
   const [notice, setNotice] = useState("");
 
   const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 3500); };
+
+  const handleDeleteTask = async () => {
+    if (!confirm(`Are you sure you want to delete / cancel the delegated task "${task.title}"?`)) return;
+    if (onDeleteTask) {
+      await onDeleteTask(task.id);
+    }
+  };
 
   const handlePostUpdate = async (e) => {
     if (e) e.preventDefault();
@@ -6814,6 +6819,18 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, meNam
                       <span>Request Changes</span>
                     </button>
                   </>
+                )}
+
+                {(isDelegator || getRoleRank(orgCtx?.membership?.role) >= 4) && onDeleteTask && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteTask}
+                    className="rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1 ml-auto"
+                    title="Delete or cancel this task"
+                  >
+                    <span>🗑️</span>
+                    <span>Delete Task</span>
+                  </button>
                 )}
               </div>
             </div>
@@ -7171,23 +7188,33 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
     };
   }, [orgCtx?.org?.id, userId, session?.user?.email]);
 
-  // Multi-Device Real-Time Live Sync for Planner State (Instant updates across Phone, Laptop, Tablet)
+  // Multi-Device & Organization Real-Time Live Sync for Planner State & Standups
   useEffect(() => {
     if (!userId || !sb) return;
 
     const channel = sb
-      .channel(`user_planner_realtime_${userId}`)
+      .channel(`org_planners_realtime_${orgCtx?.org?.id || userId}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'planner_state', filter: `user_id=eq.${userId}` },
+        { event: '*', schema: 'public', table: 'planner_state' },
         (payload) => {
           const newRow = payload.new;
-          if (newRow && newRow.data) {
+          if (!newRow) return;
+
+          // 1. If this is current user's own planner, sync state across multi-devices instantly
+          if (newRow.user_id === userId && newRow.data) {
             const incomingJson = JSON.stringify(newRow.data);
             if (incomingJson !== lastSavedJsonRef.current) {
               lastSavedJsonRef.current = incomingJson;
               setData(newRow.data);
             }
+          }
+
+          // 2. Dispatch live planner update event for PeopleView / TeamView / Standup dashboard
+          if (newRow.user_id && newRow.data) {
+            window.dispatchEvent(new CustomEvent('fd_planner_updated', {
+              detail: { userId: newRow.user_id, plan: newRow.data }
+            }));
           }
         }
       )
@@ -7196,7 +7223,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
     return () => {
       sb.removeChannel(channel);
     };
-  }, [userId]);
+  }, [userId, orgCtx?.org?.id]);
 
   useEffect(() => {
     if (!activeToast) return;
@@ -7602,7 +7629,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
         <ErrorBoundary key={tab}>
           {tab!=="daily" && tab!=="weekly" && tab!=="standup" && tab!=="manual" && <DueBanner data={data} />}
           {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
-          {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} orgCtx={orgCtx} meId={userId} />}
+          {tab==="capture" && <CaptureView data={data} patch={patch} ohv={ohv} orgCtx={orgCtx} meId={userId} dbTasks={dbTasks} setDbTasks={setDbTasks} />}
           {tab==="followup" && <FollowUpView data={data} patch={patch} orgCtx={orgCtx} meId={userId} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
           {tab==="daily" && <DailyView data={data} patch={patch} dk={dailyDate} setDk={setDailyDate} userId={userId} orgCtx={orgCtx} onOpenCapture={() => setTab("capture")} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} onGoToTab={setTab} />}
           {tab==="weekly" && <WeeklyView data={data} patch={patch} orgCtx={orgCtx} />}
@@ -7736,6 +7763,10 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
           data={data}
           patch={patch}
           ohv={ohv}
+          orgCtx={orgCtx}
+          meId={userId}
+          dbTasks={dbTasks}
+          setDbTasks={setDbTasks}
           onClose={() => setShowQuickCaptureModal(false)}
         />
       )}
@@ -7787,6 +7818,15 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               setSelectedTaskModal(updated);
             }
           }}
+          onDeleteTask={async (taskId) => {
+            const ok = await deleteDelegatedTask(taskId);
+            if (ok) {
+              setDbTasks(prev => prev.filter(t => t.id !== taskId));
+              setSelectedTaskModal(null);
+            } else {
+              alert("Failed to delete task. Please check permissions.");
+            }
+          }}
           meName={orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Me"}
           meEmail={(session?.user?.email || "").toLowerCase()}
           isAssignee={
@@ -7827,7 +7867,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 /* ================================================================== */
 /*  1 · CAPTURE                                                        */
 /* ================================================================== */
-function CaptureView({ data, patch, ohv, orgCtx, meId }){
+function CaptureView({ data, patch, ohv, orgCtx, meId, dbTasks, setDbTasks }){
   const [text, setText] = useState("");
   const [selectedType, setSelectedType] = useState("SCHEDULE");
   const [filterCat, setFilterCat] = useState("ALL");
@@ -7877,7 +7917,7 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
     if (!item.taskType) return;
     const payload = {
       id: uid(),
-      text: item.item + (item.details ? ` — ${item.details}` : ""),
+      text: item.item + (item.details ? ` — ${details}` : ""),
       tag: item.category,
       taskType: item.taskType,
       due: item.due || "",
@@ -7890,18 +7930,26 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
     // If delegating in an organization, create live delegated task & dispatch email
     if (item.taskType === "DELEGATE" && item.assignee && orgCtx?.org?.id) {
       const mem = team.find(m => m.name.toLowerCase() === item.assignee.toLowerCase() || (m.email && m.email.toLowerCase() === item.assignee.toLowerCase()));
+      const delegatorName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership";
+      const delegatorEmail = (orgCtx?.profile?.email || "").toLowerCase();
       createDelegatedTask(orgCtx.org.id, meId, {
         assignee_id: mem?.user_id || null,
         assignee_email: mem?.email || "",
         assignee_name: mem?.name || item.assignee,
+        department: mem?.department || "General",
         title: item.item,
         details: item.details || "",
         due_date: item.due || todayKey()
-      });
+      }, delegatorName, delegatorEmail).then(created => {
+        if (created && setDbTasks) {
+          setDbTasks(prev => [created, ...prev.filter(x => x.id !== created.id)]);
+        }
+      }).catch(console.warn);
+
       if (mem?.email) {
         sendTransactionalEmail("task_delegated", mem.email, {
           task_title: item.item,
-          delegator_name: orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership",
+          delegator_name: delegatorName,
           company_name: orgCtx?.org?.name || "Workspace",
           due_date: item.due || todayKey(),
           notes: item.details || "",
@@ -8240,7 +8288,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
   const myRole = orgCtx?.membership?.role || "owner";
   const myRank = getRoleRank(myRole);
 
-  // Load team planners and members
+  // Load team planners and members & subscribe to live updates
   useEffect(() => {
     if (orgCtx?.org?.id) {
       Promise.all([loadTeam(orgCtx.org.id), loadAllVisiblePlanners()])
@@ -8250,6 +8298,20 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
         })
         .catch(() => {});
     }
+
+    const handleLivePlannerUpdate = (e) => {
+      const { userId: updatedUserId, plan: updatedPlan } = e.detail || {};
+      if (!updatedUserId || !updatedPlan) return;
+      setPlanners(prev => {
+        const others = (prev || []).filter(p => p.userId !== updatedUserId);
+        return [...others, { userId: updatedUserId, plan: { ...structuredClone(SEED), ...(updatedPlan || {}) } }];
+      });
+    };
+
+    window.addEventListener('fd_planner_updated', handleLivePlannerUpdate);
+    return () => {
+      window.removeEventListener('fd_planner_updated', handleLivePlannerUpdate);
+    };
   }, [orgCtx?.org?.id]);
 
   const depts = getCompanyDepartments(data, orgCtx);
@@ -14770,7 +14832,22 @@ function PeopleView({ orgCtx, meId, data }){
       setErr(e.message || "Couldn't load team data.");
       setMembers([]); setPlanners([]); setKpiData({ kpis:[], values:[] });
     });
-    return () => { cancelled = true; };
+
+    const handleLivePlannerUpdate = (e) => {
+      const { userId: updatedUserId, plan: updatedPlan } = e.detail || {};
+      if (!updatedUserId || !updatedPlan) return;
+      setPlanners(prev => {
+        const others = (prev || []).filter(p => p.userId !== updatedUserId);
+        return [...others, { userId: updatedUserId, plan: { ...structuredClone(SEED), ...(updatedPlan || {}) } }];
+      });
+    };
+
+    window.addEventListener('fd_planner_updated', handleLivePlannerUpdate);
+
+    return () => { 
+      cancelled = true; 
+      window.removeEventListener('fd_planner_updated', handleLivePlannerUpdate);
+    };
   }, [orgId]);
 
   if (!orgCtx?.membership) {
