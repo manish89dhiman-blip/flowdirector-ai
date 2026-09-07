@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>FlowDirector · Time Domination</title>
 <link rel="manifest" href="/manifest.webmanifest" />
 <link rel="icon" href="/favicon.png" type="image/png" />
@@ -19,9 +19,89 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
 <style>
-  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  :root {
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+  }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding-top: var(--sat);
+    padding-bottom: var(--sab);
+    padding-left: var(--sal);
+    padding-right: var(--sar);
+    -webkit-tap-highlight-color: transparent;
+  }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  button, a { touch-action: manipulation; }
 </style>
+<script>
+window.NativeMobile = {
+  isNative: function() {
+    return typeof window.Capacitor !== "undefined" && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform();
+  },
+  getPlatform: function() {
+    return (window.Capacitor && typeof window.Capacitor.getPlatform === "function") ? window.Capacitor.getPlatform() : "web";
+  },
+  haptic: async function(type) {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) {
+        var Haptics = window.Capacitor.Plugins.Haptics;
+        if (type === "success") {
+          await Haptics.notification({ type: "SUCCESS" });
+        } else if (type === "warning" || type === "error") {
+          await Haptics.notification({ type: "WARNING" });
+        } else if (type === "heavy") {
+          await Haptics.impact({ style: "HEAVY" });
+        } else if (type === "medium") {
+          await Haptics.impact({ style: "MEDIUM" });
+        } else {
+          await Haptics.impact({ style: "LIGHT" });
+        }
+      } else if (navigator.vibrate) {
+        navigator.vibrate(type === "success" ? [15, 30, 15] : 12);
+      }
+    } catch (e) {
+      console.debug("Haptics unavailable:", e);
+    }
+  },
+  share: async function(opts) {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Share) {
+        return await window.Capacitor.Plugins.Share.share({
+          title: opts.title || "FlowDirector",
+          text: opts.text || "",
+          url: opts.url || window.location.href,
+          dialogTitle: opts.title || "Share via"
+        });
+      } else if (navigator.share) {
+        return await navigator.share(opts);
+      }
+    } catch (e) {
+      console.debug("Share error:", e);
+    }
+  },
+  init: function() {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins) {
+        var Plugins = window.Capacitor.Plugins;
+        if (Plugins.SplashScreen) {
+          setTimeout(function() {
+            Plugins.SplashScreen.hide().catch(function() {});
+          }, 350);
+        }
+        if (Plugins.StatusBar) {
+          Plugins.StatusBar.setStyle({ style: "DARK" }).catch(function() {});
+          Plugins.StatusBar.setBackgroundColor({ color: "#0f172a" }).catch(function() {});
+        }
+      }
+    } catch (e) {
+      console.debug("Mobile init error:", e);
+    }
+  }
+};
+</script>
 </head>
 <body class="bg-stone-100">
 <div id="root"></div>
@@ -18993,6 +19073,9 @@ ReactDOM.createRoot(document.getElementById("root")).render(<Root/>);
     const s = document.createElement("script");
     s.textContent = out;
     document.body.appendChild(s);
+    if (window.NativeMobile && typeof window.NativeMobile.init === "function") {
+      window.NativeMobile.init();
+    }
   })();
 </script>
 <script>

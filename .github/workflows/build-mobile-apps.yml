@@ -1,0 +1,167 @@
+name: Build FlowDirector Mobile Apps (Android & iOS)
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Configuration'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================================
+  # 1. ANDROID BUILD JOB (Runs on Ubuntu Cloud Runner)
+  # ============================================================================
+  build-android:
+    name: ?? Build Android App (APK & AAB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: ?? Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ? Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: ?? Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: ?? Install Node Dependencies
+        run: npm install
+
+      - name: ?? Build Web Dist Assets
+        run: npm run build
+
+      - name: ?? Initialize & Sync Android Native Project
+        run: |
+          if [ ! -d "android" ]; then
+            echo "Initializing Android container..."
+            npx cap add android
+          fi
+          echo "Syncing web assets and plugins to Android..."
+          npx cap sync android
+
+      - name: ??? Compile Android Debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: ?? Compile Android Release AAB (App Bundle)
+        run: |
+          cd android
+          ./gradlew bundleRelease || echo "Release signing key not configured, skipped release bundle."
+
+      - name: ?? Upload Android Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowDirector-Android-Debug-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: ?? Upload Android Release Bundle Artifact (if available)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FlowDirector-Android-Release-AAB
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ============================================================================
+  # 2. iOS BUILD JOB (Runs on macOS Cloud Runner with Xcode pre-installed)
+  # ============================================================================
+  build-ios:
+    name: ?? Build iOS App (IPA Archive)
+    runs-on: macos-14
+    timeout-minutes: 40
+
+    steps:
+      - name: ?? Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: ?? Select Xcode Version
+        run: sudo xcode-select -switch /Applications/Xcode_16.0.app || sudo xcode-select -switch /Applications/Xcode_15.4.app || xcode-select -p
+
+      - name: ?? Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: ?? Install Node Dependencies
+        run: npm install
+
+      - name: ?? Build Web Dist Assets
+        run: npm run build
+
+      - name: ?? Initialize & Sync iOS Native Project
+        run: |
+          if [ ! -d "ios" ]; then
+            echo "Initializing iOS container..."
+            npx cap add ios
+          fi
+          echo "Syncing web assets and plugins to iOS..."
+          npx cap sync ios
+
+      - name: ?? Install CocoaPods Dependencies
+        run: |
+          cd ios/App
+          pod install
+
+      - name: ??? Archive iOS App with Xcodebuild
+        run: |
+          mkdir -p ios/build
+          xcodebuild -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            -archivePath ios/build/App.xcarchive \
+            archive
+
+      - name: ?? Package iOS Unsigned IPA
+        run: |
+          mkdir -p ios/build/Payload
+          cp -r ios/build/App.xcarchive/Products/Applications/App.app ios/build/Payload/
+          cd ios/build
+          zip -r FlowDirector-Unsigned.ipa Payload
+
+      - name: ?? Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowDirector-iOS-IPA
+          path: ios/build/FlowDirector-Unsigned.ipa
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: ?? Upload iOS xcarchive (For App Store / TestFlight signing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowDirector-iOS-Archive
+          path: ios/build/App.xcarchive
+          if-no-files-found: warn
+          retention-days: 14

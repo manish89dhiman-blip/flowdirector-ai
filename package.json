@@ -1,0 +1,40 @@
+{
+  "name": "flowdirector",
+  "version": "1.0.0",
+  "description": "FlowDirector Mobile & Web Workspace",
+  "main": "index.html",
+  "scripts": {
+    "build": "node sync_dist.js",
+    "cap:sync": "cap sync",
+    "cap:add:android": "cap add android",
+    "cap:add:ios": "cap add ios",
+    "cap:copy": "cap copy",
+    "cap:open:android": "cap open android",
+    "cap:open:ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/app": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/haptics": "^7.0.0",
+    "@capacitor/keyboard": "^7.0.0",
+    "@capacitor/push-notifications": "^7.0.0",
+    "@capacitor/share": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0",
+    "@capacitor/status-bar": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  },
+  "keywords": [
+    "flowdirector",
+    "capacitor",
+    "ios",
+    "android",
+    "pwa",
+    "productivity"
+  ],
+  "author": "FlowDirector Team",
+  "license": "UNLICENSED"
+}

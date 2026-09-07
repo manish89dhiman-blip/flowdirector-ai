@@ -6,3 +6,13 @@ dist/
 .vercel/
 .wrangler/
 .dev.vars
+
+# Mobile & Capacitor build artifacts
+android/app/build/
+android/.gradle/
+android/build/
+android/local.properties
+ios/build/
+ios/Pods/
+ios/App/Pods/
+ios/App/Podfile.lock
