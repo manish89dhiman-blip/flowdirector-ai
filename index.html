@@ -5648,111 +5648,8 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
 /* ================================================================== */
 /*  Interactive 3-Step Quick-Start Trial Activation Banner            */
 /* ================================================================== */
-function QuickStartBanner({ data, patch, onGoToTab, onOpenTraining }) {
-  const [dismissed, setDismissed] = useState(() => {
-    try {
-      return localStorage.getItem("flowdirector_quickstart_dismissed") === "true";
-    } catch (e) {
-      return false;
-    }
-  });
-
-  const ohv = Math.round((data.settings.income || 0) / (data.settings.hours || 1));
-  const hasOhv = ohv > 0;
-  const hasCaptures = (data.captures && data.captures.length > 0) || (data.dailyBackup && data.dailyBackup.length > 0);
-  const hasThemes = Object.values(data.dayThemes || {}).some(t => !!t);
-
-  const stepCount = [hasOhv, hasCaptures, hasThemes].filter(Boolean).length;
-
-  if (dismissed || stepCount === 3) return null;
-
-  const handleDismiss = () => {
-    setDismissed(true);
-    try {
-      localStorage.setItem("flowdirector_quickstart_dismissed", "true");
-    } catch (e) {}
-  };
-
-  const loadBlueprint = () => {
-    if (window.confirm("Load Executive Blueprint sample data? This will pre-fill realistic high-leverage themes, tasks, and settings that you can explore and edit.")) {
-      patch(d => {
-        d.settings = { ...SAMPLE_EXECUTIVE_BLUEPRINT.settings };
-        d.dayThemes = { ...SAMPLE_EXECUTIVE_BLUEPRINT.dayThemes };
-        d.categories = [...SAMPLE_EXECUTIVE_BLUEPRINT.categories];
-        d.captures = [...SAMPLE_EXECUTIVE_BLUEPRINT.captures];
-        d.dailyBackup = [...SAMPLE_EXECUTIVE_BLUEPRINT.dailyBackup];
-        d.recurringMonthly = [...SAMPLE_EXECUTIVE_BLUEPRINT.recurringMonthly];
-        d.reference = [...SAMPLE_EXECUTIVE_BLUEPRINT.reference];
-      });
-    }
-  };
-
-  return (
-    <div className="mb-5 rounded-2xl border border-blue-200/80 bg-linear-to-r from-blue-50/90 via-indigo-50/50 to-white p-3.5 sm:p-4 text-slate-900 shadow-2xs relative">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100/80 pb-2.5">
-        <div className="flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-blue-600 text-[10px] font-bold text-white">🚀</span>
-          <span className="text-xs font-black uppercase tracking-wider text-blue-950">Quick-Start Guide ({stepCount}/3 Done)</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={loadBlueprint} className="text-xs font-bold text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-1">
-            <span>✨ Load Sample Blueprint</span>
-          </button>
-          <button 
-            onClick={handleDismiss} 
-            className="flex h-5 w-5 items-center justify-center rounded-md text-slate-400 hover:bg-blue-100 hover:text-slate-700 text-xs font-bold transition"
-            title="Dismiss guide"
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        <div className={`rounded-xl border p-2.5 transition ${hasOhv ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">1. Owner Value</span>
-            {hasOhv ? <span className="text-emerald-700 font-extrabold text-[11px]">✓ Set</span> : <span className="text-slate-400 text-[11px]">Pending</span>}
-          </div>
-          <div className="text-xs font-bold text-slate-950 mt-0.5">Calculate OHV</div>
-          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">Calculate your hourly delegation rate.</p>
-          {!hasOhv && (
-            <button onClick={() => onGoToTab("settings")} className="mt-1.5 rounded-lg bg-slate-950 px-2.5 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 transition">
-              Calculate →
-            </button>
-          )}
-        </div>
-
-        <div className={`rounded-xl border p-2.5 transition ${hasThemes ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">2. Weekly Themes</span>
-            {hasThemes ? <span className="text-emerald-700 font-extrabold text-[11px]">✓ Set</span> : <span className="text-slate-400 text-[11px]">Pending</span>}
-          </div>
-          <div className="text-xs font-bold text-slate-950 mt-0.5">Set Focus Themes</div>
-          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">Assign themes to each weekday.</p>
-          {!hasThemes && (
-            <button onClick={() => onGoToTab("weekly")} className="mt-1.5 rounded-lg bg-slate-950 px-2.5 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 transition">
-              Set Themes →
-            </button>
-          )}
-        </div>
-
-        <div className={`rounded-xl border p-2.5 transition ${hasCaptures ? "border-emerald-200 bg-emerald-50/70" : "border-slate-200 bg-white"}`}>
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">3. Delegation</span>
-            {hasCaptures ? <span className="text-emerald-700 font-extrabold text-[11px]">✓ Ready</span> : <span className="text-slate-400 text-[11px]">Pending</span>}
-          </div>
-          <div className="text-xs font-bold text-slate-950 mt-0.5">Capture &amp; Triage</div>
-          <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5">Capture loops and delegate low-OHV tasks.</p>
-          {!hasCaptures && (
-            <button onClick={() => onGoToTab("capture")} className="mt-1.5 rounded-lg bg-slate-950 px-2.5 py-0.5 text-[10px] font-bold text-white hover:bg-slate-800 transition">
-              Open Capture →
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+function QuickStartBanner() {
+  return null;
 }
 
 /* ================================================================== */
@@ -7005,13 +6902,6 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
       {/* Main Workspace Area (pb-28 on mobile for fixed bottom tab bar) */}
       <main className="mx-auto max-w-6xl px-3 sm:px-4 py-4 sm:py-6 pb-28 md:pb-8">
-        <QuickStartBanner 
-          data={data} 
-          patch={patch} 
-          onGoToTab={setTab} 
-          onOpenTraining={() => setShowTrainingModal(true)} 
-        />
-
         <ErrorBoundary key={tab}>
           {tab!=="daily" && tab!=="weekly" && tab!=="standup" && tab!=="manual" && <DueBanner data={data} />}
           {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
@@ -9949,37 +9839,32 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
   const completionPercent = activePrioritiesCount > 0 ? Math.round((completedPrioritiesCount / activePrioritiesCount) * 100) : 0;
 
   return (
-    <div className="space-y-5">
-      <Callout>Decide the day before the day decides you. ONE main outcome, max 3 priorities. Slot khaali hua? Pick from Backup.</Callout>
-
+    <div className="space-y-4">
       {/* 1. Date Navigation & Calendar Sync Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border-2 border-slate-200 bg-white p-3 sm:px-5 sm:py-3 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 sm:px-4 sm:py-2.5 shadow-2xs">
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setDk(shiftDay(dk, -1))} 
-            className="rounded-2xl border border-slate-200 bg-slate-50 p-2 text-slate-700 hover:bg-slate-100 transition"
+            className="rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-700 hover:bg-slate-100 transition"
             title="Previous Day"
           >
             <Ic n="left"/>
           </button>
-          <div className="text-left px-1">
-            <div className="text-base sm:text-lg font-black text-slate-950 flex items-center gap-2">
-              <span>{prettyDate(dk)}</span>
-              {dk === todayKey() && (
-                <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
-                  TODAY
-                </span>
-              )}
-            </div>
-            {dk !== todayKey() && (
-              <button onClick={() => setDk(todayKey())} className="text-xs font-bold text-amber-700 hover:underline">
-                jump to today →
+          <div className="text-left px-1 flex items-center gap-2">
+            <span className="text-sm sm:text-base font-black text-slate-950">{prettyDate(dk)}</span>
+            {dk === todayKey() ? (
+              <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider">
+                TODAY
+              </span>
+            ) : (
+              <button onClick={() => setDk(todayKey())} className="text-[11px] font-bold text-amber-700 hover:underline">
+                → jump to today
               </button>
             )}
           </div>
           <button 
             onClick={() => setDk(shiftDay(dk, 1))} 
-            className="rounded-2xl border border-slate-200 bg-slate-50 p-2 text-slate-700 hover:bg-slate-100 transition"
+            className="rounded-xl border border-slate-200 bg-slate-50 p-1.5 text-slate-700 hover:bg-slate-100 transition"
             title="Next Day"
           >
             <Ic n="right"/>
@@ -9988,7 +9873,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
 
         <button 
           onClick={() => setShowCalendarModal(true)}
-          className="rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 px-4 py-2 text-xs font-black transition shadow-2xs flex items-center gap-2"
+          className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3 py-1.5 text-xs font-bold transition shadow-2xs flex items-center gap-1.5"
         >
           <span>🗓️</span>
           <span>Google / Apple Calendar Sync</span>
@@ -10455,65 +10340,61 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
         </div>
       )}
 
-      {/* 5. One Main Outcome & Top 3 Priorities vs Backup List */}
-      <div className="grid gap-5 lg:grid-cols-12">
+      {/* 5. Executive Daily Focus: One Main Outcome & Top 3 Priorities vs Flexible Backup Pool */}
+      <div className="grid gap-4 lg:grid-cols-12 items-start">
         {/* Outcome & Priorities Column (7 cols on large screens) */}
-        <div className="lg:col-span-7 space-y-4">
+        <div className="lg:col-span-7 space-y-3">
           
-          {/* Main Outcome Card */}
-          <div className={`rounded-3xl border-2 p-5 shadow-xs transition space-y-3 ${
+          {/* Main Outcome Card (Compact Executive Bar) */}
+          <div className={`rounded-2xl border p-3 sm:p-3.5 shadow-2xs transition space-y-2 ${
             day.outcomeMark === "done" 
-              ? "border-emerald-300 bg-gradient-to-br from-emerald-50/90 to-teal-50/40" 
+              ? "border-emerald-300 bg-gradient-to-r from-emerald-50/90 to-teal-50/40" 
               : day.outcomeMark === "delegated"
-              ? "border-sky-300 bg-gradient-to-br from-sky-50/90 to-blue-50/40"
-              : "border-amber-300 bg-gradient-to-br from-amber-50/90 via-orange-50/30 to-white"
+              ? "border-sky-300 bg-gradient-to-r from-sky-50/90 to-blue-50/40"
+              : "border-amber-300/90 bg-gradient-to-r from-amber-50/90 via-orange-50/30 to-amber-50/50"
           }`}>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/60 pb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🏆</span>
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-amber-950">ONE MAIN OUTCOME</h3>
-                  <span className="text-[11px] text-amber-800/80 font-medium">The single primary needle-mover that defines today's success</span>
-                </div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-base">🏆</span>
+                <span className="text-xs font-black uppercase tracking-wider text-amber-950">1. Main Outcome</span>
+                <span className="text-[10px] text-amber-800/80 font-medium hidden sm:inline">(Primary Victory)</span>
               </div>
 
               {/* Status Action / Done Toggle */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => {
-                    const next = day.outcomeMark === "done" ? "" : "done";
-                    upd(x => { x.outcomeMark = next; });
-                  }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition shadow-2xs border ${
-                    day.outcomeMark === "done" 
-                      ? "bg-emerald-600 text-white border-emerald-700" 
-                      : "bg-white/90 text-slate-700 border-amber-300 hover:bg-amber-100/60"
-                  }`}
-                  title={day.outcomeMark === "done" ? "Mark Incomplete" : "Mark as Completed Victory"}
-                >
-                  <span>{day.outcomeMark === "done" ? "✓ Completed Victory" : "Mark Done"}</span>
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  const next = day.outcomeMark === "done" ? "" : "done";
+                  upd(x => { x.outcomeMark = next; });
+                }}
+                className={`flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-xs font-black transition shadow-2xs border ${
+                  day.outcomeMark === "done" 
+                    ? "bg-emerald-600 text-white border-emerald-700" 
+                    : "bg-white/90 text-slate-700 border-amber-300 hover:bg-amber-100/60"
+                }`}
+                title={day.outcomeMark === "done" ? "Mark Incomplete" : "Mark as Completed Victory"}
+              >
+                <span>{day.outcomeMark === "done" ? "✓ Victory Done" : "Mark Done"}</span>
+              </button>
             </div>
 
             {/* Main Outcome Editable Field */}
             <input 
               value={day.outcome || ""} 
               onChange={e => upd(x => { x.outcome = e.target.value; })} 
-              placeholder="What is the #1 outcome that makes today a victory? (e.g. Adwords Setup & Launch)" 
-              className={`w-full bg-white/90 rounded-2xl border px-4 py-3 text-sm sm:text-base font-black outline-none transition focus:ring-2 focus:ring-amber-400 ${
+              placeholder="What is the #1 outcome that makes today a victory? (e.g. Launch Adwords campaign)" 
+              className={`w-full bg-white/95 rounded-xl border px-3 py-1.5 text-xs sm:text-sm font-black outline-none transition focus:ring-1 focus:ring-amber-400 ${
                 day.outcomeMark === "done" ? "text-slate-500 line-through border-emerald-200" : "text-slate-950 border-amber-200"
               }`}
             />
 
             {/* Main Outcome Action Strip */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-1.5 pt-0.5 text-xs">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {/* 1-Click Delegate Button / Live Status Chip */}
                 {liveOutcomeTask ? (
                   <div 
                     onClick={() => onOpenTask && onOpenTask(liveOutcomeTask)}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black cursor-pointer transition shadow-2xs border ${
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-black cursor-pointer transition shadow-2xs border ${
                       liveOutcomeTask.status === "completed" 
                         ? "bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200"
                         : liveOutcomeTask.status === "blocked"
@@ -10531,11 +10412,11 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                       {liveOutcomeTask.status === "completed" 
                         ? `Done → ${liveOutcomeTask.assignee_name}`
                         : liveOutcomeTask.status === "blocked"
-                        ? `Blocked ⚠️ (${liveOutcomeTask.assignee_name})`
+                        ? `Blocked (${liveOutcomeTask.assignee_name})`
                         : liveOutcomeTask.status === "in_progress"
                         ? `In Progress (${liveOutcomeTask.assignee_name})`
                         : (liveOutcomeTask.status === "under_review" || liveOutcomeTask.status === "review")
-                        ? `Review Ready (${liveOutcomeTask.assignee_name})`
+                        ? `Review (${liveOutcomeTask.assignee_name})`
                         : `Delegated → ${liveOutcomeTask.assignee_name}`}
                     </span>
                     <span className="text-[10px] opacity-75 font-normal ml-0.5">💬 {liveOutcomeTask.updates?.length || 0}</span>
@@ -10543,7 +10424,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                 ) : (
                   <button
                     onClick={() => setDelegateModalTarget({ type: "outcome", title: day.outcome || "Main Outcome", dk })}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition shadow-2xs border ${
+                    className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition shadow-2xs border ${
                       day.outcomeDelegatedTo
                         ? "bg-sky-100 border-sky-300 text-sky-950 hover:bg-sky-200"
                         : "bg-white border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
@@ -10551,7 +10432,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                     title="Assign this outcome to a team member"
                   >
                     <span>👥</span>
-                    <span>{day.outcomeDelegatedTo ? `Delegated → ${day.outcomeDelegatedTo}` : "Delegate to Team"}</span>
+                    <span>{day.outcomeDelegatedTo ? `Delegated → ${day.outcomeDelegatedTo}` : "Delegate"}</span>
                   </button>
                 )}
 
@@ -10566,9 +10447,9 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                       e.target.value = "";
                     }
                   }}
-                  className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
                 >
-                  <option value="" disabled>⏱️ Schedule 15-Min Slot...</option>
+                  <option value="" disabled>⏱️ 15-Min Slot...</option>
                   <optgroup label="⏱️ Block 15-Min Slot">
                     {TIME_SLOTS_15MIN.map(s => <option key={`block::${s}`} value={`block::${s}`}>⏱️ Block {slot15MinLabel(s)}</option>)}
                   </optgroup>
@@ -10585,7 +10466,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                   <select
                     value={day.outcomeKra || ""}
                     onChange={e => upd(x => { x.outcomeKra = e.target.value; })}
-                    className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
                   >
                     <option value="">🎯 Link to KRA...</option>
                     {myKras.map(k => <option key={k.id} value={k.title}>{k.title}</option>)}
@@ -10594,26 +10475,23 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
               </div>
 
               {day.outcomeKra && (
-                <span className="rounded-full bg-amber-200/70 border border-amber-300 text-amber-950 px-2.5 py-0.5 text-[10px] font-black uppercase">
+                <span className="rounded-full bg-amber-200/70 border border-amber-300 text-amber-950 px-2 py-0.5 text-[10px] font-black uppercase">
                   🎯 {day.outcomeKra}
                 </span>
               )}
             </div>
           </div>
 
-          {/* Top 3 Priorities Box */}
-          <div className="rounded-3xl border-2 border-slate-200 bg-white p-5 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🎯</span>
-                <div>
-                  <h3 className="text-sm font-black text-slate-950 uppercase tracking-wider">Top 3 Priorities</h3>
-                  <p className="text-xs text-slate-500">Your three highest leverage needle-movers for today</p>
-                </div>
+          {/* Top 3 Priorities Box (High Density) */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-3.5 shadow-2xs space-y-2.5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-base">🎯</span>
+                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Top 3 Priorities</h3>
               </div>
 
-              <div className="text-right">
-                <span className={`rounded-full border px-3 py-1 text-xs font-black transition ${
+              <div>
+                <span className={`rounded-full border px-2.5 py-0.5 text-[11px] font-black transition ${
                   completedPrioritiesCount > 0 
                     ? "bg-emerald-100 text-emerald-900 border-emerald-200" 
                     : "bg-slate-100 text-slate-700 border-slate-200"
@@ -10624,7 +10502,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
             </div>
 
             {/* 3 Priorities List */}
-            <div className="space-y-3">
+            <div className="space-y-1.5">
               {[0, 1, 2].map(i => {
                 const mark = (day.marks && day.marks[i]) || "";
                 const isDone = mark === "done";
@@ -10638,7 +10516,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                 return (
                   <div 
                     key={i} 
-                    className={`rounded-2xl border p-3.5 transition space-y-2.5 ${
+                    className={`rounded-xl border p-2 sm:px-3 sm:py-2 transition space-y-1.5 ${
                       isDone 
                         ? "border-emerald-200 bg-emerald-50/40" 
                         : isDelegated
@@ -10647,12 +10525,12 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                         ? "border-amber-200 bg-amber-50/30"
                         : isDropped
                         ? "border-rose-200 bg-rose-50/30"
-                        : "border-slate-200 bg-white shadow-2xs hover:border-slate-300"
+                        : "border-slate-200/90 bg-slate-50/40 hover:bg-white hover:border-slate-300"
                     }`}
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
                       {/* Rank Indicator */}
-                      <span className={`w-6 h-6 shrink-0 rounded-lg text-xs font-black flex items-center justify-center ${
+                      <span className={`w-5 h-5 shrink-0 rounded-md text-[10px] font-black flex items-center justify-center ${
                         isDone 
                           ? "bg-emerald-600 text-white" 
                           : "bg-slate-900 text-white"
@@ -10669,10 +10547,10 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                             x.marks[i] = next; 
                           });
                         }}
-                        className={`w-6 h-6 shrink-0 rounded-lg border flex items-center justify-center font-bold text-xs transition ${
+                        className={`w-5 h-5 shrink-0 rounded-md border flex items-center justify-center font-bold text-[10px] transition ${
                           isDone 
                             ? "bg-emerald-600 border-emerald-600 text-white shadow-2xs" 
-                            : "border-slate-300 bg-slate-50 text-transparent hover:border-amber-500"
+                            : "border-slate-300 bg-white text-transparent hover:border-amber-500"
                         }`}
                         title={isDone ? "Mark Incomplete" : "Mark Completed"}
                       >
@@ -10699,24 +10577,24 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                           x.marks = x.marks || ["", "", ""];
                           x.marks[i] = e.target.value; 
                         })}
-                        className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs font-bold text-slate-800 outline-none hover:bg-slate-50 transition shadow-2xs"
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-800 outline-none hover:bg-slate-50 transition shadow-2xs"
                       >
-                        <option value="">🔘 Open Focus</option>
-                        <option value="done">✅ Completed</option>
+                        <option value="">🔘 Open</option>
+                        <option value="done">✅ Done</option>
                         <option value="delegated">👥 Delegated</option>
-                        <option value="moved">📅 Rescheduled</option>
+                        <option value="moved">📅 Moved</option>
                         <option value="dropped">✕ Dropped</option>
                       </select>
                     </div>
 
                     {/* Action Strip & Badges */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100/80 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 pt-0.5 text-xs">
                       <div className="flex flex-wrap items-center gap-1.5">
                         {/* Live Task Badge or Delegate Button */}
                         {livePriorityTask ? (
                           <div 
                             onClick={() => onOpenTask && onOpenTask(livePriorityTask)}
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-black cursor-pointer transition shadow-2xs border ${
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black cursor-pointer transition shadow-2xs border ${
                               livePriorityTask.status === "completed" 
                                 ? "bg-emerald-100 border-emerald-300 text-emerald-950 hover:bg-emerald-200"
                                 : livePriorityTask.status === "blocked"
@@ -10734,11 +10612,11 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                               {livePriorityTask.status === "completed" 
                                 ? `Done (${livePriorityTask.assignee_name})`
                                 : livePriorityTask.status === "blocked"
-                                ? `Blocked ⚠️ (${livePriorityTask.assignee_name})`
+                                ? `Blocked (${livePriorityTask.assignee_name})`
                                 : livePriorityTask.status === "in_progress"
                                 ? `In Progress (${livePriorityTask.assignee_name})`
                                 : (livePriorityTask.status === "under_review" || livePriorityTask.status === "review")
-                                ? `Review Ready (${livePriorityTask.assignee_name})`
+                                ? `Review (${livePriorityTask.assignee_name})`
                                 : `Delegated → ${livePriorityTask.assignee_name}`}
                             </span>
                             <span className="text-[10px] opacity-75 font-normal ml-0.5">💬 {livePriorityTask.updates?.length || 0}</span>
@@ -10751,10 +10629,10 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                               title: (day.priorities && day.priorities[i]) || `Priority #${i+1}`,
                               dk
                             })}
-                            className={`flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold transition border ${
+                            className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition border ${
                               delTo 
                                 ? "bg-sky-100 border-sky-300 text-sky-900" 
-                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
+                                : "bg-white border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-900"
                             }`}
                             title="Delegate this priority to a team member"
                           >
@@ -10774,7 +10652,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                               e.target.value = "";
                             }
                           }}
-                          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 outline-none hover:bg-white transition"
+                          className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
                         >
                           <option value="" disabled>⏱️ 15-Min Slot...</option>
                           <optgroup label="⏱️ Block 15-Min Slot">
@@ -10796,9 +10674,9 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                               x.priorityKra = x.priorityKra || ["", "", ""];
                               x.priorityKra[i] = e.target.value;
                             })}
-                            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-bold text-slate-700 outline-none hover:bg-white transition"
+                            className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-700 outline-none hover:bg-slate-50 transition shadow-2xs"
                           >
-                            <option value="">🎯 KRA Tag...</option>
+                            <option value="">🎯 KRA...</option>
                             {myKras.map(k => <option key={k.id} value={k.title}>{k.title}</option>)}
                           </select>
                         )}
@@ -10807,7 +10685,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                         {!isDone && day.priorities && day.priorities[i] && (
                           <button
                             onClick={() => handlePushToTomorrow(i, day.priorities[i])}
-                            className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold text-slate-500 hover:bg-amber-50 hover:text-amber-900 transition"
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold text-slate-500 hover:bg-amber-50 hover:text-amber-900 transition"
                             title="Push this priority to tomorrow's planner"
                           >
                             <span>→ Tomorrow</span>
@@ -10816,7 +10694,7 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
                       </div>
 
                       {kraTag && (
-                        <span className="rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                        <span className="rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[9px] font-bold">
                           {kraTag}
                         </span>
                       )}
@@ -10829,20 +10707,21 @@ function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTa
         </div>
 
         {/* Flexible Backup Pool Column (5 cols on large screens) */}
-        <div className="lg:col-span-5 rounded-3xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between space-y-3">
+        <div className="lg:col-span-5 rounded-2xl border border-slate-200 bg-white p-3 sm:p-3.5 shadow-2xs flex flex-col justify-between space-y-2">
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <label className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <span>📦</span>
                 <span>Flexible Backup Pool</span>
               </label>
-              <span className="text-[11px] font-bold text-slate-400">When time frees up</span>
+              <span className="text-[10px] font-bold text-slate-400">When time frees up</span>
             </div>
 
-            <div className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
+            <div className="max-h-56 space-y-1.5 overflow-y-auto pr-1">
               {otherBackup.length === 0 && (
-                <div className="py-10 text-center text-xs font-semibold text-slate-400">
-                  No parked tasks. Transfer items from Capture desk.
+                <div className="py-8 text-center text-xs font-semibold text-slate-400 flex flex-col items-center justify-center gap-1">
+                  <span>📥 No parked backup tasks.</span>
+                  <span className="text-[11px] text-slate-400">Transfer items from Capture desk.</span>
                 </div>
               )}
               {otherBackup.map(b => (
