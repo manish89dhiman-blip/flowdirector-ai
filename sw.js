@@ -27,6 +27,43 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+// Handle OS system notification interactions
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url && "focus" in client) return client.focus();
+      }
+      if (clients.openWindow) return clients.openWindow("/");
+    })
+  );
+});
+
+// Handle incoming Web Push events if subscribed
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  try {
+    const payload = event.data.json();
+    const title = payload.title || "FlowDirector Update";
+    const options = {
+      body: payload.body || "New task or status update received",
+      icon: "/icon.svg",
+      badge: "/favicon.png",
+      vibrate: [200, 100, 200],
+      data: payload.data || {}
+    };
+    event.waitUntil(self.registration.showNotification(title, options));
+  } catch (_) {
+    event.waitUntil(
+      self.registration.showNotification("FlowDirector Alert", {
+        body: event.data.text(),
+        icon: "/icon.svg"
+      })
+    );
+  }
+});
+
 // Only the app shell (same-origin files + the pinned CDN scripts) is
 // cached/served-offline. Everything else — Supabase auth and data calls in
 // particular — passes straight through untouched, so sign-in and syncing

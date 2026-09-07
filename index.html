@@ -701,6 +701,33 @@ async function deleteDelegatedTask(taskId) {
   }
 }
 
+function triggerSystemNotification(title, body, task = null) {
+  try {
+    playNotificationChime();
+    if ("Notification" in window && Notification.permission === "granted") {
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(title, {
+            body: body,
+            icon: "/icon.svg",
+            badge: "/favicon.png",
+            vibrate: [200, 100, 200],
+            data: { taskId: task?.id }
+          });
+        }).catch(() => {
+          new Notification(title, { body: body, icon: "/icon.svg" });
+        });
+      } else {
+        new Notification(title, { body: body, icon: "/icon.svg" });
+      }
+    } else if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  } catch (e) {
+    console.warn("triggerSystemNotification:", e);
+  }
+}
+
 function getEffectiveTeam(data, orgCtx) {
   const list = [];
   const seen = new Set();
@@ -7303,7 +7330,6 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               newRow.delegated_by !== userId &&
               (newRow.assignee_id === userId || (newRow.assignee_email && newRow.assignee_email.toLowerCase() === myEmail))
             ) {
-              playNotificationChime();
               const toast = {
                 id: uid(),
                 title: `⚡ New Task Delegated to You`,
@@ -7312,6 +7338,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                 task: newRow,
                 created_at: new Date().toISOString()
               };
+              triggerSystemNotification(toast.title, toast.body, newRow);
               setActiveToast(toast);
               setInAppNotifications(prev => [toast, ...prev]);
             }
@@ -7322,7 +7349,6 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
             if (newRow.delegated_by === userId || newRow.assignee_id === userId || (newRow.assignee_email && newRow.assignee_email.toLowerCase() === myEmail)) {
               const lastNote = (newRow.updates || [])[(newRow.updates || []).length - 1];
               if (lastNote && lastNote.author_email !== myEmail) {
-                playNotificationChime();
                 const isPing = lastNote.is_status_request || (lastNote.text && lastNote.text.startsWith("⚡ STATUS UPDATE REQUESTED"));
                 const isReply = lastNote.text && lastNote.text.startsWith("💬 STATUS UPDATE:");
                 const toast = {
@@ -7333,10 +7359,10 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                   task: newRow,
                   created_at: new Date().toISOString()
                 };
+                triggerSystemNotification(toast.title, toast.body, newRow);
                 setActiveToast(toast);
                 setInAppNotifications(prev => [toast, ...prev]);
               } else if (oldRow && oldRow.status !== newRow.status && newRow.delegated_by === userId) {
-                playNotificationChime();
                 const toast = {
                   id: uid(),
                   title: `📋 Status Update: ${newRow.title}`,
@@ -7345,6 +7371,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                   task: newRow,
                   created_at: new Date().toISOString()
                 };
+                triggerSystemNotification(toast.title, toast.body, newRow);
                 setActiveToast(toast);
                 setInAppNotifications(prev => [toast, ...prev]);
               }
