@@ -86,6 +86,23 @@ const DEFAULT_TASK_TYPE_LABELS = {
   "DELETE": "✕ Drop / Delete"
 };
 
+const KICKSTART_CURRENCIES = [
+  { code: "INR", symbol: "₹", name: "Indian Rupee", flag: "🇮🇳" },
+  { code: "USD", symbol: "$", name: "US Dollar", flag: "🇺🇸" },
+  { code: "AED", symbol: "AED", name: "UAE Dirham", flag: "🇦🇪" },
+  { code: "EUR", symbol: "€", name: "Euro", flag: "🇪🇺" },
+  { code: "GBP", symbol: "£", name: "British Pound", flag: "🇬🇧" },
+  { code: "SGD", symbol: "S$", name: "Singapore Dollar", flag: "🇸🇬" },
+  { code: "CAD", symbol: "CA$", name: "Canadian Dollar", flag: "🇨🇦" },
+  { code: "AUD", symbol: "A$", name: "Australian Dollar", flag: "🇦🇺" }
+];
+
+function getCurrencySymbol(data) {
+  const c = data?.settings?.currency || "INR";
+  const match = KICKSTART_CURRENCIES.find(x => x.code === c || x.symbol === c);
+  return match ? match.symbol : (c || "₹");
+}
+
 function getCompanyDepartments(data, orgCtx) {
   if (Array.isArray(data?.departments) && data.departments.length > 0) {
     return data.departments;
@@ -5646,10 +5663,683 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
 }
 
 /* ================================================================== */
-/*  Interactive 3-Step Quick-Start Trial Activation Banner            */
+/*  Company & Workstyle Kickstart Wizard & Dashboard Banner           */
 /* ================================================================== */
+function CompanyKickstartBanner({ onOpenKickstart, patch }) {
+  const [dismissed, setDismissed] = useState(() => !!sessionStorage.getItem("fd_kickstart_dismissed"));
+  if (dismissed) return null;
+
+  return (
+    <div className="mb-4 rounded-3xl border-2 border-amber-300 bg-gradient-to-r from-amber-50 via-white to-amber-50/50 p-4 sm:p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+      <div className="flex items-center gap-3.5 min-w-0">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-400 text-2xl shadow-xs">🚀</span>
+        <div>
+          <h4 className="text-sm font-black text-slate-950 flex items-center gap-2">
+            <span>Company Kickstart Wizard</span>
+            <span className="rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 text-[10px] font-bold">3 Min Setup</span>
+          </h4>
+          <p className="text-xs text-slate-600 mt-0.5">
+            Configure your Owner Hour Value, operating timezone, currency, departments, day themes, and team invites.
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={onOpenKickstart}
+          className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-black transition shadow-sm flex items-center gap-1.5"
+        >
+          <span>Start Kickstart Wizard</span>
+          <span>→</span>
+        </button>
+        <button
+          onClick={() => {
+            sessionStorage.setItem("fd_kickstart_dismissed", "1");
+            setDismissed(true);
+            if (patch) patch(d => { d.settings = d.settings || {}; d.settings.kickstartDismissed = true; });
+          }}
+          className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 text-xs font-bold"
+          title="Dismiss banner"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function QuickStartBanner() {
   return null;
+}
+
+function CompanyKickstartWizardModal({ data, patch, orgCtx, session, onClose, onComplete }) {
+  const [step, setStep] = useState(1);
+  const [income, setIncome] = useState(data?.settings?.income || 500000);
+  const [daysPerWeek, setDaysPerWeek] = useState(data?.settings?.daysPerWeek || 6);
+  const [hoursPerDay, setHoursPerDay] = useState(data?.settings?.hoursPerDay || 8);
+  const monthlyHours = Math.round(daysPerWeek * hoursPerDay * 4.33);
+  const ohvVal = Math.round((income || 0) / (monthlyHours || 1));
+
+  const [timezone, setTimezone] = useState(data?.settings?.timezone || "Asia/Kolkata");
+  const [currency, setCurrency] = useState(data?.settings?.currency || "INR");
+
+  const [departments, setDepartments] = useState(() => {
+    if (Array.isArray(data?.departments) && data.departments.length > 0) return [...data.departments];
+    if (Array.isArray(orgCtx?.org?.departments) && orgCtx.org.departments.length > 0) return [...orgCtx.org.departments];
+    return [];
+  });
+  const [newDeptInput, setNewDeptInput] = useState("");
+
+  const [dayThemes, setDayThemes] = useState({
+    mon: data?.dayThemes?.mon || "",
+    tue: data?.dayThemes?.tue || "",
+    wed: data?.dayThemes?.wed || "",
+    thu: data?.dayThemes?.thu || "",
+    fri: data?.dayThemes?.fri || "",
+    sat: data?.dayThemes?.sat || "",
+    sun: data?.dayThemes?.sun || ""
+  });
+
+  const [teamInvites, setTeamInvites] = useState([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState("employee");
+  const [inviteDept, setInviteDept] = useState("");
+  const [inviteMsg, setInviteMsg] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [sentCount, setSentCount] = useState(0);
+
+  const currObj = KICKSTART_CURRENCIES.find(c => c.code === currency) || { symbol: currency || "₹" };
+  const sym = currObj.symbol;
+
+  const addDept = () => {
+    const trimmed = newDeptInput.trim();
+    if (!trimmed) return;
+    if (departments.some(d => d.toLowerCase() === trimmed.toLowerCase())) {
+      setNewDeptInput("");
+      return;
+    }
+    setDepartments([...departments, trimmed]);
+    setNewDeptInput("");
+  };
+
+  const removeDept = (d) => {
+    setDepartments(departments.filter(x => x !== d));
+  };
+
+  const handleSendInvite = async () => {
+    const email = inviteEmail.trim();
+    if (!email || !email.includes("@")) {
+      setInviteMsg("Please enter a valid email address.");
+      return;
+    }
+    const orgId = orgCtx?.org?.id;
+    if (orgId) {
+      setInviteBusy(true);
+      setInviteMsg("");
+      try {
+        const row = await sendInvite(orgId, email, inviteRole, inviteDept || departments[0] || "General", null, session?.user?.id);
+        try { await emailInvite(row.id, { ...row, orgName: orgCtx?.org?.name }); } catch(_) {}
+        setTeamInvites([...teamInvites, { email, name: inviteName, role: inviteRole, dept: inviteDept || departments[0] || "General", status: "Sent" }]);
+        setSentCount(c => c + 1);
+        setInviteEmail("");
+        setInviteName("");
+        setInviteMsg("✓ Invite sent to " + email);
+      } catch (err) {
+        setInviteMsg(err.message || "Failed to create invite.");
+      }
+      setInviteBusy(false);
+    } else {
+      setTeamInvites([...teamInvites, { email, name: inviteName, role: inviteRole, dept: inviteDept || departments[0] || "General", status: "Queued" }]);
+      setSentCount(c => c + 1);
+      setInviteEmail("");
+      setInviteName("");
+      setInviteMsg("✓ Added to team list: " + email);
+    }
+  };
+
+  const handleFinish = async () => {
+    if (patch) {
+      patch(d => {
+        d.settings = d.settings || {};
+        d.settings.income = income;
+        d.settings.daysPerWeek = daysPerWeek;
+        d.settings.hoursPerDay = hoursPerDay;
+        d.settings.hours = monthlyHours;
+        d.settings.timezone = timezone;
+        d.settings.currency = currency;
+        d.settings.kickstartCompleted = true;
+        d.departments = [...departments];
+        d.dayThemes = { ...dayThemes };
+        if (teamInvites.length > 0 && !orgCtx?.org?.id) {
+          d.team = d.team || [];
+          teamInvites.forEach(inv => {
+            if (!d.team.some(m => m.email === inv.email)) {
+              d.team.push({ name: inv.name || inv.email.split("@")[0], email: inv.email, role: inv.role });
+            }
+          });
+        }
+      });
+    }
+
+    const orgId = orgCtx?.org?.id;
+    if (orgId && sb) {
+      try {
+        await sb.from("organizations").update({ departments }).eq("id", orgId);
+      } catch (_) {}
+    }
+
+    setStep(7);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md overflow-y-auto">
+      <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 sm:p-8 shadow-2xl space-y-6 my-8">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-400 text-xl shadow-xs">🚀</span>
+            <div>
+              <h2 className="text-lg sm:text-xl font-black text-slate-950">Company &amp; Workstyle Kickstart</h2>
+              <p className="text-xs text-slate-500 font-medium">Tailor FlowDirector to your company structure and operating rhythm in 3 minutes</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700 font-bold transition">✕</button>
+        </div>
+
+        {/* Progress Bar (Steps 1 to 6) */}
+        {step <= 6 && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span>Step {step} of 6: {
+                step === 1 ? "Owner Hour Value (OHV)" :
+                step === 2 ? "Operating Timezone" :
+                step === 3 ? "Primary Currency" :
+                step === 4 ? "Company Departments" :
+                step === 5 ? "Founder Day Themes" :
+                "Invite Leadership Team"
+              }</span>
+              <span className="text-amber-600 font-black">{Math.round((step / 6) * 100)}%</span>
+            </div>
+            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-400 transition-all duration-300 rounded-full" style={{ width: `${(step / 6) * 100}%` }}></div>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 1: OHV */}
+        {step === 1 && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-slate-950">1. Owner Hour Value (OHV) Threshold</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Tasks priced below this hourly rate should be delegated or eliminated.</p>
+                </div>
+                <div className="rounded-xl bg-slate-950 px-4 py-2 text-right shadow-xs">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Calculated OHV</span>
+                  <span className="text-lg font-black text-amber-400">{sym}{ohvVal.toLocaleString()}<span className="text-xs text-slate-300 font-medium"> /hr</span></span>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3 pt-2">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Target Monthly Income</label>
+                  <input
+                    type="number"
+                    value={income}
+                    onChange={e => setIncome(Number(e.target.value) || 0)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Working Days / Week ({daysPerWeek})</label>
+                  <div className="flex items-center gap-1 pt-0.5">
+                    {[1, 2, 3, 4, 5, 6, 7].map(d => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => setDaysPerWeek(d)}
+                        className={`flex-1 py-2 rounded-xl text-xs font-black border transition ${
+                          daysPerWeek === d ? "bg-slate-950 text-white border-slate-950 shadow-xs" : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        {d}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Hours / Day ({hoursPerDay}h)</label>
+                  <input
+                    type="range"
+                    min="2"
+                    max="16"
+                    step="1"
+                    value={hoursPerDay}
+                    onChange={e => setHoursPerDay(Number(e.target.value))}
+                    className="w-full accent-amber-500 h-2 bg-slate-200 rounded-lg cursor-pointer mt-2"
+                  />
+                  <span className="text-[10px] text-slate-400 font-bold block mt-1">~{monthlyHours} working hours/mo</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition shadow-md flex items-center gap-2"
+              >
+                <span>Next: Timezone</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 2: TIMEZONE */}
+        {step === 2 && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-950">2. Operating Timezone &amp; Regional Clock</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Ensures calendar sync, daily routines, and team standups align with your regional time.</p>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                <select
+                  value={timezone}
+                  onChange={e => setTimezone(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white p-3 text-xs font-bold text-slate-900 outline-none focus:border-amber-400"
+                >
+                  {TIMEZONES.map(tz => (
+                    <option key={tz.value} value={tz.value}>{tz.label}</option>
+                  ))}
+                </select>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-3.5 text-xs text-slate-700 flex items-center justify-between">
+                  <span className="text-slate-500 font-medium">Local Time Preview:</span>
+                  <b className="text-slate-950 mono">
+                    {new Intl.DateTimeFormat("en-IN", { timeZone: timezone || "Asia/Kolkata", dateStyle: "full", timeStyle: "short" }).format(new Date())}
+                  </b>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition shadow-md flex items-center gap-2"
+              >
+                <span>Next: Currency</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: CURRENCY */}
+        {step === 3 && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-950">3. Primary Business Currency</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Select the currency used for your Owner Hour Value, targets, and KPI metrics.</p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                {KICKSTART_CURRENCIES.map(c => {
+                  const isSel = currency === c.code || currency === c.symbol;
+                  return (
+                    <button
+                      key={c.code}
+                      type="button"
+                      onClick={() => setCurrency(c.code)}
+                      className={`rounded-2xl border p-3.5 text-left transition flex flex-col justify-between space-y-2 ${
+                        isSel ? "border-amber-400 bg-amber-50 shadow-sm" : "border-slate-200 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg">{c.flag}</span>
+                        <span className="text-sm font-mono font-black text-slate-900">{c.symbol}</span>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">{c.name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{c.code}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(4)}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition shadow-md flex items-center gap-2"
+              >
+                <span>Next: Departments</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: DEPARTMENTS (BLANK START) */}
+        {step === 4 && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h3 className="text-sm font-black text-slate-950">4. Company Operating Departments</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Add your company's core departments from scratch. You can add as many as you need.</p>
+                </div>
+                <span className="rounded-full bg-slate-200/80 text-slate-800 px-3 py-1 text-xs font-bold">
+                  {departments.length} Departments
+                </span>
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <input
+                  value={newDeptInput}
+                  onChange={e => setNewDeptInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addDept()}
+                  placeholder="Type department name (e.g. Sales, Operations, Finance, Dispatch, CAMO, Tech)…"
+                  className="flex-1 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-900 outline-none focus:border-amber-400 transition"
+                />
+                <button
+                  type="button"
+                  onClick={addDept}
+                  className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-black transition shadow-xs"
+                >
+                  + Add
+                </button>
+              </div>
+
+              {departments.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-white/70 p-6 text-center text-xs text-slate-400 font-medium">
+                  No departments added yet. Type your department name above and press <b>+ Add</b>.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {departments.map(d => (
+                    <div key={d} className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 shadow-2xs">
+                      <span>🏢 {d}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeDept(d)}
+                        className="text-slate-400 hover:text-rose-600 font-bold ml-1 transition"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setStep(3)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(5)}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition shadow-md flex items-center gap-2"
+              >
+                <span>Next: Day Themes</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5: DAY THEMES */}
+        {step === 5 && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-950">5. Founder Day Themes</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Assign each day a high-level strategic focus to prevent context switching.</p>
+              </div>
+
+              <div className="grid gap-2.5 sm:grid-cols-2 pt-1">
+                {[
+                  { key: "mon", label: "Monday", placeholder: "e.g. Operations, Fleet & Weekly Standup" },
+                  { key: "tue", label: "Tuesday", placeholder: "e.g. Charter Sales & Client Meetings" },
+                  { key: "wed", label: "Wednesday", placeholder: "e.g. Deep Work, Strategy & Partnerships" },
+                  { key: "thu", label: "Thursday", placeholder: "e.g. Team 1-on-1s & Department Reviews" },
+                  { key: "fri", label: "Friday", placeholder: "e.g. Finance, Cashflow & Weekly Wrap-up" },
+                  { key: "sat", label: "Saturday", placeholder: "e.g. Learning, System Review or Off" },
+                  { key: "sun", label: "Sunday", placeholder: "e.g. Personal & Week Ahead Prep" }
+                ].map(d => (
+                  <div key={d.key} className="space-y-1">
+                    <label className="text-[11px] font-bold text-slate-700 uppercase flex items-center justify-between">
+                      <span>{d.label}</span>
+                    </label>
+                    <input
+                      value={dayThemes[d.key] || ""}
+                      onChange={e => setDayThemes({ ...dayThemes, [d.key]: e.target.value })}
+                      placeholder={d.placeholder}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-amber-400 transition"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setStep(4)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(6)}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-6 py-2.5 text-xs font-bold transition shadow-md flex items-center gap-2"
+              >
+                <span>Next: Invite Team</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 6: INVITE TEAM */}
+        {step === 6 && (
+          <div className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-5 space-y-4">
+              <div>
+                <h3 className="text-sm font-black text-slate-950">6. Invite Leadership &amp; Key Team Members</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Add direct reports so you can immediately delegate tasks and track velocity on Delegation Radar.</p>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Email Address *</label>
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={e => setInviteEmail(e.target.value)}
+                      placeholder="teammate@company.com"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Full Name (Optional)</label>
+                    <input
+                      value={inviteName}
+                      onChange={e => setInviteName(e.target.value)}
+                      placeholder="e.g. Pratyush Nair"
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-900 outline-none focus:border-amber-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Role / Access Level</label>
+                    <select
+                      value={inviteRole}
+                      onChange={e => setInviteRole(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none"
+                    >
+                      <option value="manager">Manager / Department Head</option>
+                      <option value="employee">Team Member / Specialist</option>
+                      <option value="assistant">Executive Assistant</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-slate-500 mb-1">Assigned Department</label>
+                    <select
+                      value={inviteDept}
+                      onChange={e => setInviteDept(e.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-900 outline-none"
+                    >
+                      <option value="">— Select Department —</option>
+                      {departments.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-xs text-slate-500 font-medium">You can invite more members anytime later in Settings.</span>
+                  <button
+                    type="button"
+                    onClick={handleSendInvite}
+                    disabled={inviteBusy || !inviteEmail}
+                    className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-bold transition shadow-xs disabled:opacity-50"
+                  >
+                    {inviteBusy ? "Sending…" : "+ Send Invite"}
+                  </button>
+                </div>
+
+                {inviteMsg && (
+                  <p className="text-xs font-medium text-amber-900 bg-amber-50 border border-amber-200 p-2.5 rounded-xl">{inviteMsg}</p>
+                )}
+
+                {teamInvites.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Invited Team ({teamInvites.length}):</span>
+                    {teamInvites.map((inv, idx) => (
+                      <div key={idx} className="flex items-center justify-between rounded-xl bg-white border border-slate-200 p-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900">{inv.name || inv.email}</span>
+                          <span className="text-slate-400 text-[11px]">({inv.role} · {inv.dept})</span>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">✓ {inv.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => setStep(5)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={handleFinish}
+                className="rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-6 py-2.5 text-xs font-black transition shadow-md flex items-center gap-2"
+              >
+                <span>Save &amp; Complete Setup</span>
+                <span>✓</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 7: SUCCESS SUMMARY */}
+        {step === 7 && (
+          <div className="space-y-6 text-center py-4">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-100 text-3xl shadow-xs">
+              🎉
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-2xl font-black text-slate-950">Your Operating System is Configured!</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                FlowDirector is now customized for your operating cadence, regional clock, departments, and leadership team.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-left">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-0.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Calculated OHV</span>
+                <span className="text-sm font-black text-amber-700">{sym}{ohvVal.toLocaleString()} / hr</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-0.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Operating Timezone</span>
+                <span className="text-xs font-bold text-slate-900 truncate block">{timezone}</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-0.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Currency</span>
+                <span className="text-sm font-black text-slate-900">{currency} ({sym})</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-0.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Departments</span>
+                <span className="text-sm font-bold text-slate-900">{departments.length} Created</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-0.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Day Themes</span>
+                <span className="text-sm font-bold text-slate-900">{Object.values(dayThemes).filter(Boolean).length} of 7 Set</span>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3.5 space-y-0.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">Team Invites</span>
+                <span className="text-sm font-bold text-slate-900">{sentCount} Invites Sent</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (onComplete) onComplete();
+                onClose();
+              }}
+              className="w-full rounded-2xl bg-slate-950 py-3.5 text-xs font-black text-white hover:bg-slate-800 transition shadow-lg flex items-center justify-center gap-2"
+            >
+              <span>🚀 Enter Cockpit &amp; Start Daily Planning</span>
+              <span>→</span>
+            </button>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
 }
 
 /* ================================================================== */
@@ -6401,6 +7091,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const [subLoading, setSubLoading] = useState(true);
   const [showTrainingModal, setShowTrainingModal] = useState(false);
   const [trainingChecked, setTrainingChecked] = useState(false);
+  const [showKickstartModal, setShowKickstartModal] = useState(false);
 
   // Real-Time Delegated Tasks Subscription via Supabase
   useEffect(() => {
@@ -6902,6 +7593,12 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
 
       {/* Main Workspace Area (pb-28 on mobile for fixed bottom tab bar) */}
       <main className="mx-auto max-w-6xl px-3 sm:px-4 py-4 sm:py-6 pb-28 md:pb-8">
+        {!isEmployee && !data?.settings?.kickstartCompleted && (
+          <CompanyKickstartBanner
+            patch={patch}
+            onOpenKickstart={() => setShowKickstartModal(true)}
+          />
+        )}
         <ErrorBoundary key={tab}>
           {tab!=="daily" && tab!=="weekly" && tab!=="standup" && tab!=="manual" && <DueBanner data={data} />}
           {tab==="standup" && <TeamMemberFocusDesk data={data} patch={patch} orgCtx={orgCtx} meId={userId} onGoToTab={setTab} dbTasks={dbTasks} setDbTasks={setDbTasks} onOpenTask={t => setSelectedTaskModal(t)} />}
@@ -6921,6 +7618,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                                  orgCtx={orgCtx} orgError={orgError}
                                  onLeftOrg={onLeftOrg} onStartCompany={onStartCompany}
                                  onOpenTraining={() => setShowTrainingModal(true)}
+                                 onOpenKickstart={() => setShowKickstartModal(true)}
                                  isAdmin={isAdmin}
                                  initialSubTab={settingsSubTab} />}
         </ErrorBoundary>
@@ -7053,6 +7751,19 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               if (onLeftOrg) onLeftOrg(); // clear
               onStartCompany(); // reload
             } catch (_) {}
+          }}
+        />
+      )}
+
+      {showKickstartModal && (
+        <CompanyKickstartWizardModal
+          data={data}
+          patch={patch}
+          orgCtx={orgCtx}
+          session={session}
+          onClose={() => setShowKickstartModal(false)}
+          onComplete={() => {
+            setShowKickstartModal(false);
           }}
         />
       )}
@@ -17299,7 +18010,7 @@ const SETTINGS_TABS = [
   { id: "account", label: "Account & Data", icon: "👤" },
 ];
 
-function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany, onOpenTraining, isAdmin, initialSubTab = "general" }){
+function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOrg, onStartCompany, onOpenTraining, onOpenKickstart, isAdmin, initialSubTab = "general" }){
   const role = orgCtx && orgCtx.membership ? orgCtx.membership.role : null;
   const isEmployee = role === "employee" || role === "member" || role === "assistant";
   const isManager = role === "manager";
@@ -17404,6 +18115,25 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
         <div className="space-y-6">
           <Callout>Any task below your Owner Hour Value should not be in your hands. Set it, then delegate ruthlessly.</Callout>
 
+          {isOwner && onOpenKickstart && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🚀</span>
+                  <h3 className="text-sm font-bold text-slate-900">Company &amp; Workstyle Kickstart Wizard</h3>
+                </div>
+                <p className="text-xs text-slate-500">Run the 6-step guided setup to configure your OHV, operating timezone, currency, departments, day themes, and team invites.</p>
+              </div>
+              <button 
+                type="button"
+                onClick={onOpenKickstart}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+              >
+                <span>🚀 Launch Kickstart Wizard</span>
+              </button>
+            </div>
+          )}
+
           {orgCtx?.org && (
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -17472,13 +18202,13 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                 </div>
                 <div className="rounded-xl bg-slate-950 px-4 py-2 text-right shadow-xs">
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Calculated OHV</span>
-                  <span className="text-lg font-black text-amber-400">₹{ohv.toLocaleString("en-IN")}<span className="text-xs text-slate-300 font-medium"> /hr</span></span>
+                  <span className="text-lg font-black text-amber-400">{getCurrencySymbol(data)}{ohv.toLocaleString("en-IN")}<span className="text-xs text-slate-300 font-medium"> /hr</span></span>
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3 pt-1">
                 <div>
-                  <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Target Monthly Net Income (₹)</label>
+                  <label className="mb-1 block text-xs font-bold text-slate-700 uppercase">Target Monthly Net Income ({getCurrencySymbol(data)})</label>
                   <Field 
                     type="number" 
                     value={data.settings.income || 400000} 
