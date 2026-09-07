@@ -68,10 +68,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
-      - name: Compile Android Release AAB (App Bundle)
+      - name: Compile and Sign Android Release AAB (App Bundle)
         run: |
           cd android
-          ./gradlew bundleRelease || echo "Release signing key not configured, skipped release bundle."
+          ./gradlew bundleRelease --stacktrace
+          
+          # Generate upload keystore and sign AAB for Google Play Store upload
+          keytool -genkey -v -keystore release.keystore -alias flowdirector -keyalg RSA -keysize 2048 -validity 10000 -storepass flowdirector123 -keypass flowdirector123 -dname "CN=FlowDirector, OU=Productivity, O=FlowDirector, L=Global, ST=State, C=US"
+          jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore release.keystore -storepass flowdirector123 -keypass flowdirector123 app/build/outputs/bundle/release/app-release.aab flowdirector
+          echo "Successfully signed AAB with release upload key."
 
       - name: Upload Android Debug APK Artifact
         uses: actions/upload-artifact@v4
@@ -81,13 +86,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload Android Release Bundle Artifact
+      - name: Upload Signed Google Play AAB Bundle Artifact
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: FlowDirector-Android-Release-AAB
-          path: android/app/build/outputs/bundle/release/*.aab
-          if-no-files-found: ignore
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
           retention-days: 14
 
   # ============================================================================
