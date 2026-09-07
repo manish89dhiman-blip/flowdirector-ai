@@ -57,31 +57,31 @@ const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(D
 /* ------------------------------------------------------------------ */
 const TASK_TYPES = ["SCHEDULE","DAILY","DELEGATE","WAITING","WEEKLY","MONTHLY","REFERENCE","DELETE"];
 const TYPE_HELP = {
-  SCHEDULE: "Fixed date/time slot — goes to Daily Cockpit & schedule blocks.",
-  DAILY: "Daily repeating routine / habit — goes to Daily Routine.",
-  DELEGATE: "Assigned to team member — creates live Delegation Radar task & notifies assignee.",
-  WAITING: "Waiting on external client, vendor or blocker — goes to Follow-up tracking.",
-  "WAITING-FOR": "Waiting on external client, vendor or blocker — goes to Follow-up tracking.",
-  WEEKLY: "Planned for this week's horizon — goes to Weekly Someday dock.",
-  MONTHLY: "Monthly milestone / recurring compliance (GST, payroll, review) — goes to Monthly tray.",
-  REFERENCE: "Someday/maybe ideas, systems, SOPs, and notes — goes to Ideas & Reference desk.",
+  SCHEDULE: "Fixed date or time slot (today, tomorrow, or future) — lands directly on your Daily Cockpit & schedule blocks.",
+  DAILY: "Recurring daily habit or routine (e.g. morning review, standup) — repeats every day.",
+  DELEGATE: "Assigned to a team member — creates a tracked task on Delegation Radar and notifies them.",
+  WAITING: "Pending on someone else (client reply, vendor delivery, approval) — tracked in Follow-up radar.",
+  "WAITING-FOR": "Pending on someone else (client reply, vendor delivery, approval) — tracked in Follow-up radar.",
+  WEEKLY: "Tasks to complete this week without a fixed time slot — kept in Weekly Someday pool.",
+  MONTHLY: "Monthly recurring deadlines (e.g. GST, payroll, month-end review) — kept in Monthly Blueprint.",
+  REFERENCE: "Someday/maybe ideas, notes, standard operating procedures (SOPs), and reference material.",
   MAYBE: "Ideas & Someday/Maybe backlog — goes to Ideas & Reference desk.",
   AUTOMATE: "Systems & automation notes — goes to Ideas & Reference desk.",
-  PROJECT: "Multi-step initiative — goes to Daily Schedule.",
-  DELETE: "No value / noise — permanently removed."
+  PROJECT: "Multi-step initiative — goes to Schedule.",
+  DELETE: "Discard permanently — eliminate low-value noise."
 };
 const DEFAULT_CATEGORIES = ["Hiring","Sales","Finance","Ops","Marketing","Admin","Personal","Decision"];
 const DEFAULT_TASK_TYPE_LABELS = {
-  "SCHEDULE": "📅 Daily Schedule (Date/Time Slot)",
-  "DAILY": "🔁 Daily Repeating Routine",
-  "DELEGATE": "👥 Delegate to Team Member",
-  "WAITING": "⏳ Waiting / Follow-up",
-  "WAITING-FOR": "⏳ Waiting / Follow-up",
-  "WEEKLY": "🗓️ Weekly Someday Pool",
-  "MONTHLY": "📌 Monthly Blueprint Tray",
+  "SCHEDULE": "📅 Schedule (Specific Date / Time)",
+  "DAILY": "🔁 Daily Routine (Repeats Every Day)",
+  "DELEGATE": "👥 Delegate (Assign to Team)",
+  "WAITING": "⏳ Waiting / Follow-up (Blocked)",
+  "WAITING-FOR": "⏳ Waiting / Follow-up (Blocked)",
+  "WEEKLY": "🗓️ Weekly Horizon (Do This Week)",
+  "MONTHLY": "📌 Monthly Blueprint (Recurring Deadlines)",
   "REFERENCE": "💡 Ideas & Reference Notes",
-  "MAYBE": "💭 Someday / Maybe List",
-  "AUTOMATE": "⚡ Automate / Systematize",
+  "MAYBE": "💭 Someday / Maybe Ideas",
+  "AUTOMATE": "⚡ Systems & Automation",
   "PROJECT": "📂 Multi-Step Project",
   "DELETE": "✕ Drop / Delete"
 };
@@ -5788,7 +5788,7 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, onClose }) {
               <input
                 type="date"
                 value={due}
-                onChange={e => setDue(e.target.value)}
+                onChange={e => { setDue(e.target.value); if (e.target.value && !taskType) setTaskType("SCHEDULE"); }}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none"
               />
             </div>
@@ -5813,7 +5813,7 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, onClose }) {
               <label className="block text-[10px] font-black uppercase text-slate-400 mb-1">Time (15-Min Slot)</label>
               <select
                 value={time}
-                onChange={e => setTime(e.target.value)}
+                onChange={e => { setTime(e.target.value); if (e.target.value && !taskType) setTaskType("SCHEDULE"); }}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs font-bold text-slate-800 outline-none focus:border-amber-400"
               >
                 <option value="">— Optional Time —</option>
@@ -7154,8 +7154,8 @@ function CaptureView({ data, patch, ohv, orgCtx, meId }){
   const setType = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.taskType = v; });
   const setDetails = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.details = v; });
   const setCatOf = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.category = v; });
-  const setDue = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.due = v; });
-  const setTime = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.time = v; });
+  const setDue = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) { c.due = v; if (v && !c.taskType) c.taskType = "SCHEDULE"; } });
+  const setTime = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) { c.time = v; if (v && !c.taskType) c.taskType = "SCHEDULE"; } });
   const setTimeMode = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.timeMode = v; });
   const setDuration = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.duration = v; });
   const setAssignee = (id, v) => patch(d => { const c = d.captures.find(x => x.id === id); if (c) c.assignee = v; });
