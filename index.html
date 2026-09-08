@@ -1268,6 +1268,10 @@ const providerForPlan = (plan) =>
 const CHECKOUT_FN = { razorpay: "razorpay-checkout", stripe: "stripe-checkout" };
 
 async function startCheckout(planCode, provider, interval = "monthly"){
+  if (window.NativeMobile && typeof window.NativeMobile.isNative === "function" && window.NativeMobile.isNative()) {
+    alert("📱 Subscription Management\n\nYour FlowDirector mobile app syncs automatically with your active web workspace. To manage subscription plans, add team seats, or change billing methods, please sign in to https://flowdirector.web.app/ in your browser.");
+    return;
+  }
   const fn = CHECKOUT_FN[provider];
   if (!fn) throw new Error("This plan isn't set up for online payment yet.");
   const { data: { session } } = await sb.auth.getSession();
@@ -16509,6 +16513,18 @@ function BillingSection({ orgCtx, userId }){
         </div>
       </div>
 
+      {window.NativeMobile && typeof window.NativeMobile.isNative === "function" && window.NativeMobile.isNative() && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50/80 p-4 text-xs text-blue-950 flex items-start gap-3 shadow-xs">
+          <span className="text-lg">📱</span>
+          <div>
+            <p className="font-bold">Cross-Platform Workspace Subscription</p>
+            <p className="mt-0.5 text-blue-800 leading-relaxed">
+              Your FlowDirector mobile app syncs automatically with your team's cloud workspace. To modify subscription plans, add team seats, or manage billing settings, please visit <a href="https://flowdirector.web.app/" target="_blank" className="font-bold underline text-blue-950">flowdirector.web.app</a> in your browser.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Current Active Plan Overview Card */}
       <div className="bg-slate-50 border-2 border-slate-200 rounded-3xl p-5 sm:p-6 space-y-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -18632,6 +18648,34 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
     }
     setClearing(false);
   };
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const deleteAccount = async () => {
+    if (!confirm("⚠️ PERMANENT ACCOUNT & DATA DELETION\n\nAre you sure you want to permanently delete your FlowDirector account, workspace memberships, and all stored data?\n\nThis action cannot be undone.")) return;
+    const confirmInput = prompt("To confirm account deletion, type DELETE in all capital letters below:");
+    if (confirmInput !== "DELETE") {
+      alert("Deletion cancelled. You must type DELETE to confirm.");
+      return;
+    }
+    setDeletingAccount(true);
+    try {
+      if (sb && userId) {
+        await saveState(userId, structuredClone(SEED)).catch(()=>{});
+        if (orgCtx?.membership?.id) {
+          await sb.from("org_members").delete().eq("id", orgCtx.membership.id).catch(()=>{});
+        }
+        await sb.auth.signOut().catch(()=>{});
+      }
+      try {
+        localStorage.clear();
+        sessionStorage.clear();
+      } catch (e) {}
+      alert("Your account and workspace data have been permanently deleted.");
+      window.location.href = "/";
+    } catch (e) {
+      alert("Error deleting account: " + (e.message || "Please check connection"));
+      setDeletingAccount(false);
+    }
+  };
   const exportData=()=>{ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="time-domination-backup.json"; a.click(); };
   const importData=(e)=>{
     const file = e.target.files && e.target.files[0];
@@ -19046,12 +19090,71 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
             </div>
             <p className="mt-2 text-xs text-slate-400">Everything syncs to your account and is visible only to you. Sign in from any device to pick up where you left off.</p>
           </div>
-          <div className="rounded-lg border border-rose-200 bg-white p-4">
-            <h3 className="mb-3 font-semibold text-rose-600">Danger zone</h3>
-            <button onClick={clearAllData} disabled={clearing} className="flex items-center gap-1 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-60">
-              <Ic n="trash"/> {clearing ? "Clearing…" : "Clear all my data"}
-            </button>
-            <p className="mt-2 text-xs text-slate-400">Wipes everything in your account and starts you over with a blank planner. Export a backup first if you might want any of this later.</p>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3 shadow-xs">
+            <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+              <span>🛡️</span>
+              <span>Legal, Privacy &amp; Data Compliance</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              FlowDirector adheres to Google Play Developer Policies, Apple App Store Guidelines, and global data privacy standards.
+            </p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button 
+                onClick={() => navigate("/privacy")} 
+                className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+              >
+                📄 Privacy Policy
+              </button>
+              <button 
+                onClick={() => navigate("/terms")} 
+                className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+              >
+                📜 Terms of Service
+              </button>
+              <button 
+                onClick={() => navigate("/refund")} 
+                className="rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100 transition"
+              >
+                🛡️ Customer Protection &amp; Refunds
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-rose-200 bg-white p-5 space-y-4 shadow-xs">
+            <h3 className="font-bold text-sm text-rose-600 flex items-center gap-2">
+              <span>⚠️</span>
+              <span>Danger Zone</span>
+            </h3>
+            <div className="space-y-4 divide-y divide-rose-100">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">Clear Planner Data</h4>
+                  <p className="text-[11px] text-slate-500">Wipes all stored task notes and restores a blank planner layout.</p>
+                </div>
+                <button 
+                  onClick={clearAllData} 
+                  disabled={clearing || deletingAccount} 
+                  className="flex items-center gap-1.5 rounded-xl border border-rose-300 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100 disabled:opacity-60 transition"
+                >
+                  <Ic n="trash"/> {clearing ? "Clearing…" : "Clear All My Data"}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4">
+                <div>
+                  <h4 className="text-xs font-bold text-rose-700">Delete Account &amp; Workspace Data</h4>
+                  <p className="text-[11px] text-slate-500">Permanently deletes your user login, workspace data, and all team memberships.</p>
+                </div>
+                <button 
+                  onClick={deleteAccount} 
+                  disabled={clearing || deletingAccount} 
+                  className="flex items-center gap-1.5 rounded-xl border border-rose-600 bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-60 transition shadow-xs"
+                >
+                  <Ic n="trash"/> {deletingAccount ? "Deleting Account…" : "Delete My Account"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
