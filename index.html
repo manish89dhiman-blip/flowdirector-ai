@@ -82,6 +82,60 @@ window.NativeMobile = {
       console.debug("Share error:", e);
     }
   },
+  notify: async function(title, body, extra) {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        await window.Capacitor.Plugins.LocalNotifications.schedule({
+          notifications: [{
+            title: title || "FlowDirector",
+            body: body || "",
+            id: Math.floor(Math.random() * 100000) + 1,
+            schedule: { at: new Date(Date.now() + 100) },
+            sound: "beep.wav",
+            extra: extra || {}
+          }]
+        });
+        return;
+      }
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body: body, icon: "/favicon.png", ...extra });
+      }
+    } catch (e) {
+      console.debug("Notification error:", e);
+    }
+  },
+  requestPermissions: async function() {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
+      } else if ("Notification" in window && Notification.permission !== "granted") {
+        await Notification.requestPermission();
+      }
+    } catch (e) {}
+  },
+  scheduleStandupReminder: async function() {
+    try {
+      if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        var now = new Date();
+        var scheduledTime = new Date();
+        scheduledTime.setHours(9, 0, 0, 0);
+        if (scheduledTime <= now) {
+          scheduledTime.setDate(scheduledTime.getDate() + 1);
+        }
+        await window.Capacitor.Plugins.LocalNotifications.schedule({
+          notifications: [{
+            title: "🎯 FlowDirector Daily Standup",
+            body: "Good morning! Time to lock in your top 3 daily priorities on FlowDirector.",
+            id: 9001,
+            schedule: { at: scheduledTime, repeats: true, every: "day" },
+            sound: "beep.wav"
+          }]
+        });
+      }
+    } catch (e) {
+      console.debug("Standup reminder schedule error:", e);
+    }
+  },
   init: function() {
     try {
       if (window.Capacitor && window.Capacitor.Plugins) {
@@ -94,6 +148,14 @@ window.NativeMobile = {
         if (Plugins.StatusBar) {
           Plugins.StatusBar.setStyle({ style: "DARK" }).catch(function() {});
           Plugins.StatusBar.setBackgroundColor({ color: "#0f172a" }).catch(function() {});
+        }
+        if (Plugins.LocalNotifications) {
+          Plugins.LocalNotifications.requestPermissions().then(function() {
+            window.NativeMobile.scheduleStandupReminder();
+          }).catch(function() {});
+        }
+        if (Plugins.Keyboard) {
+          Plugins.Keyboard.setResizeMode({ mode: "body" }).catch(function() {});
         }
       }
     } catch (e) {
@@ -3095,6 +3157,12 @@ function Root(){
     if (path === "/login" || path === "/signin") {
       return <AuthScreen initialMode="in" onBack={() => navigate("/")} />;
     }
+
+    // ON NATIVE MOBILE APP: Skip marketing landing page entirely and open directly to Sign In!
+    if (window.NativeMobile && typeof window.NativeMobile.isNative === "function" && window.NativeMobile.isNative()) {
+      return <AuthScreen initialMode="in" onBack={() => {}} />;
+    }
+
     return (
       <LandingScreen 
         session={session}
@@ -4444,7 +4512,7 @@ function AuthScreen({ initialMode = "in", initialPlan = "solo", initialCycle = "
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#fbf9fa] px-4 py-8">
-      {onBack && (
+      {onBack && (!window.NativeMobile || !window.NativeMobile.isNative || !window.NativeMobile.isNative()) && (
         <button onClick={onBack} className="mb-6 flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 transition">
           ← Back to FlowDirector Home
         </button>

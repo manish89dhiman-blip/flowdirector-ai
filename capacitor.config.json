@@ -1,15 +1,17 @@
-{
+﻿{
   "appId": "com.flowdirector.workspace",
   "appName": "FlowDirector",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
+    "url": "https://flowdirector.web.app",
+    "cleartext": false,
     "androidScheme": "https",
     "iosScheme": "https"
   },
   "plugins": {
     "SplashScreen": {
-      "launchShowDuration": 2000,
+      "launchShowDuration": 1500,
       "launchAutoHide": true,
       "backgroundColor": "#0f172a",
       "androidSplashResourceName": "splash",
@@ -25,6 +27,11 @@
     },
     "PushNotifications": {
       "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#0f172a",
+      "sound": "beep.wav"
     },
     "Keyboard": {
       "resize": "body",

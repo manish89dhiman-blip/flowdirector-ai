@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "flowdirector",
   "version": "1.0.0",
   "description": "FlowDirector Mobile & Web Workspace",
@@ -17,6 +17,7 @@
     "@capacitor/core": "^7.0.0",
     "@capacitor/haptics": "^7.0.0",
     "@capacitor/keyboard": "^7.0.0",
+    "@capacitor/local-notifications": "^7.0.0",
     "@capacitor/push-notifications": "^7.0.0",
     "@capacitor/share": "^7.0.0",
     "@capacitor/splash-screen": "^7.0.0",
