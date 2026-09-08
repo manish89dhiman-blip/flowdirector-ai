@@ -316,7 +316,8 @@ const SEED = {
   daily:{}, dailyBackup:[], weekly:{}, weeklySomeday:[],
   monthly:{}, monthlyTray:[], recurringMonthly:[], maybe:[], reference:[],
   standups:{},
-  delegatedTasks:[]
+  delegatedTasks:[],
+  taskTemplates:[]
 };
 
 /* ------------------------------------------------------------------ */
@@ -7896,7 +7897,7 @@ const TASK_STATUS_CONFIG = new Proxy({}, {
   }
 });
 
-function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDeleteTask, meName, meEmail, isAssignee, isDelegator, orgCtx }) {
+function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDeleteTask, meName, meEmail, isAssignee, isDelegator, orgCtx, data, patch }) {
   const [showAiBreakdown, setShowAiBreakdown] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [selectedStatus, setSelectedStatus] = useState(task.status || "pending");
@@ -9270,6 +9271,8 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       {/* 6. Live Task Detail & Notes Modal */}
       {selectedTaskModal && (
         <TaskDetailAndNotesModal
+          data={data}
+          patch={patch}
           task={selectedTaskModal}
           onClose={() => setSelectedTaskModal(null)}
           onUpdateTask={async (taskId, patchObj) => {
@@ -9739,6 +9742,7 @@ function CaptureView({ data, patch, ohv, orgCtx, meId, dbTasks, setDbTasks }){
 /*  1b · FOLLOW-UP (delegated / waiting-for, across Daily backup)      */
 /* ================================================================== */
 function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onOpenTask }){
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const today = todayKey();
   const [subTab, setSubTab] = useState("delegated"); // "delegated" | "assigned_to_me" | "standups"
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -10009,6 +10013,79 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
         </div>
       </div>
 
+      
+      {showTemplatePicker && (
+        <ApplyTemplateModal
+          templates={getEffectiveTemplates(data, orgCtx, meId)}
+          team={team}
+          depts={depts}
+          onApply={async ({ template, assignee, dueDate }) => {
+            const memberObj = team.find(m => 
+              (m.name && m.name.toLowerCase() === (assignee||"").toLowerCase()) || 
+              (m.email && m.email.toLowerCase() === (assignee||"").toLowerCase()) ||
+              m.id === assignee ||
+              m.user_id === assignee
+            );
+            
+            const subtaskNotes = Array.isArray(template.subtasks) && template.subtasks.length > 0
+              ? "\n\n📑 Subtask Steps:\n" + template.subtasks.map((s, i) => `• [ ] ${s.text || s} [${s.est || '30m'}]`).join("\n")
+              : "";
+            
+            const detailsText = (template.description ? template.description : "") + subtaskNotes;
+
+            if (orgCtx?.org?.id && assignee) {
+              const created = await createDelegatedTask(
+                orgCtx.org.id,
+                meId,
+                {
+                  assignee_id: memberObj?.user_id || null,
+                  assignee_email: memberObj?.email || "",
+                  assignee_name: memberObj?.name || assignee,
+                  department: template.department || "General",
+                  title: template.title,
+                  details: detailsText.trim(),
+                  due_date: dueDate || today,
+                  status: "pending"
+                },
+                myName,
+                myEmail
+              );
+              if (created && setDbTasks) {
+                setDbTasks(prev => [created, ...prev.filter(x => x.id !== created.id)]);
+              }
+              if (memberObj && memberObj.email) {
+                sendTransactionalEmail("task_delegated", memberObj.email, {
+                  task_title: template.title,
+                  delegator_name: myName,
+                  company_name: orgCtx?.org?.name || "Workspace",
+                  due_date: dueDate || today,
+                  link: "",
+                  notes: detailsText.trim(),
+                  member_name: memberObj.name || memberObj.email
+                });
+              }
+              say(`✓ "${template.title}" with subtasks assigned to ${memberObj?.name || assignee}!`);
+            } else {
+              patch(d => {
+                d.dailyBackup = d.dailyBackup || [];
+                d.dailyBackup.unshift({
+                  id: uid(),
+                  text: template.title,
+                  tag: template.department || "Delegation",
+                  taskType: "DELEGATE",
+                  due: dueDate || today,
+                  assignee: assignee || "Team",
+                  details: detailsText.trim(),
+                  done: false
+                });
+              });
+              say(`✓ "${template.title}" created in Daily backup!`);
+            }
+          }}
+          onClose={() => setShowTemplatePicker(false)}
+        />
+      )}
+
       {/* Filter and Search Bar for Delegated & Assigned Tasks */}
       {(subTab === "delegated" || subTab === "assigned_to_me") && (
         <div className="space-y-4">
@@ -10020,7 +10097,19 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                   <span>⚡</span>
                   <span>{getActiveTerms(data).assignTaskTitle}</span>
                 </span>
-                <span className="text-[11px] font-bold text-indigo-700 hidden sm:inline">{getActiveTerms(data).assignTaskHint}</span>
+                
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowTemplatePicker(true)}
+                    className="rounded-xl border border-indigo-300 bg-white hover:bg-indigo-100 text-indigo-950 px-2.5 py-1 text-xs font-black transition shadow-2xs flex items-center gap-1"
+                    title="Load from custom company or personal task templates"
+                  >
+                    <span>📋</span>
+                    <span>Load Template</span>
+                  </button>
+                  <span className="text-[11px] font-bold text-indigo-700 hidden sm:inline">{getActiveTerms(data).assignTaskHint}</span>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
@@ -19817,12 +19906,675 @@ function CalendarIntegrationSection({ data, userId }){
   );
 }
 
+
+// ============================================================================
+// CUSTOM TASK & SUBTASK TEMPLATES (PERSONAL & COMPANY-WIDE)
+// ============================================================================
+
+function getEffectiveTemplates(data, orgCtx, currentUserId) {
+  const localList = Array.isArray(data?.taskTemplates) ? data.taskTemplates : [];
+  const orgList = Array.isArray(orgCtx?.org?.task_templates) ? orgCtx.org.task_templates : [];
+  
+  const map = new Map();
+  localList.forEach(t => { if (t && t.id) map.set(t.id, t); });
+  orgList.forEach(t => { if (t && t.id) map.set(t.id, t); });
+  
+  return Array.from(map.values());
+}
+
+function TemplateEditModal({ template, onSave, onClose, depts = [] }) {
+  const [title, setTitle] = useState(template?.title || "");
+  const [department, setDepartment] = useState(template?.department || depts[0] || "General");
+  const [description, setDescription] = useState(template?.description || "");
+  const [sharedWithCompany, setSharedWithCompany] = useState(template ? !!template.sharedWithCompany : true);
+  const [subtasks, setSubtasks] = useState(
+    Array.isArray(template?.subtasks) && template.subtasks.length > 0
+      ? template.subtasks.map(s => typeof s === "string" ? { id: "st_" + uid(), text: s, est: "30m" } : s)
+      : [{ id: "st_" + uid(), text: "", est: "30m" }]
+  );
+  const [newStepText, setNewStepText] = useState("");
+  const [newStepEst, setNewStepEst] = useState("30m");
+
+  const addStep = (e) => {
+    if (e) e.preventDefault();
+    if (!newStepText.trim()) return;
+    setSubtasks(prev => [...prev, { id: "st_" + uid(), text: newStepText.trim(), est: newStepEst }]);
+    setNewStepText("");
+  };
+
+  const removeStep = (id) => {
+    setSubtasks(prev => prev.filter(s => s.id !== id));
+  };
+
+  const updateStepText = (id, text) => {
+    setSubtasks(prev => prev.map(s => s.id === id ? { ...s, text } : s));
+  };
+
+  const updateStepEst = (id, est) => {
+    setSubtasks(prev => prev.map(s => s.id === id ? { ...s, est } : s));
+  };
+
+  const handleFormSubmit = (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    const validSubtasks = subtasks.filter(s => s.text && s.text.trim());
+    onSave({
+      id: template?.id || "tpl_" + uid(),
+      title: title.trim(),
+      department,
+      description: description.trim(),
+      sharedWithCompany,
+      subtasks: validSubtasks,
+      updatedAt: new Date().toISOString(),
+      createdAt: template?.createdAt || new Date().toISOString()
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-xl max-h-[92vh] flex flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 p-5 bg-slate-50">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-amber-400 text-slate-950 text-base shadow-2xs font-black">📋</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">
+                {template ? "Edit Task & Subtasks Template" : "Create Custom Task Template"}
+              </h3>
+              <p className="text-xs text-slate-500">Save repeated workflows with subtasks for fast 1-click delegation</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-200 text-sm font-bold">✕</button>
+        </div>
+
+        {/* Body Form */}
+        <form onSubmit={handleFormSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Task Template Title *</label>
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="E.g. Weekly Store Stock Audit, Client Discovery Call, Monthly GST Filing..."
+              required
+              className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-400"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Department / Category</label>
+              <select
+                value={department}
+                onChange={e => setDepartment(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+              >
+                {depts.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Sharing &amp; Visibility</label>
+              <button
+                type="button"
+                onClick={() => setSharedWithCompany(!sharedWithCompany)}
+                className={`w-full rounded-xl border px-3 py-2 text-xs font-bold flex items-center justify-between transition ${
+                  sharedWithCompany
+                    ? "bg-amber-50 border-amber-300 text-amber-950"
+                    : "bg-slate-50 border-slate-200 text-slate-700"
+                }`}
+              >
+                <span>{sharedWithCompany ? "🏢 Shared with Company" : "👤 Personal (Private)"}</span>
+                <span className="text-[10px] font-black uppercase text-amber-800 underline">Toggle</span>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Instructions / Description (Optional)</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Guidance or context for executing this deliverable..."
+              rows={2}
+              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs text-slate-800 outline-none focus:border-amber-400"
+            />
+          </div>
+
+          {/* Subtasks Sequence Builder */}
+          <div className="pt-2 border-t border-slate-100 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <span>📑</span>
+                <span>Subtask Steps ({subtasks.filter(s => s.text.trim()).length})</span>
+              </label>
+              <span className="text-[11px] text-slate-400 font-medium">Steps created when applied</span>
+            </div>
+
+            <div className="space-y-2">
+              {subtasks.map((st, idx) => (
+                <div key={st.id || idx} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-400 w-5 text-center">{idx + 1}.</span>
+                  <input
+                    value={st.text}
+                    onChange={e => updateStepText(st.id, e.target.value)}
+                    placeholder="Step description..."
+                    className="flex-1 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-amber-400"
+                  />
+                  <select
+                    value={st.est || "30m"}
+                    onChange={e => updateStepEst(st.id, e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-700 outline-none"
+                  >
+                    <option value="15m">15m</option>
+                    <option value="30m">30m</option>
+                    <option value="45m">45m</option>
+                    <option value="1h">1 hr</option>
+                    <option value="1.5h">1.5 hr</option>
+                    <option value="2h">2 hr</option>
+                    <option value="3h">3 hr</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => removeStep(st.id)}
+                    className="p-1 text-slate-400 hover:text-rose-600 font-bold text-xs"
+                    title="Remove step"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add Step input */}
+            <div className="flex items-center gap-2 pt-1">
+              <input
+                value={newStepText}
+                onChange={e => setNewStepText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addStep(); } }}
+                placeholder="+ Add another subtask step..."
+                className="flex-1 rounded-xl border border-dashed border-slate-300 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-amber-400"
+              />
+              <select
+                value={newStepEst}
+                onChange={e => setNewStepEst(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-bold text-slate-700 outline-none"
+              >
+                <option value="15m">15m</option>
+                <option value="30m">30m</option>
+                <option value="45m">45m</option>
+                <option value="1h">1h</option>
+                <option value="2h">2h</option>
+              </select>
+              <button
+                type="button"
+                onClick={addStep}
+                disabled={!newStepText.trim()}
+                className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 px-3.5 py-2 text-xs font-bold disabled:opacity-40"
+              >
+                Add Step
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {/* Footer Actions */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleFormSubmit}
+            disabled={!title.trim()}
+            className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-black shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <span>💾</span>
+            <span>Save Custom Template</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApplyTemplateModal({ templates = [], team = [], depts = [], onApply, onClose }) {
+  const [selectedTplId, setSelectedTplId] = useState(templates[0]?.id || "");
+  const [assignee, setAssignee] = useState("");
+  const [dueDate, setDueDate] = useState(todayKey());
+  const [filterScope, setFilterScope] = useState("all"); // "all" | "company" | "personal"
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredTemplates = templates.filter(t => {
+    if (filterScope === "company" && !t.sharedWithCompany) return false;
+    if (filterScope === "personal" && t.sharedWithCompany) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = (t.title || "").toLowerCase().includes(q);
+      const matchDept = (t.department || "").toLowerCase().includes(q);
+      if (!matchTitle && !matchDept) return false;
+    }
+    return true;
+  });
+
+  const selectedTemplate = templates.find(t => t.id === selectedTplId) || filteredTemplates[0];
+
+  const handleApply = () => {
+    if (!selectedTemplate) return;
+    onApply({
+      template: selectedTemplate,
+      assignee,
+      dueDate
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-indigo-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-indigo-100 p-5 bg-gradient-to-r from-indigo-50/70 via-amber-50/30 to-white">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-indigo-600 text-white text-base shadow-2xs font-black">📋</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">Load from Task Template</h3>
+              <p className="text-xs text-slate-500">Pick a template to 1-click delegate a task and all its subtasks</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-200 text-sm font-bold">✕</button>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {templates.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-200 p-8 text-center space-y-3">
+              <span className="text-3xl block">📋</span>
+              <h4 className="text-sm font-bold text-slate-800">No custom templates created yet</h4>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Create templates in <b>Settings &gt; Task Templates</b> or click "Save as Template" on any existing task.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Search & Scope Filters */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="🔍 Search templates by title or department..."
+                  className="flex-1 min-w-[200px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-indigo-400"
+                />
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+                  {[
+                    { id: "all", label: "All" },
+                    { id: "company", label: "🏢 Company" },
+                    { id: "personal", label: "👤 Personal" }
+                  ].map(sc => (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      onClick={() => setFilterScope(sc.id)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                        filterScope === sc.id ? "bg-white text-slate-950 shadow-2xs" : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      {sc.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Template Select Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto p-1">
+                {filteredTemplates.map(tpl => {
+                  const isSelected = selectedTemplate?.id === tpl.id;
+                  const stepCount = (tpl.subtasks || []).length;
+                  return (
+                    <button
+                      key={tpl.id}
+                      type="button"
+                      onClick={() => setSelectedTplId(tpl.id)}
+                      className={`rounded-2xl border p-3 text-left transition flex flex-col justify-between gap-1.5 ${
+                        isSelected
+                          ? "border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-400/20 shadow-xs"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span className="font-extrabold text-xs text-slate-950 truncate">{tpl.title}</span>
+                          <span className={`rounded-md px-1.5 py-0.2 text-[9px] font-black uppercase shrink-0 ${
+                            tpl.sharedWithCompany ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-700"
+                          }`}>
+                            {tpl.sharedWithCompany ? "🏢 Company" : "👤 Personal"}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-bold block">📁 {tpl.department || "General"}</span>
+                      </div>
+                      <span className="text-[10px] text-indigo-700 font-bold">📑 {stepCount} Subtask{stepCount === 1 ? "" : "s"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selected Template Details Preview */}
+              {selectedTemplate && (
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-indigo-100 pb-2">
+                    <div>
+                      <h4 className="font-black text-sm text-slate-950">{selectedTemplate.title}</h4>
+                      {selectedTemplate.description && (
+                        <p className="text-xs text-slate-600 mt-0.5">{selectedTemplate.description}</p>
+                      )}
+                    </div>
+                    <span className="rounded-full bg-indigo-100 text-indigo-900 px-2.5 py-0.5 text-[10px] font-black">
+                      {(selectedTemplate.subtasks || []).length} Steps
+                    </span>
+                  </div>
+
+                  {/* Subtask Steps list */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">Subtasks to be attached:</span>
+                    {(selectedTemplate.subtasks || []).map((s, idx) => (
+                      <div key={s.id || idx} className="flex items-center justify-between text-xs bg-white p-2 rounded-xl border border-slate-100">
+                        <span className="font-bold text-slate-800">
+                          {idx + 1}. {s.text || s}
+                        </span>
+                        {s.est && <span className="text-[10px] font-bold text-slate-400">⏱️ {s.est}</span>}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Delegation Assignee & Due Date */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-indigo-100">
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Assign to Member</label>
+                      <select
+                        value={assignee}
+                        onChange={e => setAssignee(e.target.value)}
+                        className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+                      >
+                        <option value="">— Select Assignee (or Self) —</option>
+                        {team.map(m => (
+                          <option key={m.id || m.email || m.user_id} value={m.name || m.email}>
+                            {m.label || m.name || m.email}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Due Date</label>
+                      <input
+                        type="date"
+                        value={dueDate}
+                        onChange={e => setDueDate(e.target.value)}
+                        className="w-full rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={!selectedTemplate}
+            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 text-xs font-black shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+          >
+            <span>🚀</span>
+            <span>Assign Task with Subtasks</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TaskTemplatesManagerSection({ data, patch, orgCtx, userId }) {
+  const [editingTpl, setEditingTpl] = useState(null); // null | "new" | tpl_object
+  const [filterScope, setFilterScope] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 3500); };
+  const myName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Me";
+  const depts = getCompanyDepartments(data, orgCtx);
+
+  const templates = getEffectiveTemplates(data, orgCtx, userId);
+
+  const filteredTemplates = templates.filter(t => {
+    if (filterScope === "company" && !t.sharedWithCompany) return false;
+    if (filterScope === "personal" && t.sharedWithCompany) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchTitle = (t.title || "").toLowerCase().includes(q);
+      const matchDept = (t.department || "").toLowerCase().includes(q);
+      if (!matchTitle && !matchDept) return false;
+    }
+    return true;
+  });
+
+  const handleSaveTemplate = (tpl) => {
+    patch(d => {
+      d.taskTemplates = d.taskTemplates || [];
+      const idx = d.taskTemplates.findIndex(x => x.id === tpl.id);
+      if (idx >= 0) {
+        d.taskTemplates[idx] = tpl;
+      } else {
+        d.taskTemplates.unshift({ ...tpl, creatorName: myName, creatorId: userId });
+      }
+    });
+    setEditingTpl(null);
+    say("✓ Task template saved successfully!");
+  };
+
+  const handleDeleteTemplate = (id) => {
+    if (!confirm("Are you sure you want to delete this template?")) return;
+    patch(d => {
+      d.taskTemplates = (d.taskTemplates || []).filter(x => x.id !== id);
+    });
+    say("✓ Template deleted.");
+  };
+
+  const handleToggleShare = (tpl) => {
+    const nextState = !tpl.sharedWithCompany;
+    patch(d => {
+      d.taskTemplates = d.taskTemplates || [];
+      const item = d.taskTemplates.find(x => x.id === tpl.id);
+      if (item) item.sharedWithCompany = nextState;
+      else d.taskTemplates.push({ ...tpl, sharedWithCompany: nextState });
+    });
+    say(nextState ? "✓ Template is now shared company-wide!" : "✓ Template changed to Personal.");
+  };
+
+  return (
+    <div className="space-y-6">
+      <Callout>
+        Custom Task &amp; Subtask Templates: Create reusable standard procedures for recurring tasks. Share templates with your whole team or keep them private to your account.
+      </Callout>
+
+      {notice && (
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-xs font-black text-emerald-900 shadow-2xs">
+          {notice}
+        </div>
+      )}
+
+      {/* Header and Create Button */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">📋</span>
+            <h3 className="font-black text-slate-950 text-base">Custom Task &amp; Subtask Templates</h3>
+            <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.5 text-[10px] font-black uppercase">
+              {templates.length} Total
+            </span>
+          </div>
+          <p className="text-xs text-slate-500">
+            Easily standardize and delegate recurring operations with pre-configured step-by-step subtasks.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setEditingTpl("new")}
+          className="rounded-2xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-black shadow-sm transition flex items-center gap-2"
+        >
+          <span>＋</span>
+          <span>Create New Template</span>
+        </button>
+      </div>
+
+      {/* Filters Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-2xs">
+        <input
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="🔍 Search templates by title or department..."
+          className="flex-1 min-w-[200px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-900 outline-none focus:bg-white focus:border-amber-400"
+        />
+        <div className="flex items-center gap-1.5">
+          {[
+            { id: "all", label: `All (${templates.length})` },
+            { id: "company", label: `🏢 Company (${templates.filter(t => t.sharedWithCompany).length})` },
+            { id: "personal", label: `👤 Personal (${templates.filter(t => !t.sharedWithCompany).length})` }
+          ].map(sc => (
+            <button
+              key={sc.id}
+              type="button"
+              onClick={() => setFilterScope(sc.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                filterScope === sc.id ? "bg-slate-950 text-white shadow-2xs" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              {sc.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Templates List */}
+      {filteredTemplates.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-12 text-center space-y-3">
+          <span className="text-3xl block">📋</span>
+          <h4 className="text-sm font-bold text-slate-800">No task templates found</h4>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Click <b>"Create New Template"</b> above to create your first reusable task with subtasks!
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filteredTemplates.map(tpl => {
+            const steps = Array.isArray(tpl.subtasks) ? tpl.subtasks : [];
+            return (
+              <div key={tpl.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xs space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-950">{tpl.title}</h4>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[11px] font-bold text-slate-400">📁 {tpl.department || "General"}</span>
+                        {tpl.creatorName && (
+                          <span className="text-[10px] text-slate-400">by {tpl.creatorName}</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleShare(tpl)}
+                      className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase transition border ${
+                        tpl.sharedWithCompany
+                          ? "bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200"
+                          : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
+                      }`}
+                      title="Click to toggle company vs personal sharing"
+                    >
+                      {tpl.sharedWithCompany ? "🏢 Company-Wide" : "👤 Personal"}
+                    </button>
+                  </div>
+
+                  {tpl.description && (
+                    <p className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">{tpl.description}</p>
+                  )}
+
+                  {/* Subtasks preview */}
+                  <div className="space-y-1 pt-1">
+                    <span className="text-[10px] font-black uppercase text-slate-400 block">
+                      Subtasks ({steps.length}):
+                    </span>
+                    <div className="space-y-1">
+                      {steps.map((st, i) => (
+                        <div key={st.id || i} className="flex items-center justify-between text-xs bg-slate-50/70 p-1.5 rounded-lg">
+                          <span className="font-medium text-slate-800 truncate">
+                            {i + 1}. {st.text || st}
+                          </span>
+                          {st.est && <span className="text-[10px] font-bold text-slate-400 shrink-0 ml-2">⏱️ {st.est}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card Actions */}
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setEditingTpl(tpl)}
+                      className="rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3 py-1.5 text-xs font-bold transition"
+                    >
+                      ✏️ Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(tpl.id)}
+                      className="rounded-xl border border-slate-200 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 px-2.5 py-1.5 text-xs font-bold transition"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Template Edit / Create Modal */}
+      {editingTpl && (
+        <TemplateEditModal
+          template={editingTpl === "new" ? null : editingTpl}
+          depts={depts}
+          onSave={handleSaveTemplate}
+          onClose={() => setEditingTpl(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 const SETTINGS_TABS = [
   { id: "general", label: "General & Hours", icon: "⚙️" },
   { id: "ai", label: "AI & Intelligence", icon: "✨" },
   { id: "calendar", label: "Calendar & Tax", icon: "🗓️" },
   { id: "company", label: "Company & Team", icon: "🏢" },
   { id: "labels", label: "Categories & Labels", icon: "🏷️" },
+  { id: "templates", label: "Task Templates", icon: "📋" },
   { id: "billing", label: "Billing & Invoices", icon: "💳" },
   { id: "account", label: "Account & Data", icon: "👤" },
 ];
@@ -20396,6 +21148,7 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
       )}
 
       {/* Sub-tab 4: Categories & Task Labels */}
+      {subTab === "templates" && <TaskTemplatesManagerSection data={data} patch={patch} orgCtx={orgCtx} userId={userId} />}
       {subTab === "labels" && (
         <div className="space-y-6">
           <CategoriesSection data={data} patch={patch} orgCtx={orgCtx} />
