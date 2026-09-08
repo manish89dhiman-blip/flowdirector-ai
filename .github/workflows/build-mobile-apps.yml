@@ -23,6 +23,9 @@ concurrency:
 env:
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: "true"
 
+permissions:
+  contents: write
+
 jobs:
   # ============================================================================
   # 1. ANDROID BUILD JOB (Runs on Ubuntu Cloud Runner)
@@ -35,6 +38,9 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Java JDK 21
         uses: actions/setup-java@v5
@@ -93,12 +99,20 @@ jobs:
           ./gradlew bundleRelease --stacktrace
           
           # Check if permanent keystore exists in repository
-          if [ -f "flowdirector-release.keystore" ]; then
-            echo "Using existing repository keystore: flowdirector-release.keystore"
-            cp flowdirector-release.keystore release.keystore
+          if [ -f "../flowdirector-release.keystore" ]; then
+            echo "Using permanent repository keystore..."
+            cp ../flowdirector-release.keystore release.keystore
           else
             echo "Generating permanent upload keystore..."
             keytool -genkey -v -keystore release.keystore -alias flowdirector -keyalg RSA -keysize 2048 -validity 10000 -storepass flowdirector123 -keypass flowdirector123 -dname "CN=FlowDirector, OU=Productivity, O=FlowDirector, L=Global, ST=State, C=US"
+            cp release.keystore ../flowdirector-release.keystore
+            cd ..
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git add flowdirector-release.keystore
+            git commit -m "chore: persist permanent mobile release signing keystore" || true
+            git push origin master || true
+            cd android
           fi
           
           # Export public PEM certificate for Google Play Console upload key registration/reset
@@ -106,11 +120,6 @@ jobs:
           
           echo "=== CERTIFICATE FINGERPRINT DETAILS ==="
           keytool -list -v -keystore release.keystore -alias flowdirector -storepass flowdirector123
-          
-          echo "=== BASE64 ENCODED KEYSTORE ==="
-          base64 -w 0 release.keystore > keystore.base64
-          head -c 100 keystore.base64
-          echo "... (encoded)"
           
           # Sign the AAB with release upload key
           jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore release.keystore -storepass flowdirector123 -keypass flowdirector123 app/build/outputs/bundle/release/app-release.aab flowdirector
