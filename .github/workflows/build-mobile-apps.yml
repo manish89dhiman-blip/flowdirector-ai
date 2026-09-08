@@ -77,6 +77,8 @@ jobs:
             sed -i "s/compileSdkVersion = [0-9]*/compileSdkVersion = 36/g" android/variables.gradle
             sed -i "s/targetSdkVersion = [0-9]*/targetSdkVersion = 36/g" android/variables.gradle
           fi
+          sed -i "s/compileSdkVersion rootProject.ext.compileSdkVersion/compileSdkVersion 36/g" android/app/build.gradle || true
+          sed -i "s/targetSdkVersion rootProject.ext.targetSdkVersion/targetSdkVersion 36/g" android/app/build.gradle || true
           echo "android.builder.sdkDownload=true" >> android/gradle.properties
 
       - name: Compile Android Debug APK
@@ -139,17 +141,6 @@ jobs:
             android/release.keystore
           if-no-files-found: error
           retention-days: 30
-
-      - name: Auto-Publish to Google Play Store
-        if: "${{ secrets.PLAY_STORE_JSON_KEY != '' }}"
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_JSON_KEY }}
-          packageName: com.flowdirector.workspace
-          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
-          track: internal
-          status: completed
-          changesNotSentForReview: false
 
   # ============================================================================
   # 2. iOS BUILD JOB (Runs on macOS Cloud Runner with Xcode pre-installed)
