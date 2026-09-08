@@ -7886,6 +7886,84 @@ function AiIntelligenceSection() {
   );
 }
 
+
+// ============================================================================
+// DYNAMIC TERMINOLOGY DICTIONARY (INDIAN MSME vs GLOBAL EXECUTIVE)
+// ============================================================================
+const FD_TERMS = {
+  friendly: {
+    id: "friendly",
+    name: "Simple Indian / MSME (Hinglish & Plain Terms)",
+    flag: "🇮🇳",
+    standup: "🎯 Aaj Ka Plan (आज का काम)",
+    standupShort: "🎯 Aaj Ka Plan",
+    outcome: "⭐ आज का #1 सबसे बड़ा काम (Main Goal)",
+    priorities: "📌 आज के 3 सबसे जरूरी काम",
+    blockerPrompt: "⚠️ क्या रुकावट या दिक्कत आ रही है? (यहाँ लिखें ताकि मदद मिल सके):",
+    blockerLabel: "⚠️ मदद चाहिए / काम अटका",
+    blockerUpdateLabel: "दिक्कत अपडेट करें",
+    dailyTab: "☀️ Aaj Ka Kaam (Today)",
+    teamTab: "👥 Team Ka Haal (Team)",
+    followupTab: "📋 Follow-up & Delegated",
+    captureTab: "📥 Naya Kaam (Add / Inbox)",
+    weeklyTab: "🗓️ Is Hafte Ka Plan",
+    monthlyTab: "📅 Mahine Ki Deadlines",
+    goalsTab: "🎯 Business Goals & KRAs",
+    ideasTab: "💡 Future Ideas",
+    quickCaptureBtn: "＋ नया काम लिखें",
+    aiBreakdownBtn: "✨ AI काम के टुकड़े करें",
+    aiRadarBtn: "✨ टीम की आज की AI रिपोर्ट देखें",
+    aiRadarHeader: "AI Daily Team Report & Blocker Radar (आज की टीम रिपोर्ट)",
+    reviewBtn: "👀 चेक करने के लिए भेजें",
+    approveBtn: "✓ पास किया & काम पूरा",
+    requestChangesBtn: "🔄 सुधार के लिए वापस भेजें",
+    askUpdateBtn: "⚡ काम का हाल पूछें",
+    status_pending: "काम शुरू करना है (To Do)",
+    status_in_progress: "काम चालू है (In Progress)",
+    status_under_review: "चेक करने के लिए भेजा (Review)",
+    status_completed: "काम पूरा हो गया (Done)",
+    status_blocked: "अटका हुआ / मदद चाहिए (Help Needed)"
+  },
+  executive: {
+    id: "executive",
+    name: "Global Executive (Silicon Valley Agile)",
+    flag: "🌐",
+    standup: "🎯 Daily Standup",
+    standupShort: "🎯 Standup",
+    outcome: "⭐ The Big #1 Outcome for Today",
+    priorities: "📌 Top 3 Priorities (Standup)",
+    blockerPrompt: "⚠️ What is blocking you on this deliverable? (Explain so leadership can help resolve):",
+    blockerLabel: "⚠️ Flag Blocker",
+    blockerUpdateLabel: "Update Blocker",
+    dailyTab: "☀️ Daily Cockpit",
+    teamTab: "👥 Team Dashboard",
+    followupTab: "📋 Delegation & Follow-up",
+    captureTab: "📥 Quick Capture",
+    weeklyTab: "🗓️ Weekly Horizon",
+    monthlyTab: "📅 Monthly Blueprint",
+    goalsTab: "🎯 Goals & KRAs",
+    ideasTab: "💡 Ideas & Reference",
+    quickCaptureBtn: "⚡ + Quick Capture",
+    aiBreakdownBtn: "✨ AI Subtasks Breakdown",
+    aiRadarBtn: "✨ Open Standup AI Radar",
+    aiRadarHeader: "AI Team Standup Synthesis & Blocker Radar",
+    reviewBtn: "👀 Submit for Review",
+    approveBtn: "✓ Approve & Complete",
+    requestChangesBtn: "🔄 Request Changes",
+    askUpdateBtn: "⚡ Ask for Status Update",
+    status_pending: "Pending / To Do",
+    status_in_progress: "In Progress",
+    status_under_review: "Under Review",
+    status_completed: "Completed",
+    status_blocked: "Blocked / Need Help"
+  }
+};
+
+function getActiveTerms(data) {
+  const mode = data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly";
+  return FD_TERMS[mode] || FD_TERMS.friendly;
+}
+
 const TASK_STATUS_CONFIG = {
   pending: { label: "काम शुरू करना है (To Do)", icon: "⏳", badge: "bg-amber-100 text-amber-900 border-amber-300", dot: "bg-amber-500" },
   in_progress: { label: "काम चालू है (In Progress)", icon: "🔵", badge: "bg-blue-100 text-blue-900 border-blue-300", dot: "bg-blue-600" },
@@ -8837,64 +8915,40 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const canSeeOthers = role === "owner" || role === "manager";
   const trainingBooked = orgCtx?.org?.training_status === "booked";
 
-  // Role-Specific Navigation Architecture
+    // Role-Specific Navigation Architecture
+  const currentTerms = getActiveTerms(data);
   let TABS = [];
   if (isEmployee) {
     TABS = [
-      ["standup", "🎯 Aaj Ka Plan (आज का काम)"],
-      ["daily", "☀️ Aaj Ka Schedule"],
-      ["weekly", "🗓️ Is Hafte Ka Plan"],
-      ["ideas", "💡 Future Ideas"],
+      ["standup", currentTerms.standup],
+      ["daily", currentTerms.dailyTab],
+      ["weekly", currentTerms.weeklyTab],
+      ["ideas", currentTerms.ideasTab],
       ["settings", "👤 My Account"]
     ];
   } else if (isManager) {
     TABS = [
-      ["daily", "☀️ Aaj Ka Kaam (Today)"],
-      ["team", "👥 Team Ka Haal (Team)"],
-      ["followup", "📋 Follow-up & Delegated"],
-      ["capture", "📥 Naya Kaam (Add / Inbox)"],
-      ["weekly", "🗓️ Is Hafte Ka Plan"],
-      ["monthly", "📅 Mahine Ki Deadlines"],
-      ["ideas", "💡 Future Ideas"],
+      ["daily", currentTerms.dailyTab],
+      ["team", currentTerms.teamTab],
+      ["followup", currentTerms.followupTab],
+      ["capture", currentTerms.captureTab],
+      ["weekly", currentTerms.weeklyTab],
+      ["monthly", currentTerms.monthlyTab],
+      ["ideas", currentTerms.ideasTab],
       ["settings", "⚙️ Settings"]
     ];
   } else {
     // Owner / Solo Executive
     TABS = [
-      ["daily", "☀️ Aaj Ka Kaam (Today)"],
-      ["team", "👥 Team Ka Haal (Team)"],
-      ["followup", "📋 Follow-up & Delegated"],
-      ["capture", "📥 Naya Kaam (Add / Inbox)"],
-      ["weekly", "🗓️ Is Hafte Ka Plan"],
-      ["monthly", "📅 Mahine Ki Deadlines"],
-      ...(role ? [["goals", "🎯 Business Goals & KRAs"]] : []),
-      ["ideas", "💡 Future Ideas"],
+      ["daily", currentTerms.dailyTab],
+      ["team", currentTerms.teamTab],
+      ["followup", currentTerms.followupTab],
+      ["capture", currentTerms.captureTab],
+      ["weekly", currentTerms.weeklyTab],
+      ["monthly", currentTerms.monthlyTab],
+      ...(role ? [["goals", currentTerms.goalsTab]] : []),
+      ["ideas", currentTerms.ideasTab],
       ["settings", "⚙️ Settings"]
-    ];
-  } else if (isManager) {
-    TABS = [
-      ["capture", "Capture"],
-      ["daily", "Daily"],
-      ["weekly", "Weekly"],
-      ["monthly", "Monthly"],
-      ["followup", "Delegation & Radar"],
-      ["goals", "Department Goals"],
-      ["people", "My Team"],
-      ["ideas", "Ideas & Reference"],
-      ["settings", "Settings"]
-    ];
-  } else {
-    // Owner / Solo Executive
-    TABS = [
-      ["capture", "Capture"],
-      ["daily", "Daily"],
-      ["weekly", "Weekly"],
-      ["monthly", "Monthly"],
-      ["followup", "Delegation & Follow-up"],
-      ...(role ? [["goals", "Goals & KRAs"]] : []),
-      ...(role ? [["people", "Team Dashboard"]] : []),
-      ["ideas", "Ideas & Reference"],
-      ["settings", "Settings"]
     ];
   }
 
@@ -8951,6 +9005,24 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                 <span>{trainingBooked ? "Google Meet Booked" : "Book 1:1 Training Call"}</span>
               </button>
             )}
+
+            {/* Language & Terminology Style Quick Toggle Button */}
+            <button 
+              type="button"
+              onClick={() => {
+                const cur = (data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly");
+                const nextMode = cur === "friendly" ? "executive" : "friendly";
+                localStorage.setItem("flowdirector_term_mode", nextMode);
+                patch(d => {
+                  d.settings = d.settings || {};
+                  d.settings.terminologyMode = nextMode;
+                });
+              }}
+              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-2.5 py-1.5 text-xs font-black text-slate-800 transition shadow-2xs"
+              title="Click to toggle between Simple Indian Mode (Hinglish) and Global Executive Mode (English)"
+            >
+              <span>{(data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly") === "friendly" ? "🇮🇳 Indian" : "🌐 Global"}</span>
+            </button>
 
             {/* User Guide & Manual Top Button */}
             <button 
