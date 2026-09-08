@@ -5634,7 +5634,7 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
                   title="Decompose this task into actionable subtasks with AI"
                 >
                   <span>✨</span>
-                  <span>✨ AI काम के टुकड़े करें (Subtasks)</span>
+                  <span>{getActiveTerms(data).aiBreakdownBtn}</span>
                 </button>
                     <input 
                       type="email"
@@ -6860,1034 +6860,6 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, dbTasks, setD
 
 
 // ============================================================================
-// FLOWDIRECTOR AI & AUTOMATION ENGINE
-// ============================================================================
-
-// ============================================================================
-// 1-CLICK INTERACTIVE DEMO WORKSPACE LOADER
-// ============================================================================
-function loadDemoWorkspaceData(patch, orgCtx) {
-  const today = todayKey();
-  patch(d => {
-    // 1. Settings & OHV
-    d.settings = d.settings || {};
-    d.settings.income = 1500000;
-    d.settings.hours = 160;
-    d.settings.currency = "USD";
-    d.settings.timezone = "America/New_York";
-
-    // 2. Team Standups for Today (with 1 realistic blocker to showcase AI Blocker Radar)
-    d.standups = d.standups || {};
-    d.standups[today] = {
-      "Sarah Chen": {
-        outcome: "Finalize Enterprise SSO & SAML 2.0 Integration",
-        p1: { text: "Review SOC2 compliance report", kra: "Engineering", done: false },
-        p2: { text: "Fix token refresh expiration bug", kra: "Engineering", done: true },
-        p3: { text: "Prepare API documentation", kra: "Engineering", done: false },
-        blocker: "Waiting on external security penetration audit results from vendor",
-        submittedAt: new Date().toISOString()
-      },
-      "Alex Rivera": {
-        outcome: "Deploy Stripe Webhooks & Subscription Engine",
-        p1: { text: "Optimize database connection pooling under load", kra: "Infrastructure", done: true },
-        p2: { text: "Write webhook retry unit tests", kra: "Infrastructure", done: false },
-        p3: { text: "Setup Datadog alerting monitors", kra: "Infrastructure", done: false },
-        blocker: "",
-        submittedAt: new Date().toISOString()
-      },
-      "Priya Sharma": {
-        outcome: "Launch Q3 Product Hunt & LinkedIn Growth Sprint",
-        p1: { text: "Finalize interactive demo video assets", kra: "Marketing", done: false },
-        p2: { text: "Coordinate launch schedule with community influencers", kra: "Marketing", done: false },
-        p3: { text: "Setup conversion tracking UTMs", kra: "Marketing", done: true },
-        blocker: "",
-        submittedAt: new Date().toISOString()
-      },
-      "David Miller": {
-        outcome: "Close $50,000 ARR Apex Enterprise Contract",
-        p1: { text: "Executive legal terms review call", kra: "Sales", done: false },
-        p2: { text: "Draft customized SLA agreement", kra: "Sales", done: false },
-        p3: { text: "Send customer onboarding kickoff invite", kra: "Sales", done: false },
-        blocker: "",
-        submittedAt: new Date().toISOString()
-      }
-    };
-
-    // 3. Daily Executive Focus Cockpit
-    d.daily = d.daily || {};
-    d.daily[today] = {
-      outcome: "Deliver High-Impact Executive Presentation & Lock In Q3 Strategy",
-      outcomeMark: "",
-      outcomeDelegatedTo: "",
-      outcomeKra: "Leadership",
-      priorities: [
-        "Finalize Q3 revenue projections and board presentation deck",
-        "Unblock Sarah Chen on security penetration audit vendor",
-        "Review enterprise contract terms for $50k ARR deal"
-      ],
-      marks: ["done", "", ""],
-      priorityKra: ["Finance", "Leadership", "Sales"],
-      blocks: {
-        "09:00": "Team Daily Standup & AI Blocker Radar Review",
-        "10:00": "Deep Work Block: Q3 Board Presentation & ARR Projections",
-        "11:00": "Deep Work Block: Q3 Board Presentation & ARR Projections",
-        "14:00": "Executive Strategy Sync & Contract Review",
-        "16:00": "Operational Triage & Daily Scorecard Review"
-      },
-      actual: {},
-      closure: { score: 9, ate: "yes", family: "yes" }
-    };
-
-    // 4. Capture & Backup Tasks ready for AI Breakdown demo
-    d.captures = [
-      {
-        id: uid(),
-        text: "Prepare Q3 Board Presentation and Revenue Projections",
-        tag: "Executive",
-        taskType: "SCHEDULE",
-        due: today
-      },
-      {
-        id: uid(),
-        text: "Implement Stripe Webhooks for Automated Subscription Billing",
-        tag: "Engineering",
-        taskType: "DELEGATE",
-        due: today
-      },
-      {
-        id: uid(),
-        text: "Hire Senior Full-Stack React & Node.js Engineer",
-        tag: "Hiring",
-        taskType: "WEEKLY"
-      },
-      {
-        id: uid(),
-        text: "Audit AWS cloud infrastructure and optimize database query latency",
-        tag: "Ops",
-        taskType: "SCHEDULE"
-      }
-    ];
-
-    d.dailyBackup = [
-      {
-        id: uid(),
-        text: "Review candidate resumes for Senior Backend role",
-        duration: "45m",
-        tag: "Hiring"
-      },
-      {
-        id: uid(),
-        text: "Verify SSL certificate auto-renewal cronjob",
-        duration: "15m",
-        tag: "Ops"
-      }
-    ];
-  });
-}
-
-const AIEngine = {
-  getConfig: () => {
-    try {
-      const raw = localStorage.getItem("flowdirector_ai_config");
-      return raw ? JSON.parse(raw) : { provider: "builtin", apiKey: "", model: "gemini-1.5-flash" };
-    } catch(e) {
-      return { provider: "builtin", apiKey: "", model: "gemini-1.5-flash" };
-    }
-  },
-  saveConfig: (cfg) => {
-    try {
-      localStorage.setItem("flowdirector_ai_config", JSON.stringify(cfg));
-    } catch(e) {}
-  },
-
-  // Test API connection
-  testConnection: async (provider, apiKey, model) => {
-    if (provider === "builtin") {
-      return { ok: true, message: "Built-in FlowDirector AI engine is active and ready!" };
-    }
-    if (!apiKey || !apiKey.trim()) {
-      return { ok: false, message: "Please enter a valid API key." };
-    }
-    if (provider === "gemini") {
-      try {
-        const m = model || "gemini-1.5-flash";
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey.trim()}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: "Respond with the word 'OK' in JSON: {\"status\":\"ok\"}" }] }],
-            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
-          })
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData?.error?.message || `HTTP ${res.status}`);
-        }
-        return { ok: true, message: `✓ Successfully connected to Google Gemini (${m})!` };
-      } catch (err) {
-        return { ok: false, message: "Gemini Connection Failed: " + err.message };
-      }
-    }
-    if (provider === "openai") {
-      try {
-        const m = model || "gpt-4o-mini";
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey.trim()}`
-          },
-          body: JSON.stringify({
-            model: m,
-            messages: [{ role: "user", content: "Respond with: {\"status\":\"ok\"}" }],
-            response_format: { type: "json_object" }
-          })
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData?.error?.message || `HTTP ${res.status}`);
-        }
-        return { ok: true, message: `✓ Successfully connected to OpenAI (${m})!` };
-      } catch (err) {
-        return { ok: false, message: "OpenAI Connection Failed: " + err.message };
-      }
-    }
-    return { ok: true, message: "Engine ready." };
-  },
-
-  // 1. Task Breakdown Generator
-  breakdownTask: async (title, context = "", category = "") => {
-    const config = AIEngine.getConfig();
-    if (config.provider === "gemini" && config.apiKey) {
-      try {
-        const m = config.model || "gemini-1.5-flash";
-        const prompt = `You are an expert agile productivity coach and project manager. Break down this task into 3 to 6 concrete, actionable sequential subtasks with realistic time estimates.
-Task Title: "${title}"
-Context/Details: "${context}"
-Category: "${category}"
-
-Respond ONLY with valid JSON with this exact schema:
-{
-  "archetype": "Engineering | Executive | Recruiting | Marketing | Sales | Bug Fix | General Project",
-  "subtasks": [
-    { "text": "Actionable step description", "est": "15m | 30m | 45m | 1h | 1.5h", "phase": "Planning | Execution | Verification | Rollout" }
-  ]
-}`;
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${config.apiKey.trim()}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, responseMimeType: "application/json" }
-          })
-        });
-        if (res.ok) {
-          const data = await res.json();
-          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) {
-            const parsed = JSON.parse(text);
-            if (Array.isArray(parsed.subtasks) && parsed.subtasks.length > 0) {
-              return { title, archetype: parsed.archetype || "Custom Project", subtasks: parsed.subtasks };
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("Gemini breakdown error, using built-in:", e);
-      }
-    }
-    return AIEngine._builtinBreakdown(title, context, category);
-  },
-
-  // Built-in Intelligent NLP Task Decomposition
-  _builtinBreakdown: (title, context = "", category = "") => {
-    const raw = (title + " " + context + " " + category).toLowerCase();
-    const subtasks = [];
-
-    const isBug = /fix|bug|crash|error|broken|fail|reproduce|patch|glitch|regression|null|500/i.test(raw);
-    const isTech = /api|stripe|database|backend|frontend|react|deploy|webhook|server|code|oauth|auth|endpoint|cloud|schema|sql|table/i.test(raw);
-    const isExec = /board|deck|presentation|pitch|investor|strategy|revenue|forecast|quarterly|q1|q2|q3|q4|audit|roadmap|okr|kpi|budget/i.test(raw);
-    const isHiring = /hire|interview|candidate|job|recruiting|resume|onboard|screening|offer|talent|headcount/i.test(raw);
-    const isMarketing = /campaign|seo|content|launch|newsletter|social|blog|landing|ad|ads|copywriting|leads|funnel|email/i.test(raw);
-    const isSales = /client|proposal|deal|contract|pricing|outreach|demo|customer|prospect|meeting|quote|negotiation/i.test(raw);
-    const isOps = /process|sop|policy|inventory|vendor|procurement|logistics|compliance|training|audit/i.test(raw);
-
-    if (isBug) {
-      subtasks.push({ text: `Reproduce "${title.replace(/^fix:?\s*/i, '')}" locally and inspect error logs & stacktrace`, est: "20m", phase: "Diagnosis" });
-      subtasks.push({ text: `Isolate root cause and draft fix in development branch`, est: "45m", phase: "Implementation" });
-      subtasks.push({ text: `Write automated regression test and verify edge cases`, est: "25m", phase: "Verification" });
-      subtasks.push({ text: `Deploy patch to staging and verify resolution with team`, est: "15m", phase: "Deployment" });
-    } else if (isTech) {
-      subtasks.push({ text: `Review API schemas, technical constraints, and data contracts`, est: "30m", phase: "Planning" });
-      subtasks.push({ text: `Implement core business logic and database service layer`, est: "1.5h", phase: "Development" });
-      subtasks.push({ text: `Implement error handling, retry policies, and fallback states`, est: "45m", phase: "Hardening" });
-      subtasks.push({ text: `End-to-end integration testing across happy and failure paths`, est: "30m", phase: "Testing" });
-      subtasks.push({ text: `Deploy changes to staging and notify team of API availability`, est: "15m", phase: "Rollout" });
-    } else if (isExec) {
-      subtasks.push({ text: `Gather financial reports, KPI metrics, and operational performance data`, est: "45m", phase: "Research" });
-      subtasks.push({ text: `Draft executive narrative structure and key milestone takeaways`, est: "1h", phase: "Storyboarding" });
-      subtasks.push({ text: `Design slide visuals, financial charts, and revenue forecast projections`, est: "1.5h", phase: "Design" });
-      subtasks.push({ text: `Executive review, feedback incorporation, and rehearsal walkthrough`, est: "45m", phase: "Refinement" });
-      subtasks.push({ text: `Finalize master presentation deck and distribute pre-read summary`, est: "20m", phase: "Distribution" });
-    } else if (isHiring) {
-      subtasks.push({ text: `Refine job scorecard, mandatory competencies, and salary bandwidth`, est: "30m", phase: "Scope" });
-      subtasks.push({ text: `Source and screen top candidate profiles against role criteria`, est: "1h", phase: "Sourcing" });
-      subtasks.push({ text: `Conduct initial culture alignment & technical screening interviews`, est: "1.5h", phase: "Interviews" });
-      subtasks.push({ text: `Facilitate practical skill assessment / panel presentation round`, est: "2h", phase: "Evaluation" });
-      subtasks.push({ text: `Synthesize interview scorecard feedback, check references, and extend offer`, est: "45m", phase: "Closing" });
-    } else if (isMarketing) {
-      subtasks.push({ text: `Define campaign target persona, core value proposition, and KPIs`, est: "30m", phase: "Strategy" });
-      subtasks.push({ text: `Draft high-converting ad copy, landing headlines, and creative assets`, est: "1.5h", phase: "Creation" });
-      subtasks.push({ text: `Configure campaign distribution, UTM tracking tags, and analytics dashboards`, est: "45m", phase: "Setup" });
-      subtasks.push({ text: `Launch campaign across target channels and monitor early delivery`, est: "30m", phase: "Execution" });
-      subtasks.push({ text: `Review 48h conversion data and optimize highest-performing creatives`, est: "30m", phase: "Optimization" });
-    } else if (isSales) {
-      subtasks.push({ text: `Research prospect business model, existing tech stack, and pain points`, est: "30m", phase: "Discovery" });
-      subtasks.push({ text: `Prepare customized executive pitch deck and tailored ROI model`, est: "1h", phase: "Proposal" });
-      subtasks.push({ text: `Conduct live solution demonstration with key stakeholders`, est: "45m", phase: "Presentation" });
-      subtasks.push({ text: `Address commercial questions, terms, and draft master service agreement`, est: "45m", phase: "Negotiation" });
-      subtasks.push({ text: `Execute signed contract and trigger customer onboarding workflow`, est: "20m", phase: "Closing" });
-    } else if (isOps) {
-      subtasks.push({ text: `Audit existing workflow bottlenecks and gather stakeholder requirements`, est: "45m", phase: "Analysis" });
-      subtasks.push({ text: `Draft updated Standard Operating Procedure (SOP) and checklist`, est: "1h", phase: "Documentation" });
-      subtasks.push({ text: `Conduct team walkthrough session and resolve operational questions`, est: "30m", phase: "Training" });
-      subtasks.push({ text: `Implement updated workflow and monitor compliance metrics for 7 days`, est: "30m", phase: "Monitoring" });
-    } else {
-      subtasks.push({ text: `Define clear success criteria and gather required reference documents`, est: "20m", phase: "Preparation" });
-      subtasks.push({ text: `Execute primary deliverables and draft initial working version`, est: "1.5h", phase: "Execution" });
-      subtasks.push({ text: `Conduct thorough review against standards and polish edge cases`, est: "30m", phase: "Review" });
-      subtasks.push({ text: `Publish final output, distribute to stakeholders, and mark completed`, est: "15m", phase: "Completion" });
-    }
-
-    return {
-      title,
-      archetype: isBug ? "Bug Fix & Remediation" : isTech ? "Engineering & Technical" : isExec ? "Executive & Strategic" : isHiring ? "Recruiting & Talent" : isMarketing ? "Marketing & Growth" : isSales ? "Sales & Client Deal" : isOps ? "Operations & Process" : "General Project",
-      subtasks
-    };
-  },
-
-  // 2. Priority & Eisenhower Matrix Estimator
-  estimatePriority: async (title, details = "", dueDate = "") => {
-    const raw = (title + " " + details).toLowerCase();
-    let urgencyScore = 5;
-    let impactScore = 5;
-
-    if (/urgent|today|asap|now|immediately|critical|blocker|broken|crash|leak|down|outage|emergency|due today|overdue|production|bug|fix/i.test(raw)) urgencyScore += 4;
-    if (/tomorrow|soon|this week|deadline|eod|review|pending|milestone/i.test(raw)) urgencyScore += 2;
-    if (/someday|later|maybe|explore|backlog|eventually|future|optional/i.test(raw)) urgencyScore -= 3;
-
-    if (dueDate) {
-      const today = new Date().toISOString().slice(0, 10);
-      if (dueDate <= today) urgencyScore += 4;
-      else if (new Date(dueDate) - new Date(today) <= 2 * 86400000) urgencyScore += 2;
-    }
-
-    if (/revenue|customer|board|security|launch|billing|stripe|database|production|ceo|pitch|contract|core|hiring|architecture|auth|deal|vip|investor/i.test(raw)) impactScore += 4;
-    if (/optimization|refactor|meeting|sync|clean|organize|update docs|notes/i.test(raw)) impactScore -= 1;
-    if (/trivial|minor|typo|color|icon|tweak|formatting|spacing/i.test(raw)) impactScore -= 3;
-
-    urgencyScore = Math.max(1, Math.min(10, urgencyScore));
-    impactScore = Math.max(1, Math.min(10, impactScore));
-
-    let priority = "p3";
-    let quadrant = "Q3: Delegate";
-    let rationale = "";
-
-    if (impactScore >= 7 && urgencyScore >= 7) {
-      priority = "p1";
-      quadrant = "Q1: Do First (Critical & Urgent)";
-      rationale = "High strategic leverage with immediate deadline. Requires top focus today.";
-    } else if (impactScore >= 7 && urgencyScore < 7) {
-      priority = "p2";
-      quadrant = "Q2: Schedule (Strategic & High Value)";
-      rationale = "High long-term organizational impact. Protect a dedicated deep-work focus block.";
-    } else if (impactScore < 7 && urgencyScore >= 7) {
-      priority = "p3";
-      quadrant = "Q3: Delegate (Operational & Time-Sensitive)";
-      rationale = "Immediate operational need with moderate leverage. Ideal for team delegation or quick batching.";
-    } else {
-      priority = "p4";
-      quadrant = "Q4: Backlog / Eliminate (Low Value)";
-      rationale = "Low urgency and modest strategic impact. De-prioritize or handle during low-energy gaps.";
-    }
-
-    return { priority, quadrant, urgencyScore, impactScore, rationale, isHighLeverage: impactScore >= 7 };
-  },
-
-  // 3. Team Standup Synthesis & Blocker Radar
-  summarizeStandups: async (standupData, dbTasks = [], orgName = "Workspace") => {
-    const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", year: "numeric" });
-    const members = Object.keys(standupData || {});
-    const activeBlockers = [];
-    const keyPriorities = [];
-
-    members.forEach(mName => {
-      const s = standupData[mName];
-      if (!s) return;
-      if (s.blocker && s.blocker.trim()) {
-        activeBlockers.push({ member: mName, reason: s.blocker.trim(), type: "Standup Blocker" });
-      }
-      if (s.outcome && s.outcome.trim()) {
-        keyPriorities.push({ member: mName, text: s.outcome.trim(), isBigOne: true });
-      }
-      [s.p1, s.p2, s.p3].forEach((p, idx) => {
-        if (p && p.text && p.text.trim()) {
-          keyPriorities.push({ member: mName, text: p.text.trim(), priority: `P${idx + 1}`, done: !!p.done });
-        }
-      });
-    });
-
-    (dbTasks || []).forEach(t => {
-      if (t.status === "blocked") {
-        activeBlockers.push({
-          member: t.assignee_name || t.assignee_email || "Team Member",
-          task: t.title,
-          reason: t.details || "Marked as blocked in workspace",
-          type: "Delegated Task Blocker"
-        });
-      }
-    });
-
-    const totalPriorities = keyPriorities.length;
-    const completedCount = keyPriorities.filter(p => p.done).length;
-    const velocityScore = totalPriorities > 0 ? Math.round((completedCount / totalPriorities) * 100) : 0;
-
-    let executiveSummary = "";
-    if (activeBlockers.length > 0) {
-      executiveSummary = `${members.length} team members active today with ${totalPriorities} registered commitments. 🚨 ${activeBlockers.length} active blocker(s) detected that require immediate leadership intervention to prevent downstream delays.`;
-    } else {
-      executiveSummary = `${members.length} team members aligned on ${totalPriorities} key deliverables with 0 reported blockers. Organizational velocity is strong with high execution momentum across all teams.`;
-    }
-
-    const recommendations = [];
-    if (activeBlockers.length > 0) {
-      const uniqueBlocked = [...new Set(activeBlockers.map(b => b.member))];
-      recommendations.push(`Schedule an immediate 5-minute unblocking sync with ${uniqueBlocked.slice(0, 3).join(", ")}.`);
-    }
-    if (totalPriorities > members.length * 3) {
-      recommendations.push("High task density detected. Encourage members to lock in their single #1 Big Outcome.");
-    } else {
-      recommendations.push("Priorities are well-balanced. Protect afternoon focus blocks from ad-hoc interruptions.");
-    }
-
-    return {
-      today,
-      orgName,
-      memberCount: members.length,
-      executiveSummary,
-      activeBlockers,
-      keyPriorities,
-      recommendations,
-      velocityScore
-    };
-  }
-};
-
-// ============================================================================
-// AI TASK BREAKDOWN MODAL COMPONENT
-// ============================================================================
-function TaskAiBreakdownModal({ taskTitle, taskDetails = "", category = "", onInsertNotes, onAddToDaily, onClose }) {
-  const [loading, setLoading] = useState(true);
-  const [breakdown, setBreakdown] = useState(null);
-  const [triage, setTriage] = useState(null);
-  const [selectedIndices, setSelectedIndices] = useState({});
-  const [copied, setCopied] = useState(false);
-  const [customStep, setCustomStep] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    Promise.all([
-      AIEngine.breakdownTask(taskTitle, taskDetails, category),
-      AIEngine.estimatePriority(taskTitle, taskDetails)
-    ]).then(([bd, tr]) => {
-      if (!active) return;
-      setBreakdown(bd);
-      setTriage(tr);
-      const sel = {};
-      (bd.subtasks || []).forEach((_, i) => { sel[i] = true; });
-      setSelectedIndices(sel);
-      setLoading(false);
-    }).catch(err => {
-      if (!active) return;
-      setLoading(false);
-    });
-    return () => { active = false; };
-  }, [taskTitle, taskDetails, category]);
-
-  const toggleIndex = (i) => {
-    setSelectedIndices(prev => ({ ...prev, [i]: !prev[i] }));
-  };
-
-  const updateSubtaskText = (i, newText) => {
-    setBreakdown(prev => {
-      if (!prev) return prev;
-      const subs = [...prev.subtasks];
-      subs[i] = { ...subs[i], text: newText };
-      return { ...prev, subtasks: subs };
-    });
-  };
-
-  const removeSubtask = (i) => {
-    setBreakdown(prev => {
-      if (!prev) return prev;
-      const subs = prev.subtasks.filter((_, idx) => idx !== i);
-      return { ...prev, subtasks: subs };
-    });
-  };
-
-  const addCustomStep = (e) => {
-    e.preventDefault();
-    if (!customStep.trim()) return;
-    setBreakdown(prev => {
-      if (!prev) return prev;
-      const newIdx = prev.subtasks.length;
-      setSelectedIndices(s => ({ ...s, [newIdx]: true }));
-      return {
-        ...prev,
-        subtasks: [...prev.subtasks, { text: customStep.trim(), est: "30m", phase: "Custom Step" }]
-      };
-    });
-    setCustomStep("");
-  };
-
-  const getSelectedSubtasks = () => {
-    if (!breakdown || !breakdown.subtasks) return [];
-    return breakdown.subtasks.filter((_, i) => selectedIndices[i]);
-  };
-
-  const handleInsertNotes = () => {
-    const selected = getSelectedSubtasks();
-    if (selected.length === 0) return;
-    const noteContent = `✨ AI Action Breakdown (${breakdown.archetype}):\n` + 
-      selected.map(s => `• [ ] ${s.text} [${s.est}]`).join("\n");
-    if (onInsertNotes) onInsertNotes(noteContent);
-    onClose();
-  };
-
-  const handleAddToDaily = () => {
-    const selected = getSelectedSubtasks();
-    if (selected.length === 0) return;
-    if (onAddToDaily) onAddToDaily(selected);
-    onClose();
-  };
-
-  const handleCopyClipboard = () => {
-    const selected = getSelectedSubtasks();
-    const text = `✨ AI Subtasks for "${taskTitle}":\n` + 
-      selected.map((s, i) => `${i + 1}. ${s.text} (${s.est} - ${s.phase})`).join("\n");
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    }).catch(() => {});
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-indigo-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-indigo-100 p-5 bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-white">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md font-black text-lg">
-              ✨
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-slate-900 text-base truncate">AI Task Breakdown &amp; Subtasks</h3>
-                {breakdown?.archetype && (
-                  <span className="rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 px-2.5 py-0.5 text-[10px] font-black uppercase">
-                    {breakdown.archetype}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 truncate mt-0.5">"{taskTitle}"</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 font-bold text-sm">✕</button>
-        </div>
-
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {loading ? (
-            <div className="py-12 text-center space-y-3">
-              <div className="inline-block w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-xs font-black text-indigo-900 animate-pulse">FlowDirector AI is synthesizing deliverables and sequencing actionable steps...</p>
-            </div>
-          ) : (
-            <>
-              {/* Smart Triage Bar */}
-              {triage && (
-                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-lg bg-indigo-600 text-white px-2 py-0.5 font-black text-[10px] uppercase">
-                      {triage.priority.toUpperCase()}
-                    </span>
-                    <span className="font-black text-slate-900">{triage.quadrant}</span>
-                  </div>
-                  <span className="text-[11px] text-slate-600 font-medium italic">
-                    {triage.rationale}
-                  </span>
-                </div>
-              )}
-
-              {/* Subtask Checkbox List */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
-                  <span>Action Sequence ({getSelectedSubtasks().length} of {breakdown?.subtasks?.length || 0} selected):</span>
-                  <span className="text-[11px] text-slate-400 font-medium">Click text to edit</span>
-                </div>
-
-                {breakdown?.subtasks?.map((sub, idx) => (
-                  <div 
-                    key={idx} 
-                    className={`flex items-start gap-3 rounded-2xl border p-3 transition ${
-                      selectedIndices[idx] ? "bg-white border-indigo-200 shadow-2xs" : "bg-slate-50/60 border-slate-200 opacity-60"
-                    }`}
-                  >
-                    <input 
-                      type="checkbox" 
-                      checked={!!selectedIndices[idx]} 
-                      onChange={() => toggleIndex(idx)}
-                      className="w-4 h-4 rounded text-indigo-600 accent-indigo-600 mt-1 cursor-pointer" 
-                    />
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <input 
-                        type="text" 
-                        value={sub.text} 
-                        onChange={e => updateSubtaskText(idx, e.target.value)}
-                        className="w-full text-xs font-bold text-slate-900 bg-transparent outline-none focus:bg-indigo-50/50 rounded px-1 -mx-1" 
-                      />
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-md bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
-                          ⏱️ {sub.est}
-                        </span>
-                        <span className="rounded-md bg-indigo-50 text-indigo-700 px-2 py-0.5 text-[10px] font-bold">
-                          🏷️ {sub.phase}
-                        </span>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => removeSubtask(idx)}
-                      className="text-slate-300 hover:text-rose-500 p-1 text-xs font-bold rounded"
-                      title="Remove step"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-
-                {/* Add Custom Step Input */}
-                <form onSubmit={addCustomStep} className="flex items-center gap-2 pt-1">
-                  <input 
-                    type="text" 
-                    value={customStep} 
-                    onChange={e => setCustomStep(e.target.value)}
-                    placeholder="+ Add custom subtask step..." 
-                    className="flex-1 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-400"
-                  />
-                  <button 
-                    type="submit" 
-                    disabled={!customStep.trim()}
-                    className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 text-xs font-bold disabled:opacity-40"
-                  >
-                    Add
-                  </button>
-                </form>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Footer Actions */}
-        <div className="border-t border-slate-100 p-4 bg-slate-50/80 flex flex-wrap items-center justify-between gap-2">
-          <button 
-            type="button"
-            onClick={handleCopyClipboard}
-            className="rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 px-3 py-2 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <span>{copied ? "✓ Copied!" : "📋 Copy Text"}</span>
-          </button>
-
-          <div className="flex items-center gap-2 ml-auto">
-            {onAddToDaily && (
-              <button 
-                type="button"
-                onClick={handleAddToDaily}
-                disabled={loading || getSelectedSubtasks().length === 0}
-                className="rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 px-3.5 py-2 text-xs font-black transition disabled:opacity-50 flex items-center gap-1"
-              >
-                <span>📅</span>
-                <span>Add to Schedule</span>
-              </button>
-            )}
-
-            {onInsertNotes && (
-              <button 
-                type="button"
-                onClick={handleInsertNotes}
-                disabled={loading || getSelectedSubtasks().length === 0}
-                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-black shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <span>✨</span>
-                <span>Insert into Notes ({getSelectedSubtasks().length})</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// AI TEAM STANDUP SYNTHESIS & BLOCKER RADAR MODAL
-// ============================================================================
-function TeamAiStandupSummaryModal({ standupData = {}, dbTasks = [], orgCtx, onClose }) {
-  const [loading, setLoading] = useState(true);
-  const [summary, setSummary] = useState(null);
-  const [copied, setCopied] = useState(false);
-
-  const generate = () => {
-    setLoading(true);
-    const orgName = orgCtx?.org?.name || "Workspace";
-    AIEngine.summarizeStandups(standupData, dbTasks, orgName)
-      .then(res => {
-        setSummary(res);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    generate();
-  }, [standupData, dbTasks]);
-
-  const copyForSlack = () => {
-    if (!summary) return;
-    const lines = [];
-    lines.push(`🤖 *DAILY STANDUP AI SYNTHESIS — ${summary.orgName.toUpperCase()}*`);
-    lines.push(`📅 ${summary.today} | 👥 ${summary.memberCount} Active Members | ⚡ Velocity: ${summary.velocityScore}%`);
-    lines.push("");
-    lines.push(`📊 *Executive Overview:*`);
-    lines.push(summary.executiveSummary);
-    lines.push("");
-
-    if (summary.activeBlockers && summary.activeBlockers.length > 0) {
-      lines.push(`🚨 *BLOCKER & BOTTLENECK RADAR (${summary.activeBlockers.length}):*`);
-      summary.activeBlockers.forEach(b => {
-        lines.push(`• ⚠️ *@${b.member}*: ${b.reason} ${b.task ? `(${b.task})` : ''}`);
-      });
-      lines.push("");
-    } else {
-      lines.push(`✅ *Blockers:* 0 active blockers reported! Full operational momentum.`);
-      lines.push("");
-    }
-
-    lines.push(`🎯 *Key Team Deliverables Today:*`);
-    summary.keyPriorities.slice(0, 10).forEach(p => {
-      lines.push(`• ${p.isBigOne ? '⭐' : '•'} *${p.member}*: ${p.text} ${p.done ? '(✓ Done)' : ''}`);
-    });
-    lines.push("");
-
-    if (summary.recommendations && summary.recommendations.length > 0) {
-      lines.push(`💡 *Leadership Directives:*`);
-      summary.recommendations.forEach(r => lines.push(`• ${r}`));
-    }
-
-    const fullText = lines.join("\n");
-    navigator.clipboard.writeText(fullText).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
-    }).catch(() => {});
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-3xl border border-purple-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-purple-100 p-5 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md font-black text-lg">
-              🤖
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-slate-900 text-base">AI Daily Team Report &amp; Blocker Radar (आज की टीम रिपोर्ट)</h3>
-                <span className="rounded-full bg-purple-100 text-purple-900 border border-purple-200 px-2 py-0.5 text-[10px] font-black">
-                  LIVE RADAR
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">{summary?.today || "Today"} · {orgCtx?.org?.name || "Workspace"}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 font-bold text-sm">✕</button>
-        </div>
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {loading ? (
-            <div className="py-16 text-center space-y-3">
-              <div className="inline-block w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-xs font-black text-purple-900 animate-pulse">Scanning team standups, priorities, and dependency blockers...</p>
-            </div>
-          ) : (
-            <>
-              {/* Executive Summary Card */}
-              <div className="rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-indigo-50/40 p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase text-purple-900 tracking-wider">📊 आज की टीम समरी (Team Summary)</span>
-                  <span className="text-xs font-bold text-purple-700">
-                    {summary?.memberCount || 0} Active Members
-                  </span>
-                </div>
-                <p className="text-xs font-bold text-slate-800 leading-relaxed">
-                  {summary?.executiveSummary}
-                </p>
-              </div>
-
-              {/* Blocker Radar Box */}
-              <div className="space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                    <span>🚨</span>
-                    <span>Blocker &amp; Bottleneck Radar</span>
-                  </span>
-                  {summary?.activeBlockers?.length > 0 ? (
-                    <span className="rounded-full bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-0.5 text-[10px] font-black animate-pulse">
-                      {summary.activeBlockers.length} Active Blocker(s)
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-black">
-                      ✓ All Paths Clear
-                    </span>
-                  )}
-                </div>
-
-                {summary?.activeBlockers?.length > 0 ? (
-                  <div className="space-y-2">
-                    {summary.activeBlockers.map((b, i) => (
-                      <div key={i} className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3.5 flex items-start gap-3">
-                        <span className="text-base mt-0.5">⚠️</span>
-                        <div className="flex-1 min-w-0 space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-black text-rose-950">{b.member}</span>
-                            <span className="rounded-md bg-white border border-rose-200 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">
-                              {b.type}
-                            </span>
-                          </div>
-                          <p className="text-xs text-rose-900 font-medium whitespace-pre-wrap">{b.reason}</p>
-                          {b.task && <p className="text-[11px] font-bold text-rose-700">Related Task: {b.task}</p>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 text-center">
-                    <p className="text-xs font-bold text-emerald-900">✨ Zero blockers reported across the team today. High velocity execution!</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Team Commitments Grid */}
-              <div className="space-y-2.5">
-                <span className="text-xs font-extrabold text-slate-900 block">🎯 टीम के आज के मुख्य काम (Team Priorities)</span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {summary?.keyPriorities?.slice(0, 12).map((p, i) => (
-                    <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="font-extrabold text-slate-900">{p.member}</span>
-                        {p.isBigOne ? (
-                          <span className="rounded bg-amber-100 text-amber-900 border border-amber-200 px-1.5 py-0.5 text-[9px] font-black">
-                            ⭐ BIG #1
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-bold text-slate-400">{p.priority || "P1"}</span>
-                        )}
-                      </div>
-                      <p className="text-slate-700 font-medium truncate">{p.text}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Leadership Recommendations */}
-              {summary?.recommendations?.length > 0 && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-2">
-                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">💡 मालिक / मैनेजर के लिए जरूरी निर्देश</span>
-                  <ul className="space-y-1.5 text-xs text-slate-700 font-medium">
-                    {summary.recommendations.map((r, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="text-indigo-600 font-bold">•</span>
-                        <span>{r}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="border-t border-slate-100 p-4 bg-slate-50/80 flex items-center justify-between gap-3">
-          <button 
-            onClick={generate}
-            className="rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 px-3 py-2 text-xs font-bold transition flex items-center gap-1.5"
-          >
-            <span>🔄</span>
-            <span>Regenerate AI Analysis</span>
-          </button>
-
-          <button 
-            onClick={copyForSlack}
-            disabled={loading || !summary}
-            className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 text-xs font-black shadow-md transition disabled:opacity-50 flex items-center gap-1.5 ml-auto"
-          >
-            <span>{copied ? "✓ Copied to Clipboard!" : "📋 Copy for Slack / Teams Channel"}</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// AI INTELLIGENCE CONFIGURATION SECTION (SETTINGS)
-// ============================================================================
-function AiIntelligenceSection() {
-  const [config, setConfig] = useState(AIEngine.getConfig());
-  const [testResult, setTestResult] = useState(null);
-  const [testing, setTesting] = useState(false);
-  const [showKey, setShowKey] = useState(false);
-
-  const save = (newCfg) => {
-    setConfig(newCfg);
-    AIEngine.saveConfig(newCfg);
-  };
-
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    const res = await AIEngine.testConnection(config.provider, config.apiKey, config.model);
-    setTestResult(res);
-    setTesting(false);
-  };
-
-  return (
-    <div className="space-y-6">
-      <Callout>
-        AI &amp; Automation Engine: FlowDirector powers automatic task decomposition, subtask generation, Eisenhower priority triage, and daily standup blocker radar.
-      </Callout>
-
-      <div className="rounded-3xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs space-y-5">
-        <div>
-          <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-            <span>✨</span>
-            <span>AI Provider &amp; Model</span>
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Choose your AI intelligence engine. The built-in engine runs instantly with zero configuration, or connect your Google Gemini / OpenAI key for custom LLM processing.
-          </p>
-        </div>
-
-        {/* Provider Selector */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {[
-            { id: "builtin", label: "Built-in FlowDirector AI", sub: "Fast, private & free forever", icon: "⚡" },
-            { id: "gemini", label: "Google Gemini", sub: "Gemini 1.5 Flash / Pro API", icon: "♊" },
-            { id: "openai", label: "OpenAI", sub: "GPT-4o / GPT-4o-mini API", icon: "🤖" }
-          ].map(p => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => save({ ...config, provider: p.id })}
-              className={`rounded-2xl border p-4 text-left transition ${
-                config.provider === p.id 
-                  ? "border-indigo-600 bg-indigo-50/50 shadow-xs ring-2 ring-indigo-600/20" 
-                  : "border-slate-200 bg-white hover:bg-slate-50"
-              }`}
-            >
-              <div className="text-xl mb-1">{p.icon}</div>
-              <div className="font-extrabold text-slate-900 text-xs">{p.label}</div>
-              <div className="text-[11px] text-slate-500 font-medium mt-0.5">{p.sub}</div>
-            </button>
-          ))}
-        </div>
-
-        {/* API Key Input (if Gemini or OpenAI selected) */}
-        {config.provider !== "builtin" && (
-          <div className="space-y-4 pt-4 border-t border-slate-100 animate-fade-in">
-            <div className="space-y-1.5">
-              <label className="text-xs font-black text-slate-800 flex items-center justify-between">
-                <span>{config.provider === "gemini" ? "Google Gemini API Key" : "OpenAI API Key"}</span>
-                <button 
-                  type="button" 
-                  onClick={() => setShowKey(!showKey)} 
-                  className="text-[11px] text-indigo-600 font-bold hover:underline"
-                >
-                  {showKey ? "Hide Key" : "Show Key"}
-                </button>
-              </label>
-              <input
-                type={showKey ? "text" : "password"}
-                value={config.apiKey || ""}
-                onChange={e => save({ ...config, apiKey: e.target.value })}
-                placeholder={config.provider === "gemini" ? "AIzaSy..." : "sk-proj-..."}
-                className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 text-xs font-mono text-slate-900 outline-none focus:border-indigo-600"
-              />
-              <p className="text-[10px] text-slate-400">
-                Your key is stored locally in your browser and used only for direct browser-to-API requests.
-              </p>
-            </div>
-
-            {/* Model Selector */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-black text-slate-800">Model Selection</label>
-              <select
-                value={config.model || (config.provider === "gemini" ? "gemini-1.5-flash" : "gpt-4o-mini")}
-                onChange={e => save({ ...config, model: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-bold text-slate-800 outline-none"
-              >
-                {config.provider === "gemini" ? (
-                  <>
-                    <option value="gemini-1.5-flash">Gemini 1.5 Flash (Recommended: Ultra-fast &amp; intelligent)</option>
-                    <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep complex reasoning)</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="gpt-4o-mini">GPT-4o Mini (Recommended: Fast &amp; cost-effective)</option>
-                    <option value="gpt-4o">GPT-4o (Full flagship model)</option>
-                  </>
-                )}
-              </select>
-            </div>
-          </div>
-        )}
-
-        {/* Test Connection Button */}
-        <div className="flex items-center gap-3 pt-2">
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={testing}
-            className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-black shadow-xs transition flex items-center gap-1.5"
-          >
-            <span>⚡</span>
-            <span>{testing ? "Testing Connection..." : "Test AI Connection"}</span>
-          </button>
-
-          {testResult && (
-            <span className={`text-xs font-black ${testResult.ok ? "text-emerald-700" : "text-rose-700"}`}>
-              {testResult.message}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-
-// ============================================================================
 // DYNAMIC TERMINOLOGY DICTIONARY (INDIAN MSME vs GLOBAL EXECUTIVE)
 // ============================================================================
 const FD_TERMS = {
@@ -7895,29 +6867,62 @@ const FD_TERMS = {
     id: "friendly",
     name: "Simple Indian / MSME (Hinglish & Plain Terms)",
     flag: "🇮🇳",
-    standup: "🎯 Aaj Ka Plan (आज का काम)",
-    standupShort: "🎯 Aaj Ka Plan",
-    outcome: "⭐ आज का #1 सबसे बड़ा काम (Main Goal)",
-    priorities: "📌 आज के 3 सबसे जरूरी काम",
-    blockerPrompt: "⚠️ क्या रुकावट या दिक्कत आ रही है? (यहाँ लिखें ताकि मदद मिल सके):",
-    blockerLabel: "⚠️ मदद चाहिए / काम अटका",
-    blockerUpdateLabel: "दिक्कत अपडेट करें",
-    dailyTab: "☀️ Aaj Ka Kaam (Today)",
-    teamTab: "👥 Team Ka Haal (Team)",
-    followupTab: "📋 Follow-up & Delegated",
-    captureTab: "📥 Naya Kaam (Add / Inbox)",
-    weeklyTab: "🗓️ Is Hafte Ka Plan",
-    monthlyTab: "📅 Mahine Ki Deadlines",
-    goalsTab: "🎯 Business Goals & KRAs",
-    ideasTab: "💡 Future Ideas",
-    quickCaptureBtn: "＋ नया काम लिखें",
-    aiBreakdownBtn: "✨ AI काम के टुकड़े करें",
-    aiRadarBtn: "✨ टीम की आज की AI रिपोर्ट देखें",
+    // Tabs (Clean text names without emojis, since <Ic n={id}/> renders the icon)
+    standup: "Aaj Ka Plan (आज का काम)",
+    dailyTab: "Aaj Ka Kaam (Today)",
+    teamTab: "Team Ka Haal (Team)",
+    followupTab: "Follow-up & Delegated",
+    captureTab: "Naya Kaam (Add / Inbox)",
+    weeklyTab: "Is Hafte Ka Plan",
+    monthlyTab: "Mahine Ki Deadlines",
+    goalsTab: "Business Goals & KRAs",
+    ideasTab: "Future Ideas",
+    settingsTab: "Settings & Company",
+    
+    // Top Bar & Buttons
+    quickCaptureBtn: "＋ नया काम लिखें (Add Task)",
+    aiBreakdownBtn: "AI काम के टुकड़े करें (Subtasks)",
+    aiRadarBtn: "टीम की आज की AI रिपोर्ट देखें",
     aiRadarHeader: "AI Daily Team Report & Blocker Radar (आज की टीम रिपोर्ट)",
-    reviewBtn: "👀 चेक करने के लिए भेजें",
-    approveBtn: "✓ पास किया & काम पूरा",
-    requestChangesBtn: "🔄 सुधार के लिए वापस भेजें",
-    askUpdateBtn: "⚡ काम का हाल पूछें",
+    aiRadarSub: "{getActiveTerms(data).aiRadarSub}",
+    aiSummaryTitle: "📊 आज की टीम समरी (Team Summary)",
+    aiPrioritiesTitle: "🎯 टीम के आज के मुख्य काम (Team Priorities)",
+    aiRecommendationsTitle: "💡 मालिक / मैनेजर के लिए जरूरी निर्देश",
+    
+    // Standup / Daily Focus
+    outcome: "⭐ आज का #1 सबसे बड़ा काम (Main Goal)",
+    outcomePlaceholder: "आज का #1 सबसे बड़ा काम (दिन खत्म होने से पहले ये पूरा होना जरूरी है)...",
+    priorities: "📌 आज के 3 सबसे जरूरी काम",
+    prioritiesDesc: "आज पूरे दिन में क्या 3 बड़े नतीजे देने हैं?",
+    blockerPrompt: "⚠️ क्या रुकावट या दिक्कत आ रही है? (यहाँ लिखें ताकि मदद मिल सके):",
+    blockerLabel: "मदद चाहिए / काम अटका",
+    blockerUpdateLabel: "दिक्कत अपडेट करें",
+    blockerHint: "काम में कोई रुकावट है तो यहाँ लिखें ताकि मालिक या टीम मदद कर सके",
+    
+    // Delegation / Followup Radar
+    followupHeaderPill: "टीम का काम & फॉलो-अप (Delegation & Follow-up)",
+    followupHeader: "टीम को दिया काम & फॉलो-अप (Team Tasks)",
+    followupSub: "{getActiveTerms(data).followupSub}",
+    assignTaskTitle: "टीम के सदस्य को नया काम सौंपें (Assign Task)",
+    assignTaskHint: "काम तुरंत कर्मचारी के फोन पर पहुँच जाएगा",
+    taskNamePlaceholder: "क्या काम करना है? (Task Name / Goal)...",
+    chooseMemberPlaceholder: "— किसको काम देना है (Choose Member) —",
+    delegatedToTeamTab: "Delegated to Team",
+    assignedToMeTab: "Assigned to Me",
+    standupsTab: "Team Standups (Today)",
+    standupsEmptyHint: "💡 यहाँ लाइव दिखता है कि आपकी टीम ने आज के लिए कौन से 3 सबसे जरूरी काम चुने हैं।",
+    
+    // Action Buttons (Clean text without duplicate icons)
+    reviewBtn: "चेक करने के लिए भेजें",
+    approveBtn: "पास किया & काम पूरा",
+    requestChangesBtn: "सुधार के लिए वापस भेजें",
+    askUpdateBtn: "काम का हाल पूछें (Update)",
+    
+    // Prompts
+    deliverablePrompt: "✓ काम पूरा होने का लिंक या नोट यहाँ लिखें (चेक करने के लिए):",
+    changesPrompt: "🔄 क्या सुधार या बदलाव करना है? (यहाँ निर्देश लिखें):",
+    
+    // Status Labels
     status_pending: "काम शुरू करना है (To Do)",
     status_in_progress: "काम चालू है (In Progress)",
     status_under_review: "चेक करने के लिए भेजा (Review)",
@@ -7928,29 +6933,62 @@ const FD_TERMS = {
     id: "executive",
     name: "Global Executive (Silicon Valley Agile)",
     flag: "🌐",
-    standup: "🎯 Daily Standup",
-    standupShort: "🎯 Standup",
-    outcome: "⭐ The Big #1 Outcome for Today",
-    priorities: "📌 Top 3 Priorities (Standup)",
-    blockerPrompt: "⚠️ What is blocking you on this deliverable? (Explain so leadership can help resolve):",
-    blockerLabel: "⚠️ Flag Blocker",
-    blockerUpdateLabel: "Update Blocker",
-    dailyTab: "☀️ Daily Cockpit",
-    teamTab: "👥 Team Dashboard",
-    followupTab: "📋 Delegation & Follow-up",
-    captureTab: "📥 Quick Capture",
-    weeklyTab: "🗓️ Weekly Horizon",
-    monthlyTab: "📅 Monthly Blueprint",
-    goalsTab: "🎯 Goals & KRAs",
-    ideasTab: "💡 Ideas & Reference",
-    quickCaptureBtn: "⚡ + Quick Capture",
-    aiBreakdownBtn: "✨ AI Subtasks Breakdown",
-    aiRadarBtn: "✨ Open Standup AI Radar",
+    // Tabs (Clean text names without emojis, since <Ic n={id}/> renders the icon)
+    standup: "Daily Standup",
+    dailyTab: "Daily Cockpit",
+    teamTab: "Team Dashboard",
+    followupTab: "Delegation & Follow-up",
+    captureTab: "Quick Capture",
+    weeklyTab: "Weekly Horizon",
+    monthlyTab: "Monthly Blueprint",
+    goalsTab: "Goals & KRAs",
+    ideasTab: "Ideas & Reference",
+    settingsTab: "Settings & Company",
+    
+    // Top Bar & Buttons
+    quickCaptureBtn: "⚡ + Quick Capture (Add Task)",
+    aiBreakdownBtn: "AI Subtask Breakdown",
+    aiRadarBtn: "Open Standup AI Radar",
     aiRadarHeader: "AI Team Standup Synthesis & Blocker Radar",
-    reviewBtn: "👀 Submit for Review",
-    approveBtn: "✓ Approve & Complete",
-    requestChangesBtn: "🔄 Request Changes",
-    askUpdateBtn: "⚡ Ask for Status Update",
+    aiRadarSub: "Synthesize today's standup commitments, track active focus, and identify roadblocks in real time.",
+    aiSummaryTitle: "📊 Daily Team Synthesis",
+    aiPrioritiesTitle: "🎯 Key Team Commitments Today",
+    aiRecommendationsTitle: "💡 Leadership Action Items & Directives",
+    
+    // Standup / Daily Focus
+    outcome: "⭐ The Big #1 Outcome for Today",
+    outcomePlaceholder: "The Big #1 Outcome for Today (Single highest leverage deliverable)...",
+    priorities: "📌 Top 3 Standup Priorities",
+    prioritiesDesc: "What are the 3 big deliverables you commit to shipping today?",
+    blockerPrompt: "⚠️ What is blocking you on this deliverable? (Explain so leadership can help resolve):",
+    blockerLabel: "Flag Blocker",
+    blockerUpdateLabel: "Update Blocker",
+    blockerHint: "Explain what is holding up this deliverable so leadership can unblock you",
+    
+    // Delegation / Followup Radar
+    followupHeaderPill: "Delegation & Follow-up Radar",
+    followupHeader: "Delegation & Follow-up Radar (Team Tasks)",
+    followupSub: "Assign deliverables to team members, track live execution velocity, and eliminate bottlenecks.",
+    assignTaskTitle: "Delegate Task to Team Member",
+    assignTaskHint: "Instant live notification will be synced to assignee's Focus Desk",
+    taskNamePlaceholder: "Deliverable title or strategic milestone...",
+    chooseMemberPlaceholder: "— Select Assignee —",
+    delegatedToTeamTab: "Delegated to Team",
+    assignedToMeTab: "Assigned to Me",
+    standupsTab: "Team Standups (Today)",
+    standupsEmptyHint: "💡 Live view of the top 3 priorities committed by each team member for today.",
+    
+    // Action Buttons (Clean text without duplicate icons)
+    reviewBtn: "Submit for Review",
+    approveBtn: "Approve & Complete",
+    requestChangesBtn: "Request Changes",
+    askUpdateBtn: "Ask for Status Update",
+    
+    // Prompts
+    deliverablePrompt: "✓ Enter deliverable link or completion summary notes:",
+    changesPrompt: "🔄 What changes or improvements are requested? (Enter instructions):",
+    
+    // Status Labels
     status_pending: "Pending / To Do",
     status_in_progress: "In Progress",
     status_under_review: "Under Review",
@@ -7960,17 +6998,43 @@ const FD_TERMS = {
 };
 
 function getActiveTerms(data) {
-  const mode = data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly";
+  let mode = "friendly";
+  try {
+    mode = data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly";
+  } catch (e) {
+    mode = "friendly";
+  }
   return FD_TERMS[mode] || FD_TERMS.friendly;
 }
 
-const TASK_STATUS_CONFIG = {
-  pending: { label: "काम शुरू करना है (To Do)", icon: "⏳", badge: "bg-amber-100 text-amber-900 border-amber-300", dot: "bg-amber-500" },
-  in_progress: { label: "काम चालू है (In Progress)", icon: "🔵", badge: "bg-blue-100 text-blue-900 border-blue-300", dot: "bg-blue-600" },
-  under_review: { label: "चेक करने के लिए भेजा (Review)", icon: "🟣", badge: "bg-purple-100 text-purple-900 border-purple-300", dot: "bg-purple-600" },
-  completed: { label: "काम पूरा हो गया (Done)", icon: "✅", badge: "bg-emerald-100 text-emerald-900 border-emerald-300", dot: "bg-emerald-600" },
-  blocked: { label: "अटका हुआ / मदद चाहिए (Help Needed)", icon: "⚠️", badge: "bg-rose-100 text-rose-900 border-rose-300", dot: "bg-rose-600" }
-};
+function getTaskStatusConfig(data) {
+  const terms = getActiveTerms(data);
+  return {
+    pending: { label: terms.status_pending || "Pending / To Do", icon: "⏳", badge: "bg-amber-100 text-amber-900 border-amber-300", dot: "bg-amber-500" },
+    in_progress: { label: terms.status_in_progress || "In Progress", icon: "🔵", badge: "bg-blue-100 text-blue-900 border-blue-300", dot: "bg-blue-600" },
+    under_review: { label: terms.status_under_review || "Under Review", icon: "🟣", badge: "bg-purple-100 text-purple-900 border-purple-300", dot: "bg-purple-600" },
+    completed: { label: terms.status_completed || "Completed", icon: "✅", badge: "bg-emerald-100 text-emerald-900 border-emerald-300", dot: "bg-emerald-600" },
+    blocked: { label: terms.status_blocked || "Blocked / Need Help", icon: "⚠️", badge: "bg-rose-100 text-rose-900 border-rose-300", dot: "bg-rose-600" }
+  };
+}
+
+// Dynamic Proxy for TASK_STATUS_CONFIG to respond instantly to active terminology mode
+const TASK_STATUS_CONFIG = new Proxy({}, {
+  get(target, prop) {
+    const cfg = getTaskStatusConfig();
+    return cfg[prop] || { label: String(prop), icon: "📌", badge: "bg-slate-100 text-slate-700", dot: "bg-slate-400" };
+  },
+  ownKeys(target) {
+    return ["pending", "in_progress", "under_review", "completed", "blocked"];
+  },
+  getOwnPropertyDescriptor(target, prop) {
+    return {
+      enumerable: true,
+      configurable: true,
+      value: getTaskStatusConfig()[prop]
+    };
+  }
+});
 
 function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDeleteTask, meName, meEmail, isAssignee, isDelegator, orgCtx }) {
   const [showAiBreakdown, setShowAiBreakdown] = useState(false);
@@ -8018,7 +7082,8 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
   };
 
   const handleReportBlockerPrompt = async () => {
-    const reason = window.prompt("⚠️ क्या रुकावट या दिक्कत आ रही है? (यहाँ लिखें ताकि मालिक/लीडर मदद कर सकें):", "");
+    const terms = getActiveTerms();
+    const reason = window.prompt(terms.blockerPrompt, "");
     if (!reason || !reason.trim()) return;
     setPosting(true);
     try {
@@ -8033,7 +7098,8 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
   };
 
   const handleSubmitDeliverablePrompt = async () => {
-    const deliverable = window.prompt("✓ काम पूरा होने का लिंक या नोट यहाँ लिखें (चेक करने के लिए):", task.link || "");
+    const terms = getActiveTerms();
+    const deliverable = window.prompt(terms.deliverablePrompt, task.link || "");
     if (deliverable === null) return;
     setPosting(true);
     try {
@@ -8066,7 +7132,8 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
   };
 
   const handleRequestChanges = async () => {
-    const feedback = window.prompt("🔄 क्या सुधार या बदलाव करना है? (यहाँ निर्देश लिखें):", "");
+    const terms = getActiveTerms();
+    const feedback = window.prompt(terms.changesPrompt, "");
     if (!feedback || !feedback.trim()) return;
     setPosting(true);
     try {
@@ -8231,7 +7298,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>⚠️</span>
-                      <span>{isBlocked ? "दिक्कत अपडेट करें" : "⚠️ मदद चाहिए / काम अटका"}</span>
+                      <span>{isBlocked ? getActiveTerms().blockerUpdateLabel : getActiveTerms().blockerLabel}</span>
                     </button>
 
                     <button
@@ -8240,7 +7307,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>👀</span>
-                      <span>👀 चेक करने के लिए भेजें</span>
+                      <span>{getActiveTerms().reviewBtn}</span>
                     </button>
                   </>
                 )}
@@ -8253,7 +7320,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                     title="Ask assignee for an instant status update"
                   >
                     <span>⚡</span>
-                    <span>⚡ काम का हाल पूछें (Update)</span>
+                    <span>{getActiveTerms().askUpdateBtn}</span>
                   </button>
                 )}
 
@@ -8265,7 +7332,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>✓</span>
-                      <span>✓ पास किया & काम पूरा</span>
+                      <span>{getActiveTerms().approveBtn}</span>
                     </button>
 
                     <button
@@ -8274,7 +7341,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>🔄</span>
-                      <span>🔄 सुधार के लिए वापस भेजें</span>
+                      <span>{getActiveTerms().requestChangesBtn}</span>
                     </button>
                   </>
                 )}
@@ -8915,7 +7982,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   const canSeeOthers = role === "owner" || role === "manager";
   const trainingBooked = orgCtx?.org?.training_status === "booked";
 
-    // Role-Specific Navigation Architecture
+      // Role-Specific Navigation Architecture
   const currentTerms = getActiveTerms(data);
   let TABS = [];
   if (isEmployee) {
@@ -8924,7 +7991,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       ["daily", currentTerms.dailyTab],
       ["weekly", currentTerms.weeklyTab],
       ["ideas", currentTerms.ideasTab],
-      ["settings", "👤 My Account"]
+      ["settings", "My Account"]
     ];
   } else if (isManager) {
     TABS = [
@@ -8935,7 +8002,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       ["weekly", currentTerms.weeklyTab],
       ["monthly", currentTerms.monthlyTab],
       ["ideas", currentTerms.ideasTab],
-      ["settings", "⚙️ Settings"]
+      ["settings", "Settings"]
     ];
   } else {
     // Owner / Solo Executive
@@ -8948,7 +8015,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
       ["monthly", currentTerms.monthlyTab],
       ...(role ? [["goals", currentTerms.goalsTab]] : []),
       ["ideas", currentTerms.ideasTab],
-      ["settings", "⚙️ Settings"]
+      ["settings", "Settings"]
     ];
   }
 
@@ -8968,7 +8035,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               title="Press 'C' anywhere"
             >
               <span>⚡</span>
-              <span>＋ नया काम लिखें (Add Task)</span>
+              <span>{currentTerms.quickCaptureBtn}</span>
               <span className="rounded bg-slate-800 px-1 py-0.2 text-[10px] text-amber-400 font-mono">C</span>
             </button>
 
@@ -10019,7 +9086,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-indigo-100 text-indigo-900 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider">
-              📋 📋 टीम का काम &amp; फॉलो-अप (Delegation &amp; Follow-up)
+              {getActiveTerms(data).followupHeaderPill}
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-black">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
@@ -10027,10 +9094,10 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
             </span>
           </div>
           <h2 className="text-2xl font-black text-slate-950">
-            टीम को दिया काम &amp; फॉलो-अप (Team Tasks)
+            {getActiveTerms(data).followupHeader}
           </h2>
           <p className="text-xs text-slate-600">
-            टीम के सदस्यों को काम सौंपें, काम का लाइव हाल देखें, और बिना किसी झंझट के सब काम ट्रैक करें।
+            {getActiveTerms(data).followupSub}
           </p>
         </div>
 
@@ -10082,16 +9149,16 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
                   <span>⚡</span>
-                  <span>⚡ टीम के सदस्य को नया काम सौंपें (Assign Task)</span>
+                  <span>{getActiveTerms(data).assignTaskTitle}</span>
                 </span>
-                <span className="text-[11px] font-bold text-indigo-700 hidden sm:inline">काम तुरंत कर्मचारी के फोन पर पहुँच जाएगा</span>
+                <span className="text-[11px] font-bold text-indigo-700 hidden sm:inline">{getActiveTerms(data).assignTaskHint}</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
                 <input
                   value={newTaskText}
                   onChange={e => setNewTaskText(e.target.value)}
-                  placeholder="क्या काम करना है? (Task Name / Goal)..."
+                  placeholder={getActiveTerms(data).taskNamePlaceholder}
                   className="sm:col-span-4 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500"
                 />
 
@@ -10110,7 +9177,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                   }}
                   className="sm:col-span-3 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
                 >
-                  <option value="">— किसको काम देना है (Choose Member) —</option>
+                  <option value="">{getActiveTerms(data).chooseMemberPlaceholder}</option>
                   {team.map(m => (
                     <option key={m.id || m.email || m.user_id} value={m.name || m.email}>
                       {m.label || m.name || m.email}
@@ -10340,7 +9407,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
       {subTab === "standups" && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-xs text-amber-900 font-medium">
-            💡 यहाँ लाइव दिखता है कि आपकी टीम ने आज के लिए कौन से <b>3 सबसे जरूरी काम</b> चुने हैं।
+            {getActiveTerms(data).standupsEmptyHint}
           </div>
 
           {filteredTeamMembers.length === 0 && (
@@ -17154,13 +16221,13 @@ function TeamView({ orgCtx, meId, data }){
         <div className="space-y-1 min-w-0 max-w-xl">
           <div className="flex items-center gap-2">
             <span className="text-xl">🤖</span>
-            <h3 className="font-black text-base tracking-tight">AI Daily Team Report &amp; Blocker Radar (आज की टीम रिपोर्ट)</h3>
+            <h3 className="font-black text-base tracking-tight">{getActiveTerms(data).aiRadarHeader}</h3>
             <span className="rounded-full bg-purple-400/20 text-purple-200 border border-purple-400/30 px-2 py-0.5 text-[10px] font-black uppercase">
               Live Radar
             </span>
           </div>
           <p className="text-xs text-purple-200/80 font-medium">
-            पूरी टीम के आज के काम देखें, किसने क्या शुरू किया, और कहाँ कौन सा काम अटका है तुरंत जानें।
+            {getActiveTerms(data).aiRadarSub}
           </p>
         </div>
         <button
@@ -17169,7 +16236,7 @@ function TeamView({ orgCtx, meId, data }){
           className="rounded-2xl bg-white text-slate-950 hover:bg-purple-50 px-5 py-2.5 text-xs font-black shadow-lg transition flex items-center gap-2"
         >
           <span>✨</span>
-          <span>✨ टीम की आज की AI रिपोर्ट देखें</span>
+          <span>{getActiveTerms(data).aiRadarBtn}</span>
         </button>
       </div>
 
@@ -20053,11 +19120,11 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                   subtitle: "Hinglish & Plain Business Terms (व्यापारी व टीम अनुकूल)",
                   badge: "Default & Recommended",
                   examples: [
-                    { label: "Daily Standup", term: "🎯 Aaj Ka Plan (आज का काम)" },
-                    { label: "Main Goal", term: "⭐ आज का #1 सबसे बड़ा काम" },
-                    { label: "Blocker / Problem", term: "⚠️ क्या रुकावट या दिक्कत है?" },
-                    { label: "Task Capture", term: "📥 Naya Kaam (＋ नया काम)" },
-                    { label: "Team Radar", term: "👥 Team Ka Haal (टीम का काम)" }
+                    { label: "Daily Standup", term: "Aaj Ka Plan (आज का काम)" },
+                    { label: "Main Goal", term: "आज का #1 सबसे बड़ा काम" },
+                    { label: "Blocker / Problem", term: "क्या रुकावट या दिक्कत है?" },
+                    { label: "Task Capture", term: "Naya Kaam (＋ नया काम)" },
+                    { label: "Team Radar", term: "Team Ka Haal (टीम का काम)" }
                   ]
                 },
                 {
@@ -20067,11 +19134,11 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
                   subtitle: "Silicon Valley Agile & Standard English",
                   badge: "Global Tech Style",
                   examples: [
-                    { label: "Daily Standup", term: "🎯 Daily Standup" },
-                    { label: "Main Goal", term: "⭐ The Big #1 Outcome for Today" },
-                    { label: "Blocker / Problem", term: "⚠️ Flag Blocker / Need Help" },
-                    { label: "Task Capture", term: "📥 Quick Capture" },
-                    { label: "Team Radar", term: "👥 Team Dashboard & Radar" }
+                    { label: "Daily Standup", term: "Daily Standup" },
+                    { label: "Main Goal", term: "The Big #1 Outcome for Today" },
+                    { label: "Blocker / Problem", term: "Flag Blocker / Need Help" },
+                    { label: "Task Capture", term: "Quick Capture" },
+                    { label: "Team Radar", term: "Team Dashboard & Radar" }
                   ]
                 }
               ].map(m => {
