@@ -61,6 +61,15 @@ jobs:
           fi
           echo "Syncing web assets and plugins to Android..."
           npx cap sync android
+          
+          # Auto-increment version code for Google Play Store compliance
+          VERSION_CODE=${{ github.run_number }}
+          if [ "$VERSION_CODE" -lt 2 ]; then
+            VERSION_CODE=2
+          fi
+          echo "Setting versionCode to $VERSION_CODE in android/app/build.gradle"
+          sed -i "s/versionCode 1/versionCode $VERSION_CODE/g" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"1.0.$VERSION_CODE\"/g" android/app/build.gradle
 
       - name: Compile Android Debug APK
         run: |
