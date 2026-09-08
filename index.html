@@ -9018,10 +9018,10 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
                   d.settings.terminologyMode = nextMode;
                 });
               }}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-2.5 py-1.5 text-xs font-black text-slate-800 transition shadow-2xs"
-              title="Click to toggle between Simple Indian Mode (Hinglish) and Global Executive Mode (English)"
+              className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 text-xs font-black text-slate-950 transition shadow-2xs"
+              title="Click to 1-tap switch between Simple Indian Mode (Hinglish) and Global Executive Mode (English)"
             >
-              <span>{(data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly") === "friendly" ? "🇮🇳 Indian" : "🌐 Global"}</span>
+              <span>{(data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly") === "friendly" ? "🇮🇳 Indian (शब्दावली)" : "🌐 Global Terms"}</span>
             </button>
 
             {/* User Guide & Manual Top Button */}
@@ -20024,6 +20024,119 @@ function SettingsView({ data, patch, setData, userId, orgCtx, orgError, onLeftOr
       {subTab === "general" && (
         <div className="space-y-6">
           <Callout>Any task below your Owner Hour Value should not be in your hands. Set it, then delegate ruthlessly.</Callout>
+
+          {/* Language & Terminology Style (शब्दावली / स्टाइल) Switcher */}
+          <div className="rounded-3xl border-2 border-amber-300 bg-gradient-to-br from-amber-50/50 via-white to-orange-50/30 p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🌐</span>
+                  <h3 className="font-black text-slate-950 text-sm sm:text-base">
+                    Language &amp; Terminology Style (शब्दावली / स्टाइल)
+                  </h3>
+                  <span className="rounded-full bg-amber-400 text-slate-950 px-2 py-0.5 text-[10px] font-black uppercase">
+                    Live Toggle
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Switch between <b>Simple Indian / MSME Mode</b> (Hinglish &amp; plain business terms for Indian shop owners, traders, manufacturers &amp; staff) or <b>Global Executive Mode</b> (Silicon Valley Agile terminology).
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              {[
+                {
+                  id: "friendly",
+                  flag: "🇮🇳",
+                  title: "Simple Indian / MSME Mode",
+                  subtitle: "Hinglish & Plain Business Terms (व्यापारी व टीम अनुकूल)",
+                  badge: "Default & Recommended",
+                  examples: [
+                    { label: "Daily Standup", term: "🎯 Aaj Ka Plan (आज का काम)" },
+                    { label: "Main Goal", term: "⭐ आज का #1 सबसे बड़ा काम" },
+                    { label: "Blocker / Problem", term: "⚠️ क्या रुकावट या दिक्कत है?" },
+                    { label: "Task Capture", term: "📥 Naya Kaam (＋ नया काम)" },
+                    { label: "Team Radar", term: "👥 Team Ka Haal (टीम का काम)" }
+                  ]
+                },
+                {
+                  id: "executive",
+                  flag: "🌐",
+                  title: "Global Executive Mode",
+                  subtitle: "Silicon Valley Agile & Standard English",
+                  badge: "Global Tech Style",
+                  examples: [
+                    { label: "Daily Standup", term: "🎯 Daily Standup" },
+                    { label: "Main Goal", term: "⭐ The Big #1 Outcome for Today" },
+                    { label: "Blocker / Problem", term: "⚠️ Flag Blocker / Need Help" },
+                    { label: "Task Capture", term: "📥 Quick Capture" },
+                    { label: "Team Radar", term: "👥 Team Dashboard & Radar" }
+                  ]
+                }
+              ].map(m => {
+                const active = (data?.settings?.terminologyMode || localStorage.getItem("flowdirector_term_mode") || "friendly") === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem("flowdirector_term_mode", m.id);
+                      patch(d => {
+                        d.settings = d.settings || {};
+                        d.settings.terminologyMode = m.id;
+                      });
+                    }}
+                    className={`rounded-2xl border-2 p-4 text-left transition-all relative flex flex-col justify-between gap-3 ${
+                      active
+                        ? "border-amber-500 bg-white ring-4 ring-amber-400/20 shadow-md shadow-amber-500/10"
+                        : "border-slate-200 bg-white/90 hover:bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-3xl">{m.flag}</span>
+                          <div>
+                            <div className="font-black text-slate-950 text-xs sm:text-sm flex items-center gap-1.5">
+                              {m.title}
+                              {active && (
+                                <span className="rounded-md bg-emerald-500 text-white px-1.5 py-0.5 text-[9px] font-black tracking-wide uppercase">
+                                  ✓ Active
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] font-semibold text-slate-500">{m.subtitle}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-50 p-2.5 space-y-1 border border-slate-100">
+                        <span className="text-[10px] font-black uppercase text-slate-400 block mb-1">Vocabulary Preview:</span>
+                        {m.examples.map((ex, i) => (
+                          <div key={i} className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-400 font-medium">{ex.label}:</span>
+                            <span className="font-bold text-slate-800">{ex.term}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="pt-1">
+                      <div className={`w-full py-2 px-3 rounded-xl text-xs font-black text-center transition ${
+                        active
+                          ? "bg-amber-400 text-slate-950 shadow-xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}>
+                        {active ? "✓ Currently Active" : `Switch to ${m.title}`}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
 
           {isOwner && onOpenKickstart && (
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
