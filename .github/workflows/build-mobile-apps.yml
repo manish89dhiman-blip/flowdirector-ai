@@ -70,6 +70,14 @@ jobs:
           echo "Setting versionCode to $VERSION_CODE in android/app/build.gradle"
           sed -i "s/versionCode 1/versionCode $VERSION_CODE/g" android/app/build.gradle
           sed -i "s/versionName \"1.0\"/versionName \"1.0.$VERSION_CODE\"/g" android/app/build.gradle
+          
+          # Target API Level 36 (Android 16) for Google Play Store requirements
+          echo "Setting compileSdkVersion and targetSdkVersion to 36..."
+          if [ -f "android/variables.gradle" ]; then
+            sed -i "s/compileSdkVersion = [0-9]*/compileSdkVersion = 36/g" android/variables.gradle
+            sed -i "s/targetSdkVersion = [0-9]*/targetSdkVersion = 36/g" android/variables.gradle
+          fi
+          echo "android.builder.sdkDownload=true" >> android/gradle.properties
 
       - name: Compile Android Debug APK
         run: |
