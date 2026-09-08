@@ -5634,7 +5634,7 @@ function ExecutiveWelcomeOnboardingFlow({ orgCtx, session, onClose, onUpdated })
                   title="Decompose this task into actionable subtasks with AI"
                 >
                   <span>✨</span>
-                  <span>AI Subtasks Breakdown</span>
+                  <span>✨ AI काम के टुकड़े करें (Subtasks)</span>
                 </button>
                     <input 
                       type="email"
@@ -7611,7 +7611,7 @@ function TeamAiStandupSummaryModal({ standupData = {}, dbTasks = [], orgCtx, onC
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-slate-900 text-base">AI Standup Synthesis &amp; Blocker Radar</h3>
+                <h3 className="font-extrabold text-slate-900 text-base">AI Daily Team Report &amp; Blocker Radar (आज की टीम रिपोर्ट)</h3>
                 <span className="rounded-full bg-purple-100 text-purple-900 border border-purple-200 px-2 py-0.5 text-[10px] font-black">
                   LIVE RADAR
                 </span>
@@ -7634,7 +7634,7 @@ function TeamAiStandupSummaryModal({ standupData = {}, dbTasks = [], orgCtx, onC
               {/* Executive Summary Card */}
               <div className="rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-indigo-50/40 p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase text-purple-900 tracking-wider">📊 Executive Pulse</span>
+                  <span className="text-[10px] font-black uppercase text-purple-900 tracking-wider">📊 आज की टीम समरी (Team Summary)</span>
                   <span className="text-xs font-bold text-purple-700">
                     {summary?.memberCount || 0} Active Members
                   </span>
@@ -7689,7 +7689,7 @@ function TeamAiStandupSummaryModal({ standupData = {}, dbTasks = [], orgCtx, onC
 
               {/* Team Commitments Grid */}
               <div className="space-y-2.5">
-                <span className="text-xs font-extrabold text-slate-900 block">🎯 Team Priority Alignments</span>
+                <span className="text-xs font-extrabold text-slate-900 block">🎯 टीम के आज के मुख्य काम (Team Priorities)</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {summary?.keyPriorities?.slice(0, 12).map((p, i) => (
                     <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs space-y-1">
@@ -7712,7 +7712,7 @@ function TeamAiStandupSummaryModal({ standupData = {}, dbTasks = [], orgCtx, onC
               {/* Leadership Recommendations */}
               {summary?.recommendations?.length > 0 && (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-2">
-                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">💡 Leadership Interventions</span>
+                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">💡 मालिक / मैनेजर के लिए जरूरी निर्देश</span>
                   <ul className="space-y-1.5 text-xs text-slate-700 font-medium">
                     {summary.recommendations.map((r, i) => (
                       <li key={i} className="flex items-start gap-2">
@@ -7887,11 +7887,11 @@ function AiIntelligenceSection() {
 }
 
 const TASK_STATUS_CONFIG = {
-  pending: { label: "Pending / To Do", icon: "⏳", badge: "bg-amber-100 text-amber-900 border-amber-300", dot: "bg-amber-500" },
-  in_progress: { label: "In Progress", icon: "🔵", badge: "bg-blue-100 text-blue-900 border-blue-300", dot: "bg-blue-600" },
-  under_review: { label: "Under Review", icon: "🟣", badge: "bg-purple-100 text-purple-900 border-purple-300", dot: "bg-purple-600" },
-  completed: { label: "Completed", icon: "✅", badge: "bg-emerald-100 text-emerald-900 border-emerald-300", dot: "bg-emerald-600" },
-  blocked: { label: "Blocked / Need Help", icon: "⚠️", badge: "bg-rose-100 text-rose-900 border-rose-300", dot: "bg-rose-600" }
+  pending: { label: "काम शुरू करना है (To Do)", icon: "⏳", badge: "bg-amber-100 text-amber-900 border-amber-300", dot: "bg-amber-500" },
+  in_progress: { label: "काम चालू है (In Progress)", icon: "🔵", badge: "bg-blue-100 text-blue-900 border-blue-300", dot: "bg-blue-600" },
+  under_review: { label: "चेक करने के लिए भेजा (Review)", icon: "🟣", badge: "bg-purple-100 text-purple-900 border-purple-300", dot: "bg-purple-600" },
+  completed: { label: "काम पूरा हो गया (Done)", icon: "✅", badge: "bg-emerald-100 text-emerald-900 border-emerald-300", dot: "bg-emerald-600" },
+  blocked: { label: "अटका हुआ / मदद चाहिए (Help Needed)", icon: "⚠️", badge: "bg-rose-100 text-rose-900 border-rose-300", dot: "bg-rose-600" }
 };
 
 function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDeleteTask, meName, meEmail, isAssignee, isDelegator, orgCtx }) {
@@ -7940,7 +7940,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
   };
 
   const handleReportBlockerPrompt = async () => {
-    const reason = window.prompt("⚠️ What is blocking you on this deliverable? (Explain so leadership can help resolve)", "");
+    const reason = window.prompt("⚠️ क्या रुकावट या दिक्कत आ रही है? (यहाँ लिखें ताकि मालिक/लीडर मदद कर सकें):", "");
     if (!reason || !reason.trim()) return;
     setPosting(true);
     try {
@@ -7955,7 +7955,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
   };
 
   const handleSubmitDeliverablePrompt = async () => {
-    const deliverable = window.prompt("✓ Enter deliverable link or completion summary notes:", task.link || "");
+    const deliverable = window.prompt("✓ काम पूरा होने का लिंक या नोट यहाँ लिखें (चेक करने के लिए):", task.link || "");
     if (deliverable === null) return;
     setPosting(true);
     try {
@@ -7988,7 +7988,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
   };
 
   const handleRequestChanges = async () => {
-    const feedback = window.prompt("🔄 What changes or corrections are needed before sign-off?", "");
+    const feedback = window.prompt("🔄 क्या सुधार या बदलाव करना है? (यहाँ निर्देश लिखें):", "");
     if (!feedback || !feedback.trim()) return;
     setPosting(true);
     try {
@@ -8153,7 +8153,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl border border-rose-300 bg-rose-50 text-rose-800 hover:bg-rose-100 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>⚠️</span>
-                      <span>{isBlocked ? "Update Blocker" : "Flag Blocker"}</span>
+                      <span>{isBlocked ? "दिक्कत अपडेट करें" : "⚠️ मदद चाहिए / काम अटका"}</span>
                     </button>
 
                     <button
@@ -8162,7 +8162,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>👀</span>
-                      <span>Submit for Review</span>
+                      <span>👀 चेक करने के लिए भेजें</span>
                     </button>
                   </>
                 )}
@@ -8175,7 +8175,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                     title="Ask assignee for an instant status update"
                   >
                     <span>⚡</span>
-                    <span>Ask for Status Update</span>
+                    <span>⚡ काम का हाल पूछें (Update)</span>
                   </button>
                 )}
 
@@ -8187,7 +8187,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>✓</span>
-                      <span>Approve &amp; Complete</span>
+                      <span>✓ पास किया & काम पूरा</span>
                     </button>
 
                     <button
@@ -8196,7 +8196,7 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
                       className="rounded-xl border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1"
                     >
                       <span>🔄</span>
-                      <span>Request Changes</span>
+                      <span>🔄 सुधार के लिए वापस भेजें</span>
                     </button>
                   </>
                 )}
@@ -8841,11 +8841,35 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
   let TABS = [];
   if (isEmployee) {
     TABS = [
-      ["standup", "My Focus & Tasks"],
-      ["daily", "My Schedule"],
-      ["weekly", "Weekly Plan"],
-      ["ideas", "Ideas & Reference"],
-      ["settings", "My Account"]
+      ["standup", "🎯 Aaj Ka Plan (आज का काम)"],
+      ["daily", "☀️ Aaj Ka Schedule"],
+      ["weekly", "🗓️ Is Hafte Ka Plan"],
+      ["ideas", "💡 Future Ideas"],
+      ["settings", "👤 My Account"]
+    ];
+  } else if (isManager) {
+    TABS = [
+      ["daily", "☀️ Aaj Ka Kaam (Today)"],
+      ["team", "👥 Team Ka Haal (Team)"],
+      ["followup", "📋 Follow-up & Delegated"],
+      ["capture", "📥 Naya Kaam (Add / Inbox)"],
+      ["weekly", "🗓️ Is Hafte Ka Plan"],
+      ["monthly", "📅 Mahine Ki Deadlines"],
+      ["ideas", "💡 Future Ideas"],
+      ["settings", "⚙️ Settings"]
+    ];
+  } else {
+    // Owner / Solo Executive
+    TABS = [
+      ["daily", "☀️ Aaj Ka Kaam (Today)"],
+      ["team", "👥 Team Ka Haal (Team)"],
+      ["followup", "📋 Follow-up & Delegated"],
+      ["capture", "📥 Naya Kaam (Add / Inbox)"],
+      ["weekly", "🗓️ Is Hafte Ka Plan"],
+      ["monthly", "📅 Mahine Ki Deadlines"],
+      ...(role ? [["goals", "🎯 Business Goals & KRAs"]] : []),
+      ["ideas", "💡 Future Ideas"],
+      ["settings", "⚙️ Settings"]
     ];
   } else if (isManager) {
     TABS = [
@@ -8890,7 +8914,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
               title="Press 'C' anywhere"
             >
               <span>⚡</span>
-              <span>+ Quick Capture</span>
+              <span>＋ नया काम लिखें (Add Task)</span>
               <span className="rounded bg-slate-800 px-1 py-0.2 text-[10px] text-amber-400 font-mono">C</span>
             </button>
 
@@ -9923,7 +9947,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-indigo-100 text-indigo-900 px-3 py-0.5 text-[10px] font-black uppercase tracking-wider">
-              📋 DELEGATION &amp; FOLLOW-UP RADAR
+              📋 📋 टीम का काम &amp; फॉलो-अप (Delegation &amp; Follow-up)
             </span>
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-black">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
@@ -9931,10 +9955,10 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
             </span>
           </div>
           <h2 className="text-2xl font-black text-slate-950">
-            Team Tasks &amp; Delegation Control
+            टीम को दिया काम &amp; फॉलो-अप (Team Tasks)
           </h2>
           <p className="text-xs text-slate-600">
-            Assign tasks to employees, inspect live status updates &amp; progress notes, and monitor daily standups without refreshing.
+            टीम के सदस्यों को काम सौंपें, काम का लाइव हाल देखें, और बिना किसी झंझट के सब काम ट्रैक करें।
           </p>
         </div>
 
@@ -9986,16 +10010,16 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
                   <span>⚡</span>
-                  <span>Quick Delegate New Task to Team Member</span>
+                  <span>⚡ टीम के सदस्य को नया काम सौंपें (Assign Task)</span>
                 </span>
-                <span className="text-[11px] font-bold text-indigo-700 hidden sm:inline">Dispatches instant real-time sync + email notification</span>
+                <span className="text-[11px] font-bold text-indigo-700 hidden sm:inline">काम तुरंत कर्मचारी के फोन पर पहुँच जाएगा</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
                 <input
                   value={newTaskText}
                   onChange={e => setNewTaskText(e.target.value)}
-                  placeholder="Task title or deliverable commitment..."
+                  placeholder="क्या काम करना है? (Task Name / Goal)..."
                   className="sm:col-span-4 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-indigo-500"
                 />
 
@@ -10014,7 +10038,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
                   }}
                   className="sm:col-span-3 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
                 >
-                  <option value="">— Assign to Member —</option>
+                  <option value="">— किसको काम देना है (Choose Member) —</option>
                   {team.map(m => (
                     <option key={m.id || m.email || m.user_id} value={m.name || m.email}>
                       {m.label || m.name || m.email}
@@ -10244,7 +10268,7 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
       {subTab === "standups" && (
         <div className="space-y-4">
           <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4 text-xs text-amber-900 font-medium">
-            💡 Live view of what your team members have committed as their <b>Top 3 Deliverables for today</b>, linked to their assigned KRAs.
+            💡 यहाँ लाइव दिखता है कि आपकी टीम ने आज के लिए कौन से <b>3 सबसे जरूरी काम</b> चुने हैं।
           </div>
 
           {filteredTeamMembers.length === 0 && (
@@ -17058,13 +17082,13 @@ function TeamView({ orgCtx, meId, data }){
         <div className="space-y-1 min-w-0 max-w-xl">
           <div className="flex items-center gap-2">
             <span className="text-xl">🤖</span>
-            <h3 className="font-black text-base tracking-tight">AI Team Standup Synthesis &amp; Blocker Radar</h3>
+            <h3 className="font-black text-base tracking-tight">AI Daily Team Report &amp; Blocker Radar (आज की टीम रिपोर्ट)</h3>
             <span className="rounded-full bg-purple-400/20 text-purple-200 border border-purple-400/30 px-2 py-0.5 text-[10px] font-black uppercase">
               Live Radar
             </span>
           </div>
           <p className="text-xs text-purple-200/80 font-medium">
-            Scan all team standup commitments, track cross-team momentum, and instantly isolate blocker bottlenecks with recommended leadership directives.
+            पूरी टीम के आज के काम देखें, किसने क्या शुरू किया, और कहाँ कौन सा काम अटका है तुरंत जानें।
           </p>
         </div>
         <button
@@ -17073,7 +17097,7 @@ function TeamView({ orgCtx, meId, data }){
           className="rounded-2xl bg-white text-slate-950 hover:bg-purple-50 px-5 py-2.5 text-xs font-black shadow-lg transition flex items-center gap-2"
         >
           <span>✨</span>
-          <span>Open Standup AI Radar</span>
+          <span>✨ टीम की आज की AI रिपोर्ट देखें</span>
         </button>
       </div>
 
