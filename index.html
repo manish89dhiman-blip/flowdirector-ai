@@ -6862,6 +6862,129 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, dbTasks, setD
 // ============================================================================
 // FLOWDIRECTOR AI & AUTOMATION ENGINE
 // ============================================================================
+
+// ============================================================================
+// 1-CLICK INTERACTIVE DEMO WORKSPACE LOADER
+// ============================================================================
+function loadDemoWorkspaceData(patch, orgCtx) {
+  const today = todayKey();
+  patch(d => {
+    // 1. Settings & OHV
+    d.settings = d.settings || {};
+    d.settings.income = 1500000;
+    d.settings.hours = 160;
+    d.settings.currency = "USD";
+    d.settings.timezone = "America/New_York";
+
+    // 2. Team Standups for Today (with 1 realistic blocker to showcase AI Blocker Radar)
+    d.standups = d.standups || {};
+    d.standups[today] = {
+      "Sarah Chen": {
+        outcome: "Finalize Enterprise SSO & SAML 2.0 Integration",
+        p1: { text: "Review SOC2 compliance report", kra: "Engineering", done: false },
+        p2: { text: "Fix token refresh expiration bug", kra: "Engineering", done: true },
+        p3: { text: "Prepare API documentation", kra: "Engineering", done: false },
+        blocker: "Waiting on external security penetration audit results from vendor",
+        submittedAt: new Date().toISOString()
+      },
+      "Alex Rivera": {
+        outcome: "Deploy Stripe Webhooks & Subscription Engine",
+        p1: { text: "Optimize database connection pooling under load", kra: "Infrastructure", done: true },
+        p2: { text: "Write webhook retry unit tests", kra: "Infrastructure", done: false },
+        p3: { text: "Setup Datadog alerting monitors", kra: "Infrastructure", done: false },
+        blocker: "",
+        submittedAt: new Date().toISOString()
+      },
+      "Priya Sharma": {
+        outcome: "Launch Q3 Product Hunt & LinkedIn Growth Sprint",
+        p1: { text: "Finalize interactive demo video assets", kra: "Marketing", done: false },
+        p2: { text: "Coordinate launch schedule with community influencers", kra: "Marketing", done: false },
+        p3: { text: "Setup conversion tracking UTMs", kra: "Marketing", done: true },
+        blocker: "",
+        submittedAt: new Date().toISOString()
+      },
+      "David Miller": {
+        outcome: "Close $50,000 ARR Apex Enterprise Contract",
+        p1: { text: "Executive legal terms review call", kra: "Sales", done: false },
+        p2: { text: "Draft customized SLA agreement", kra: "Sales", done: false },
+        p3: { text: "Send customer onboarding kickoff invite", kra: "Sales", done: false },
+        blocker: "",
+        submittedAt: new Date().toISOString()
+      }
+    };
+
+    // 3. Daily Executive Focus Cockpit
+    d.daily = d.daily || {};
+    d.daily[today] = {
+      outcome: "Deliver High-Impact Executive Presentation & Lock In Q3 Strategy",
+      outcomeMark: "",
+      outcomeDelegatedTo: "",
+      outcomeKra: "Leadership",
+      priorities: [
+        "Finalize Q3 revenue projections and board presentation deck",
+        "Unblock Sarah Chen on security penetration audit vendor",
+        "Review enterprise contract terms for $50k ARR deal"
+      ],
+      marks: ["done", "", ""],
+      priorityKra: ["Finance", "Leadership", "Sales"],
+      blocks: {
+        "09:00": "Team Daily Standup & AI Blocker Radar Review",
+        "10:00": "Deep Work Block: Q3 Board Presentation & ARR Projections",
+        "11:00": "Deep Work Block: Q3 Board Presentation & ARR Projections",
+        "14:00": "Executive Strategy Sync & Contract Review",
+        "16:00": "Operational Triage & Daily Scorecard Review"
+      },
+      actual: {},
+      closure: { score: 9, ate: "yes", family: "yes" }
+    };
+
+    // 4. Capture & Backup Tasks ready for AI Breakdown demo
+    d.captures = [
+      {
+        id: uid(),
+        text: "Prepare Q3 Board Presentation and Revenue Projections",
+        tag: "Executive",
+        taskType: "SCHEDULE",
+        due: today
+      },
+      {
+        id: uid(),
+        text: "Implement Stripe Webhooks for Automated Subscription Billing",
+        tag: "Engineering",
+        taskType: "DELEGATE",
+        due: today
+      },
+      {
+        id: uid(),
+        text: "Hire Senior Full-Stack React & Node.js Engineer",
+        tag: "Hiring",
+        taskType: "WEEKLY"
+      },
+      {
+        id: uid(),
+        text: "Audit AWS cloud infrastructure and optimize database query latency",
+        tag: "Ops",
+        taskType: "SCHEDULE"
+      }
+    ];
+
+    d.dailyBackup = [
+      {
+        id: uid(),
+        text: "Review candidate resumes for Senior Backend role",
+        duration: "45m",
+        tag: "Hiring"
+      },
+      {
+        id: uid(),
+        text: "Verify SSL certificate auto-renewal cronjob",
+        duration: "15m",
+        tag: "Ops"
+      }
+    ];
+  });
+}
+
 const AIEngine = {
   getConfig: () => {
     try {
