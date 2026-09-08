@@ -1,4 +1,4 @@
-﻿name: Build FlowDirector Mobile Apps (Android and iOS)
+name: Build FlowDirector Mobile Apps (Android and iOS)
 
 on:
   push:
@@ -82,8 +82,27 @@ jobs:
           cd android
           ./gradlew bundleRelease --stacktrace
           
-          # Generate upload keystore and sign AAB for Google Play Store upload
-          keytool -genkey -v -keystore release.keystore -alias flowdirector -keyalg RSA -keysize 2048 -validity 10000 -storepass flowdirector123 -keypass flowdirector123 -dname "CN=FlowDirector, OU=Productivity, O=FlowDirector, L=Global, ST=State, C=US"
+          # Check if permanent keystore exists in repository
+          if [ -f "flowdirector-release.keystore" ]; then
+            echo "Using existing repository keystore: flowdirector-release.keystore"
+            cp flowdirector-release.keystore release.keystore
+          else
+            echo "Generating permanent upload keystore..."
+            keytool -genkey -v -keystore release.keystore -alias flowdirector -keyalg RSA -keysize 2048 -validity 10000 -storepass flowdirector123 -keypass flowdirector123 -dname "CN=FlowDirector, OU=Productivity, O=FlowDirector, L=Global, ST=State, C=US"
+          fi
+          
+          # Export public PEM certificate for Google Play Console upload key registration/reset
+          keytool -exportcert -rfc -keystore release.keystore -alias flowdirector -file upload_certificate.pem -storepass flowdirector123
+          
+          echo "=== CERTIFICATE FINGERPRINT DETAILS ==="
+          keytool -list -v -keystore release.keystore -alias flowdirector -storepass flowdirector123
+          
+          echo "=== BASE64 ENCODED KEYSTORE ==="
+          base64 -w 0 release.keystore > keystore.base64
+          head -c 100 keystore.base64
+          echo "... (encoded)"
+          
+          # Sign the AAB with release upload key
           jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 -keystore release.keystore -storepass flowdirector123 -keypass flowdirector123 app/build/outputs/bundle/release/app-release.aab flowdirector
           echo "Successfully signed AAB with release upload key."
 
@@ -102,6 +121,16 @@ jobs:
           path: android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload Google Play Upload Certificate (.pem & .keystore)
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowDirector-Google-Play-Upload-Certificate
+          path: |
+            android/upload_certificate.pem
+            android/release.keystore
+          if-no-files-found: error
+          retention-days: 30
 
   # ============================================================================
   # 2. iOS BUILD JOB (Runs on macOS Cloud Runner with Xcode pre-installed)
