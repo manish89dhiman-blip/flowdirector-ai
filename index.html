@@ -42,36 +42,7 @@ window.NativeMobile = {
     return typeof window.Capacitor !== "undefined" && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform();
   },
   getPlatform: function() {
-    if (showQuickAi) {
-    return (
-      <TaskAiBreakdownModal
-        taskTitle={text}
-        taskDetails={details}
-        category={category}
-        onInsertNotes={(notes) => {
-          setDetails(prev => prev ? prev + "\n" + notes : notes);
-          setShowQuickAi(false);
-        }}
-        onAddToDaily={(subtasks) => {
-          patch(d => {
-            d.dailyBackup = d.dailyBackup || [];
-            subtasks.forEach(s => {
-              d.dailyBackup.unshift({
-                id: uid(),
-                text: s.text,
-                duration: s.est || "30m",
-                tag: category || "AI Subtask"
-              });
-            });
-          });
-          setShowQuickAi(false);
-        }}
-        onClose={() => setShowQuickAi(false)}
-      />
-    );
-  }
-
-  return (window.Capacitor && typeof window.Capacitor.getPlatform === "function") ? window.Capacitor.getPlatform() : "web";
+    return (window.Capacitor && typeof window.Capacitor.getPlatform === "function") ? window.Capacitor.getPlatform() : "web";
   },
   haptic: async function(type) {
     try {
@@ -6859,6 +6830,895 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, dbTasks, setD
 }
 
 
+
+// ============================================================================
+// FLOWDIRECTOR AI & AUTOMATION ENGINE
+// ============================================================================
+const AIEngine = {
+  getConfig: () => {
+    try {
+      const raw = localStorage.getItem("flowdirector_ai_config");
+      return raw ? JSON.parse(raw) : { provider: "builtin", apiKey: "", model: "gemini-1.5-flash" };
+    } catch(e) {
+      return { provider: "builtin", apiKey: "", model: "gemini-1.5-flash" };
+    }
+  },
+  saveConfig: (cfg) => {
+    try {
+      localStorage.setItem("flowdirector_ai_config", JSON.stringify(cfg));
+    } catch(e) {}
+  },
+
+  // Test API connection
+  testConnection: async (provider, apiKey, model) => {
+    if (provider === "builtin") {
+      return { ok: true, message: "Built-in FlowDirector AI engine is active and ready!" };
+    }
+    if (!apiKey || !apiKey.trim()) {
+      return { ok: false, message: "Please enter a valid API key." };
+    }
+    if (provider === "gemini") {
+      try {
+        const m = model || "gemini-1.5-flash";
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey.trim()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: "Respond with the word 'OK' in JSON: {\"status\":\"ok\"}" }] }],
+            generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+          })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error?.message || `HTTP ${res.status}`);
+        }
+        return { ok: true, message: `✓ Successfully connected to Google Gemini (${m})!` };
+      } catch (err) {
+        return { ok: false, message: "Gemini Connection Failed: " + err.message };
+      }
+    }
+    if (provider === "openai") {
+      try {
+        const m = model || "gpt-4o-mini";
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey.trim()}`
+          },
+          body: JSON.stringify({
+            model: m,
+            messages: [{ role: "user", content: "Respond with: {\"status\":\"ok\"}" }],
+            response_format: { type: "json_object" }
+          })
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error?.message || `HTTP ${res.status}`);
+        }
+        return { ok: true, message: `✓ Successfully connected to OpenAI (${m})!` };
+      } catch (err) {
+        return { ok: false, message: "OpenAI Connection Failed: " + err.message };
+      }
+    }
+    return { ok: true, message: "Engine ready." };
+  },
+
+  // 1. Task Breakdown Generator
+  breakdownTask: async (title, context = "", category = "") => {
+    const config = AIEngine.getConfig();
+    if (config.provider === "gemini" && config.apiKey) {
+      try {
+        const m = config.model || "gemini-1.5-flash";
+        const prompt = `You are an expert agile productivity coach and project manager. Break down this task into 3 to 6 concrete, actionable sequential subtasks with realistic time estimates.
+Task Title: "${title}"
+Context/Details: "${context}"
+Category: "${category}"
+
+Respond ONLY with valid JSON with this exact schema:
+{
+  "archetype": "Engineering | Executive | Recruiting | Marketing | Sales | Bug Fix | General Project",
+  "subtasks": [
+    { "text": "Actionable step description", "est": "15m | 30m | 45m | 1h | 1.5h", "phase": "Planning | Execution | Verification | Rollout" }
+  ]
+}`;
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${config.apiKey.trim()}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.3, responseMimeType: "application/json" }
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) {
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed.subtasks) && parsed.subtasks.length > 0) {
+              return { title, archetype: parsed.archetype || "Custom Project", subtasks: parsed.subtasks };
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Gemini breakdown error, using built-in:", e);
+      }
+    }
+    return AIEngine._builtinBreakdown(title, context, category);
+  },
+
+  // Built-in Intelligent NLP Task Decomposition
+  _builtinBreakdown: (title, context = "", category = "") => {
+    const raw = (title + " " + context + " " + category).toLowerCase();
+    const subtasks = [];
+
+    const isBug = /fix|bug|crash|error|broken|fail|reproduce|patch|glitch|regression|null|500/i.test(raw);
+    const isTech = /api|stripe|database|backend|frontend|react|deploy|webhook|server|code|oauth|auth|endpoint|cloud|schema|sql|table/i.test(raw);
+    const isExec = /board|deck|presentation|pitch|investor|strategy|revenue|forecast|quarterly|q1|q2|q3|q4|audit|roadmap|okr|kpi|budget/i.test(raw);
+    const isHiring = /hire|interview|candidate|job|recruiting|resume|onboard|screening|offer|talent|headcount/i.test(raw);
+    const isMarketing = /campaign|seo|content|launch|newsletter|social|blog|landing|ad|ads|copywriting|leads|funnel|email/i.test(raw);
+    const isSales = /client|proposal|deal|contract|pricing|outreach|demo|customer|prospect|meeting|quote|negotiation/i.test(raw);
+    const isOps = /process|sop|policy|inventory|vendor|procurement|logistics|compliance|training|audit/i.test(raw);
+
+    if (isBug) {
+      subtasks.push({ text: `Reproduce "${title.replace(/^fix:?\s*/i, '')}" locally and inspect error logs & stacktrace`, est: "20m", phase: "Diagnosis" });
+      subtasks.push({ text: `Isolate root cause and draft fix in development branch`, est: "45m", phase: "Implementation" });
+      subtasks.push({ text: `Write automated regression test and verify edge cases`, est: "25m", phase: "Verification" });
+      subtasks.push({ text: `Deploy patch to staging and verify resolution with team`, est: "15m", phase: "Deployment" });
+    } else if (isTech) {
+      subtasks.push({ text: `Review API schemas, technical constraints, and data contracts`, est: "30m", phase: "Planning" });
+      subtasks.push({ text: `Implement core business logic and database service layer`, est: "1.5h", phase: "Development" });
+      subtasks.push({ text: `Implement error handling, retry policies, and fallback states`, est: "45m", phase: "Hardening" });
+      subtasks.push({ text: `End-to-end integration testing across happy and failure paths`, est: "30m", phase: "Testing" });
+      subtasks.push({ text: `Deploy changes to staging and notify team of API availability`, est: "15m", phase: "Rollout" });
+    } else if (isExec) {
+      subtasks.push({ text: `Gather financial reports, KPI metrics, and operational performance data`, est: "45m", phase: "Research" });
+      subtasks.push({ text: `Draft executive narrative structure and key milestone takeaways`, est: "1h", phase: "Storyboarding" });
+      subtasks.push({ text: `Design slide visuals, financial charts, and revenue forecast projections`, est: "1.5h", phase: "Design" });
+      subtasks.push({ text: `Executive review, feedback incorporation, and rehearsal walkthrough`, est: "45m", phase: "Refinement" });
+      subtasks.push({ text: `Finalize master presentation deck and distribute pre-read summary`, est: "20m", phase: "Distribution" });
+    } else if (isHiring) {
+      subtasks.push({ text: `Refine job scorecard, mandatory competencies, and salary bandwidth`, est: "30m", phase: "Scope" });
+      subtasks.push({ text: `Source and screen top candidate profiles against role criteria`, est: "1h", phase: "Sourcing" });
+      subtasks.push({ text: `Conduct initial culture alignment & technical screening interviews`, est: "1.5h", phase: "Interviews" });
+      subtasks.push({ text: `Facilitate practical skill assessment / panel presentation round`, est: "2h", phase: "Evaluation" });
+      subtasks.push({ text: `Synthesize interview scorecard feedback, check references, and extend offer`, est: "45m", phase: "Closing" });
+    } else if (isMarketing) {
+      subtasks.push({ text: `Define campaign target persona, core value proposition, and KPIs`, est: "30m", phase: "Strategy" });
+      subtasks.push({ text: `Draft high-converting ad copy, landing headlines, and creative assets`, est: "1.5h", phase: "Creation" });
+      subtasks.push({ text: `Configure campaign distribution, UTM tracking tags, and analytics dashboards`, est: "45m", phase: "Setup" });
+      subtasks.push({ text: `Launch campaign across target channels and monitor early delivery`, est: "30m", phase: "Execution" });
+      subtasks.push({ text: `Review 48h conversion data and optimize highest-performing creatives`, est: "30m", phase: "Optimization" });
+    } else if (isSales) {
+      subtasks.push({ text: `Research prospect business model, existing tech stack, and pain points`, est: "30m", phase: "Discovery" });
+      subtasks.push({ text: `Prepare customized executive pitch deck and tailored ROI model`, est: "1h", phase: "Proposal" });
+      subtasks.push({ text: `Conduct live solution demonstration with key stakeholders`, est: "45m", phase: "Presentation" });
+      subtasks.push({ text: `Address commercial questions, terms, and draft master service agreement`, est: "45m", phase: "Negotiation" });
+      subtasks.push({ text: `Execute signed contract and trigger customer onboarding workflow`, est: "20m", phase: "Closing" });
+    } else if (isOps) {
+      subtasks.push({ text: `Audit existing workflow bottlenecks and gather stakeholder requirements`, est: "45m", phase: "Analysis" });
+      subtasks.push({ text: `Draft updated Standard Operating Procedure (SOP) and checklist`, est: "1h", phase: "Documentation" });
+      subtasks.push({ text: `Conduct team walkthrough session and resolve operational questions`, est: "30m", phase: "Training" });
+      subtasks.push({ text: `Implement updated workflow and monitor compliance metrics for 7 days`, est: "30m", phase: "Monitoring" });
+    } else {
+      subtasks.push({ text: `Define clear success criteria and gather required reference documents`, est: "20m", phase: "Preparation" });
+      subtasks.push({ text: `Execute primary deliverables and draft initial working version`, est: "1.5h", phase: "Execution" });
+      subtasks.push({ text: `Conduct thorough review against standards and polish edge cases`, est: "30m", phase: "Review" });
+      subtasks.push({ text: `Publish final output, distribute to stakeholders, and mark completed`, est: "15m", phase: "Completion" });
+    }
+
+    return {
+      title,
+      archetype: isBug ? "Bug Fix & Remediation" : isTech ? "Engineering & Technical" : isExec ? "Executive & Strategic" : isHiring ? "Recruiting & Talent" : isMarketing ? "Marketing & Growth" : isSales ? "Sales & Client Deal" : isOps ? "Operations & Process" : "General Project",
+      subtasks
+    };
+  },
+
+  // 2. Priority & Eisenhower Matrix Estimator
+  estimatePriority: async (title, details = "", dueDate = "") => {
+    const raw = (title + " " + details).toLowerCase();
+    let urgencyScore = 5;
+    let impactScore = 5;
+
+    if (/urgent|today|asap|now|immediately|critical|blocker|broken|crash|leak|down|outage|emergency|due today|overdue|production|bug|fix/i.test(raw)) urgencyScore += 4;
+    if (/tomorrow|soon|this week|deadline|eod|review|pending|milestone/i.test(raw)) urgencyScore += 2;
+    if (/someday|later|maybe|explore|backlog|eventually|future|optional/i.test(raw)) urgencyScore -= 3;
+
+    if (dueDate) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (dueDate <= today) urgencyScore += 4;
+      else if (new Date(dueDate) - new Date(today) <= 2 * 86400000) urgencyScore += 2;
+    }
+
+    if (/revenue|customer|board|security|launch|billing|stripe|database|production|ceo|pitch|contract|core|hiring|architecture|auth|deal|vip|investor/i.test(raw)) impactScore += 4;
+    if (/optimization|refactor|meeting|sync|clean|organize|update docs|notes/i.test(raw)) impactScore -= 1;
+    if (/trivial|minor|typo|color|icon|tweak|formatting|spacing/i.test(raw)) impactScore -= 3;
+
+    urgencyScore = Math.max(1, Math.min(10, urgencyScore));
+    impactScore = Math.max(1, Math.min(10, impactScore));
+
+    let priority = "p3";
+    let quadrant = "Q3: Delegate";
+    let rationale = "";
+
+    if (impactScore >= 7 && urgencyScore >= 7) {
+      priority = "p1";
+      quadrant = "Q1: Do First (Critical & Urgent)";
+      rationale = "High strategic leverage with immediate deadline. Requires top focus today.";
+    } else if (impactScore >= 7 && urgencyScore < 7) {
+      priority = "p2";
+      quadrant = "Q2: Schedule (Strategic & High Value)";
+      rationale = "High long-term organizational impact. Protect a dedicated deep-work focus block.";
+    } else if (impactScore < 7 && urgencyScore >= 7) {
+      priority = "p3";
+      quadrant = "Q3: Delegate (Operational & Time-Sensitive)";
+      rationale = "Immediate operational need with moderate leverage. Ideal for team delegation or quick batching.";
+    } else {
+      priority = "p4";
+      quadrant = "Q4: Backlog / Eliminate (Low Value)";
+      rationale = "Low urgency and modest strategic impact. De-prioritize or handle during low-energy gaps.";
+    }
+
+    return { priority, quadrant, urgencyScore, impactScore, rationale, isHighLeverage: impactScore >= 7 };
+  },
+
+  // 3. Team Standup Synthesis & Blocker Radar
+  summarizeStandups: async (standupData, dbTasks = [], orgName = "Workspace") => {
+    const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", year: "numeric" });
+    const members = Object.keys(standupData || {});
+    const activeBlockers = [];
+    const keyPriorities = [];
+
+    members.forEach(mName => {
+      const s = standupData[mName];
+      if (!s) return;
+      if (s.blocker && s.blocker.trim()) {
+        activeBlockers.push({ member: mName, reason: s.blocker.trim(), type: "Standup Blocker" });
+      }
+      if (s.outcome && s.outcome.trim()) {
+        keyPriorities.push({ member: mName, text: s.outcome.trim(), isBigOne: true });
+      }
+      [s.p1, s.p2, s.p3].forEach((p, idx) => {
+        if (p && p.text && p.text.trim()) {
+          keyPriorities.push({ member: mName, text: p.text.trim(), priority: `P${idx + 1}`, done: !!p.done });
+        }
+      });
+    });
+
+    (dbTasks || []).forEach(t => {
+      if (t.status === "blocked") {
+        activeBlockers.push({
+          member: t.assignee_name || t.assignee_email || "Team Member",
+          task: t.title,
+          reason: t.details || "Marked as blocked in workspace",
+          type: "Delegated Task Blocker"
+        });
+      }
+    });
+
+    const totalPriorities = keyPriorities.length;
+    const completedCount = keyPriorities.filter(p => p.done).length;
+    const velocityScore = totalPriorities > 0 ? Math.round((completedCount / totalPriorities) * 100) : 0;
+
+    let executiveSummary = "";
+    if (activeBlockers.length > 0) {
+      executiveSummary = `${members.length} team members active today with ${totalPriorities} registered commitments. 🚨 ${activeBlockers.length} active blocker(s) detected that require immediate leadership intervention to prevent downstream delays.`;
+    } else {
+      executiveSummary = `${members.length} team members aligned on ${totalPriorities} key deliverables with 0 reported blockers. Organizational velocity is strong with high execution momentum across all teams.`;
+    }
+
+    const recommendations = [];
+    if (activeBlockers.length > 0) {
+      const uniqueBlocked = [...new Set(activeBlockers.map(b => b.member))];
+      recommendations.push(`Schedule an immediate 5-minute unblocking sync with ${uniqueBlocked.slice(0, 3).join(", ")}.`);
+    }
+    if (totalPriorities > members.length * 3) {
+      recommendations.push("High task density detected. Encourage members to lock in their single #1 Big Outcome.");
+    } else {
+      recommendations.push("Priorities are well-balanced. Protect afternoon focus blocks from ad-hoc interruptions.");
+    }
+
+    return {
+      today,
+      orgName,
+      memberCount: members.length,
+      executiveSummary,
+      activeBlockers,
+      keyPriorities,
+      recommendations,
+      velocityScore
+    };
+  }
+};
+
+// ============================================================================
+// AI TASK BREAKDOWN MODAL COMPONENT
+// ============================================================================
+function TaskAiBreakdownModal({ taskTitle, taskDetails = "", category = "", onInsertNotes, onAddToDaily, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [breakdown, setBreakdown] = useState(null);
+  const [triage, setTriage] = useState(null);
+  const [selectedIndices, setSelectedIndices] = useState({});
+  const [copied, setCopied] = useState(false);
+  const [customStep, setCustomStep] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    Promise.all([
+      AIEngine.breakdownTask(taskTitle, taskDetails, category),
+      AIEngine.estimatePriority(taskTitle, taskDetails)
+    ]).then(([bd, tr]) => {
+      if (!active) return;
+      setBreakdown(bd);
+      setTriage(tr);
+      const sel = {};
+      (bd.subtasks || []).forEach((_, i) => { sel[i] = true; });
+      setSelectedIndices(sel);
+      setLoading(false);
+    }).catch(err => {
+      if (!active) return;
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [taskTitle, taskDetails, category]);
+
+  const toggleIndex = (i) => {
+    setSelectedIndices(prev => ({ ...prev, [i]: !prev[i] }));
+  };
+
+  const updateSubtaskText = (i, newText) => {
+    setBreakdown(prev => {
+      if (!prev) return prev;
+      const subs = [...prev.subtasks];
+      subs[i] = { ...subs[i], text: newText };
+      return { ...prev, subtasks: subs };
+    });
+  };
+
+  const removeSubtask = (i) => {
+    setBreakdown(prev => {
+      if (!prev) return prev;
+      const subs = prev.subtasks.filter((_, idx) => idx !== i);
+      return { ...prev, subtasks: subs };
+    });
+  };
+
+  const addCustomStep = (e) => {
+    e.preventDefault();
+    if (!customStep.trim()) return;
+    setBreakdown(prev => {
+      if (!prev) return prev;
+      const newIdx = prev.subtasks.length;
+      setSelectedIndices(s => ({ ...s, [newIdx]: true }));
+      return {
+        ...prev,
+        subtasks: [...prev.subtasks, { text: customStep.trim(), est: "30m", phase: "Custom Step" }]
+      };
+    });
+    setCustomStep("");
+  };
+
+  const getSelectedSubtasks = () => {
+    if (!breakdown || !breakdown.subtasks) return [];
+    return breakdown.subtasks.filter((_, i) => selectedIndices[i]);
+  };
+
+  const handleInsertNotes = () => {
+    const selected = getSelectedSubtasks();
+    if (selected.length === 0) return;
+    const noteContent = `✨ AI Action Breakdown (${breakdown.archetype}):\n` + 
+      selected.map(s => `• [ ] ${s.text} [${s.est}]`).join("\n");
+    if (onInsertNotes) onInsertNotes(noteContent);
+    onClose();
+  };
+
+  const handleAddToDaily = () => {
+    const selected = getSelectedSubtasks();
+    if (selected.length === 0) return;
+    if (onAddToDaily) onAddToDaily(selected);
+    onClose();
+  };
+
+  const handleCopyClipboard = () => {
+    const selected = getSelectedSubtasks();
+    const text = `✨ AI Subtasks for "${taskTitle}":\n` + 
+      selected.map((s, i) => `${i + 1}. ${s.text} (${s.est} - ${s.phase})`).join("\n");
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }).catch(() => {});
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-indigo-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-indigo-100 p-5 bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-white">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md font-black text-lg">
+              ✨
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-slate-900 text-base truncate">AI Task Breakdown &amp; Subtasks</h3>
+                {breakdown?.archetype && (
+                  <span className="rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 px-2.5 py-0.5 text-[10px] font-black uppercase">
+                    {breakdown.archetype}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 truncate mt-0.5">"{taskTitle}"</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 font-bold text-sm">✕</button>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {loading ? (
+            <div className="py-12 text-center space-y-3">
+              <div className="inline-block w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-xs font-black text-indigo-900 animate-pulse">FlowDirector AI is synthesizing deliverables and sequencing actionable steps...</p>
+            </div>
+          ) : (
+            <>
+              {/* Smart Triage Bar */}
+              {triage && (
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-3.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-lg bg-indigo-600 text-white px-2 py-0.5 font-black text-[10px] uppercase">
+                      {triage.priority.toUpperCase()}
+                    </span>
+                    <span className="font-black text-slate-900">{triage.quadrant}</span>
+                  </div>
+                  <span className="text-[11px] text-slate-600 font-medium italic">
+                    {triage.rationale}
+                  </span>
+                </div>
+              )}
+
+              {/* Subtask Checkbox List */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
+                  <span>Action Sequence ({getSelectedSubtasks().length} of {breakdown?.subtasks?.length || 0} selected):</span>
+                  <span className="text-[11px] text-slate-400 font-medium">Click text to edit</span>
+                </div>
+
+                {breakdown?.subtasks?.map((sub, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`flex items-start gap-3 rounded-2xl border p-3 transition ${
+                      selectedIndices[idx] ? "bg-white border-indigo-200 shadow-2xs" : "bg-slate-50/60 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={!!selectedIndices[idx]} 
+                      onChange={() => toggleIndex(idx)}
+                      className="w-4 h-4 rounded text-indigo-600 accent-indigo-600 mt-1 cursor-pointer" 
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <input 
+                        type="text" 
+                        value={sub.text} 
+                        onChange={e => updateSubtaskText(idx, e.target.value)}
+                        className="w-full text-xs font-bold text-slate-900 bg-transparent outline-none focus:bg-indigo-50/50 rounded px-1 -mx-1" 
+                      />
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-bold">
+                          ⏱️ {sub.est}
+                        </span>
+                        <span className="rounded-md bg-indigo-50 text-indigo-700 px-2 py-0.5 text-[10px] font-bold">
+                          🏷️ {sub.phase}
+                        </span>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => removeSubtask(idx)}
+                      className="text-slate-300 hover:text-rose-500 p-1 text-xs font-bold rounded"
+                      title="Remove step"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+
+                {/* Add Custom Step Input */}
+                <form onSubmit={addCustomStep} className="flex items-center gap-2 pt-1">
+                  <input 
+                    type="text" 
+                    value={customStep} 
+                    onChange={e => setCustomStep(e.target.value)}
+                    placeholder="+ Add custom subtask step..." 
+                    className="flex-1 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 outline-none focus:bg-white focus:border-indigo-400"
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={!customStep.trim()}
+                    className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 text-xs font-bold disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+                </form>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50/80 flex flex-wrap items-center justify-between gap-2">
+          <button 
+            type="button"
+            onClick={handleCopyClipboard}
+            className="rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 px-3 py-2 text-xs font-bold transition flex items-center gap-1.5"
+          >
+            <span>{copied ? "✓ Copied!" : "📋 Copy Text"}</span>
+          </button>
+
+          <div className="flex items-center gap-2 ml-auto">
+            {onAddToDaily && (
+              <button 
+                type="button"
+                onClick={handleAddToDaily}
+                disabled={loading || getSelectedSubtasks().length === 0}
+                className="rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 px-3.5 py-2 text-xs font-black transition disabled:opacity-50 flex items-center gap-1"
+              >
+                <span>📅</span>
+                <span>Add to Schedule</span>
+              </button>
+            )}
+
+            {onInsertNotes && (
+              <button 
+                type="button"
+                onClick={handleInsertNotes}
+                disabled={loading || getSelectedSubtasks().length === 0}
+                className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-xs font-black shadow-md transition disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <span>✨</span>
+                <span>Insert into Notes ({getSelectedSubtasks().length})</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AI TEAM STANDUP SYNTHESIS & BLOCKER RADAR MODAL
+// ============================================================================
+function TeamAiStandupSummaryModal({ standupData = {}, dbTasks = [], orgCtx, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [summary, setSummary] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  const generate = () => {
+    setLoading(true);
+    const orgName = orgCtx?.org?.name || "Workspace";
+    AIEngine.summarizeStandups(standupData, dbTasks, orgName)
+      .then(res => {
+        setSummary(res);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    generate();
+  }, [standupData, dbTasks]);
+
+  const copyForSlack = () => {
+    if (!summary) return;
+    const lines = [];
+    lines.push(`🤖 *DAILY STANDUP AI SYNTHESIS — ${summary.orgName.toUpperCase()}*`);
+    lines.push(`📅 ${summary.today} | 👥 ${summary.memberCount} Active Members | ⚡ Velocity: ${summary.velocityScore}%`);
+    lines.push("");
+    lines.push(`📊 *Executive Overview:*`);
+    lines.push(summary.executiveSummary);
+    lines.push("");
+
+    if (summary.activeBlockers && summary.activeBlockers.length > 0) {
+      lines.push(`🚨 *BLOCKER & BOTTLENECK RADAR (${summary.activeBlockers.length}):*`);
+      summary.activeBlockers.forEach(b => {
+        lines.push(`• ⚠️ *@${b.member}*: ${b.reason} ${b.task ? `(${b.task})` : ''}`);
+      });
+      lines.push("");
+    } else {
+      lines.push(`✅ *Blockers:* 0 active blockers reported! Full operational momentum.`);
+      lines.push("");
+    }
+
+    lines.push(`🎯 *Key Team Deliverables Today:*`);
+    summary.keyPriorities.slice(0, 10).forEach(p => {
+      lines.push(`• ${p.isBigOne ? '⭐' : '•'} *${p.member}*: ${p.text} ${p.done ? '(✓ Done)' : ''}`);
+    });
+    lines.push("");
+
+    if (summary.recommendations && summary.recommendations.length > 0) {
+      lines.push(`💡 *Leadership Directives:*`);
+      summary.recommendations.forEach(r => lines.push(`• ${r}`));
+    }
+
+    const fullText = lines.join("\n");
+    navigator.clipboard.writeText(fullText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    }).catch(() => {});
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-3xl border border-purple-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-purple-100 p-5 bg-gradient-to-r from-purple-50 via-indigo-50/50 to-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center shadow-md font-black text-lg">
+              🤖
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-slate-900 text-base">{getActiveTerms().aiRadarHeader}</h3>
+                <span className="rounded-full bg-purple-100 text-purple-900 border border-purple-200 px-2 py-0.5 text-[10px] font-black">
+                  LIVE RADAR
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">{summary?.today || "Today"} · {orgCtx?.org?.name || "Workspace"}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 font-bold text-sm">✕</button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {loading ? (
+            <div className="py-16 text-center space-y-3">
+              <div className="inline-block w-8 h-8 border-3 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-xs font-black text-purple-900 animate-pulse">Scanning team standups, priorities, and dependency blockers...</p>
+            </div>
+          ) : (
+            <>
+              {/* Executive Summary Card */}
+              <div className="rounded-2xl border border-purple-100 bg-gradient-to-br from-purple-50/80 to-indigo-50/40 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase text-purple-900 tracking-wider">{getActiveTerms().aiSummaryTitle}</span>
+                  <span className="text-xs font-bold text-purple-700">
+                    {summary?.memberCount || 0} Active Members
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-slate-800 leading-relaxed">
+                  {summary?.executiveSummary}
+                </p>
+              </div>
+
+              {/* Blocker Radar Box */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                    <span>🚨</span>
+                    <span>Blocker &amp; Bottleneck Radar</span>
+                  </span>
+                  {summary?.activeBlockers?.length > 0 ? (
+                    <span className="rounded-full bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-0.5 text-[10px] font-black animate-pulse">
+                      {summary.activeBlockers.length} Active Blocker(s)
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-0.5 text-[10px] font-black">
+                      ✓ All Paths Clear
+                    </span>
+                  )}
+                </div>
+
+                {summary?.activeBlockers?.length > 0 ? (
+                  <div className="space-y-2">
+                    {summary.activeBlockers.map((b, i) => (
+                      <div key={i} className="rounded-2xl border border-rose-200 bg-rose-50/70 p-3.5 flex items-start gap-3">
+                        <span className="text-base mt-0.5">⚠️</span>
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-rose-950">{b.member}</span>
+                            <span className="rounded-md bg-white border border-rose-200 px-1.5 py-0.5 text-[10px] font-bold text-rose-800">
+                              {b.type}
+                            </span>
+                          </div>
+                          <p className="text-xs text-rose-900 font-medium whitespace-pre-wrap">{b.reason}</p>
+                          {b.task && <p className="text-[11px] font-bold text-rose-700">Related Task: {b.task}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 text-center">
+                    <p className="text-xs font-bold text-emerald-900">✨ Zero blockers reported across the team today. High velocity execution!</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Team Commitments Grid */}
+              <div className="space-y-2.5">
+                <span className="text-xs font-extrabold text-slate-900 block">{getActiveTerms().aiPrioritiesTitle}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {summary?.keyPriorities?.slice(0, 12).map((p, i) => (
+                    <div key={i} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-slate-900">{p.member}</span>
+                        {p.isBigOne ? (
+                          <span className="rounded bg-amber-100 text-amber-900 border border-amber-200 px-1.5 py-0.5 text-[9px] font-black">
+                            ⭐ BIG #1
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-slate-400">{p.priority || "P1"}</span>
+                        )}
+                      </div>
+                      <p className="text-slate-700 font-medium truncate">{p.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Leadership Recommendations */}
+              {summary?.recommendations?.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-2">
+                  <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">{getActiveTerms().aiRecommendationsTitle}</span>
+                  <ul className="space-y-1.5 text-xs text-slate-700 font-medium">
+                    {summary.recommendations.map((r, i) => (
+                      <li key={i} className="flex items-start gap-2">
+                        <span className="text-indigo-600 font-bold">•</span>
+                        <span>{r}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50/80 flex items-center justify-between gap-3">
+          <button 
+            onClick={generate}
+            className="rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 px-3 py-2 text-xs font-bold transition flex items-center gap-1.5"
+          >
+            <span>🔄</span>
+            <span>Regenerate AI Analysis</span>
+          </button>
+
+          <button 
+            onClick={copyForSlack}
+            disabled={loading || !summary}
+            className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 text-xs font-black shadow-md transition disabled:opacity-50 flex items-center gap-1.5 ml-auto"
+          >
+            <span>{copied ? "✓ Copied to Clipboard!" : "📋 Copy for Slack / Teams Channel"}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// AI INTELLIGENCE CONFIGURATION SECTION (SETTINGS)
+// ============================================================================
+function AiIntelligenceSection() {
+  const [config, setConfig] = useState(AIEngine.getConfig());
+  const [testResult, setTestResult] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+
+  const save = (newCfg) => {
+    setConfig(newCfg);
+    AIEngine.saveConfig(newCfg);
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    const res = await AIEngine.testConnection(config.provider, config.apiKey, config.model);
+    setTestResult(res);
+    setTesting(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Callout>
+        AI &amp; Automation Engine: FlowDirector powers automatic task decomposition, subtask generation, Eisenhower priority triage, and daily standup blocker radar.
+      </Callout>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-xs space-y-5">
+        <div>
+          <h3 className="text-base font-black text-slate-950 flex items-center gap-2">
+            <span>✨</span>
+            <span>AI Intelligence Provider &amp; Model</span>
+          </h3>
+          <p className="text-xs text-slate-500 mt-1">
+            Choose your AI processing provider. Built-in engine works out of the box with zero setup. You can also connect your own Google Gemini or OpenAI API key for advanced reasoning.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            { id: "builtin", name: "Built-in FlowDirector Engine", desc: "Instant offline NLP breakdown & heuristics. Zero API key needed.", badge: "Default & Free" },
+            { id: "gemini", name: "Google Gemini 1.5 Flash", desc: "Fast multimodal reasoning and deep decomposition.", badge: "Recommended" },
+            { id: "openai", name: "OpenAI (GPT-4o Mini / GPT-4o)", desc: "Advanced structured subtask generation.", badge: "Custom Key" }
+          ].map(p => {
+            const active = config.provider === p.id;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => save({ ...config, provider: p.id })}
+                className={`rounded-2xl border-2 p-4 text-left transition flex flex-col justify-between gap-3 ${
+                  active 
+                    ? "border-amber-400 bg-amber-50/50 ring-2 ring-amber-400/20 shadow-xs" 
+                    : "border-slate-200 bg-white hover:bg-slate-50"
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-900 text-xs">{p.name}</span>
+                    {active && <span className="rounded-full bg-amber-400 text-slate-950 px-1.5 py-0.2 text-[9px] font-black uppercase">Active</span>}
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-medium leading-tight">{p.desc}</p>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{p.badge}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {config.provider !== "builtin" && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+            <div>
+              <label className="text-xs font-black uppercase tracking-wider text-slate-700 block mb-1">
+                {config.provider === "gemini" ? "Google Gemini API Key" : "OpenAI API Key"}
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={config.apiKey || ""}
+                  onChange={e => save({ ...config, apiKey: e.target.value })}
+                  placeholder={config.provider === "gemini" ? "AIzaSy..." : "sk-..."}
+                  className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono font-bold text-slate-900 outline-none focus:border-amber-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                >
+                  {showKey ? "Hide" : "Show"}
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Your key is stored strictly on your device localStorage and sent directly to {config.provider === "gemini" ? "Google" : "OpenAI"}.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={handleTest}
+                disabled={testing || !config.apiKey}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-2 text-xs font-black transition shadow-xs disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <span>{testing ? "Testing Connection..." : "⚡ Test Connection"}</span>
+              </button>
+
+              {testResult && (
+                <span className={`text-xs font-bold px-3 py-1.5 rounded-xl ${testResult.ok ? "bg-emerald-100 text-emerald-900 border border-emerald-300" : "bg-rose-100 text-rose-900 border border-rose-300"}`}>
+                  {testResult.message}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // DYNAMIC TERMINOLOGY DICTIONARY (INDIAN MSME vs GLOBAL EXECUTIVE)
 // ============================================================================
@@ -6884,7 +7744,7 @@ const FD_TERMS = {
     aiBreakdownBtn: "AI काम के टुकड़े करें (Subtasks)",
     aiRadarBtn: "टीम की आज की AI रिपोर्ट देखें",
     aiRadarHeader: "AI Daily Team Report & Blocker Radar (आज की टीम रिपोर्ट)",
-    aiRadarSub: "{getActiveTerms(data).aiRadarSub}",
+    aiRadarSub: "पूरी टीम के आज के काम देखें, किसने क्या शुरू किया, और कहाँ कौन सा काम अटका है तुरंत जानें।",
     aiSummaryTitle: "📊 आज की टीम समरी (Team Summary)",
     aiPrioritiesTitle: "🎯 टीम के आज के मुख्य काम (Team Priorities)",
     aiRecommendationsTitle: "💡 मालिक / मैनेजर के लिए जरूरी निर्देश",
@@ -7290,6 +8150,15 @@ function TaskDetailAndNotesModal({ task, onClose, onUpdateTask, onAddNote, onDel
             <div className="pt-2 border-t border-slate-200/80 space-y-2">
               <span className="text-[10px] font-black uppercase text-slate-400 block">Workflow & AI Actions:</span>
               <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAiBreakdown(true)}
+                  className="rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-950 px-3 py-1.5 text-xs font-black transition shadow-2xs flex items-center gap-1.5"
+                  title="Decompose this task into actionable subtasks with AI"
+                >
+                  <span>✨</span>
+                  <span>{getActiveTerms().aiBreakdownBtn}</span>
+                </button>
                 {isAssignee && !isDone && (
                   <>
                     <button
