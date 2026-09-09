@@ -6608,13 +6608,15 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, dbTasks, setD
     const payload = {
       id: uid(),
       text: t + (details ? ` — ${details}` : ""),
+      details: details || "",
       tag: category || "",
       taskType: taskType || "",
       due: due || "",
       time: time || "",
       timeMode: timeMode || "block",
       duration: duration || "",
-      assignee: assignee || ""
+      assignee: assignee || "",
+      done: false
     };
 
     // If delegating to a team member in an organization, create live delegated task & dispatch email
@@ -9346,6 +9348,9 @@ function CaptureView({ data, patch, ohv, orgCtx, meId, dbTasks, setDbTasks }){
   const [selectedType, setSelectedType] = useState("SCHEDULE");
   const [filterCat, setFilterCat] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const say = (t) => { setNotice(t); setTimeout(() => setNotice(""), 4000); };
 
   const team = getEffectiveTeam(data, orgCtx);
 
@@ -9389,31 +9394,41 @@ function CaptureView({ data, patch, ohv, orgCtx, meId, dbTasks, setDbTasks }){
   
   const transfer = (item) => { 
     if (!item.taskType) return;
+    const itemDetails = (item.details || "").trim();
     const payload = {
       id: uid(),
-      text: item.item + (item.details ? ` — ${details}` : ""),
-      tag: item.category,
+      text: item.item + (itemDetails ? ` — ${itemDetails}` : ""),
+      details: itemDetails,
+      tag: item.category || "",
       taskType: item.taskType,
       due: item.due || "",
       time: item.time || "",
       timeMode: item.timeMode || "block",
       duration: item.duration || "",
-      assignee: item.assignee || ""
+      assignee: item.assignee || "",
+      done: false
     };
 
     // If delegating in an organization, create live delegated task & dispatch email
     if (item.taskType === "DELEGATE" && item.assignee && orgCtx?.org?.id) {
-      const mem = team.find(m => m.name.toLowerCase() === item.assignee.toLowerCase() || (m.email && m.email.toLowerCase() === item.assignee.toLowerCase()));
+      const mem = team.find(m => 
+        (m.name && m.name.toLowerCase() === item.assignee.toLowerCase()) || 
+        (m.email && m.email.toLowerCase() === item.assignee.toLowerCase()) ||
+        (m.label && m.label.toLowerCase() === item.assignee.toLowerCase()) ||
+        m.id === item.assignee ||
+        m.user_id === item.assignee
+      );
       const delegatorName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Founder / Leadership";
       const delegatorEmail = (orgCtx?.profile?.email || "").toLowerCase();
       createDelegatedTask(orgCtx.org.id, meId, {
         assignee_id: mem?.user_id || null,
-        assignee_email: mem?.email || "",
+        assignee_email: mem?.email || (item.assignee.includes('@') ? item.assignee : ""),
         assignee_name: mem?.name || item.assignee,
-        department: mem?.department || "General",
+        department: mem?.department || item.category || "General",
         title: item.item,
-        details: item.details || "",
-        due_date: item.due || todayKey()
+        details: itemDetails,
+        due_date: item.due || todayKey(),
+        status: "pending"
       }, delegatorName, delegatorEmail).then(created => {
         if (created && setDbTasks) {
           setDbTasks(prev => [created, ...prev.filter(x => x.id !== created.id)]);
@@ -9426,29 +9441,30 @@ function CaptureView({ data, patch, ohv, orgCtx, meId, dbTasks, setDbTasks }){
           delegator_name: delegatorName,
           company_name: orgCtx?.org?.name || "Workspace",
           due_date: item.due || todayKey(),
-          notes: item.details || "",
+          notes: itemDetails,
           member_name: mem.name || mem.email
         });
       }
     }
 
+    let destName = "";
     patch(d => { 
       const t = item.taskType; 
       let dest = "";
       if (["SCHEDULE", "DAILY", "WAITING", "WAITING-FOR", "PROJECT", "DELEGATE"].includes(t)) { 
         d.dailyBackup = d.dailyBackup || [];
         d.dailyBackup.unshift(payload); 
-        dest = t === "DELEGATE" ? "Delegation" : (t === "WAITING" || t === "WAITING-FOR") ? "Waiting / Follow-up" : "Daily schedule"; 
+        dest = t === "DELEGATE" ? "Delegation Radar" : (t === "WAITING" || t === "WAITING-FOR") ? "Waiting / Follow-up" : "Daily Cockpit"; 
       }
       else if (t === "WEEKLY") { 
         d.weeklySomeday = d.weeklySomeday || [];
         d.weeklySomeday.unshift(payload); 
-        dest = "Weekly someday"; 
+        dest = "Weekly Horizon"; 
       }
       else if (t === "MONTHLY") { 
         d.monthlyTray = d.monthlyTray || [];
         d.monthlyTray.unshift(payload); 
-        dest = "Monthly tray"; 
+        dest = "Monthly Blueprint"; 
       }
       else if (t === "MAYBE") { 
         d.maybe = d.maybe || [];
@@ -9457,21 +9473,33 @@ function CaptureView({ data, patch, ohv, orgCtx, meId, dbTasks, setDbTasks }){
       }
       else if (t === "REFERENCE" || t === "AUTOMATE") { 
         d.reference = d.reference || [];
-        d.reference.unshift({ id: uid(), text: item.item, note: item.details }); 
-        dest = "Reference"; 
+        d.reference.unshift({ id: uid(), text: item.item, note: itemDetails }); 
+        dest = "Ideas & Reference"; 
       }
       else if (t === "DELETE") { 
         d.captures = d.captures.filter(x => x.id !== item.id); 
+        destName = "Deleted";
         return; 
       }
+      destName = dest;
       const c = d.captures.find(x => x.id === item.id); 
       if (c) { c.status = "Transferred"; c.dest = dest; }
     });
+
+    try { window.NativeMobile?.haptic?.("success"); } catch (_) {}
+    say(`✓ "${item.item}" transferred to ${destName || "destination"}!`);
   };
 
   return (
     <div className="space-y-5">
       <Callout>Dump everything here first — what is written first, survives. Decide later. Nothing moves to your schedule until you press Transfer.</Callout>
+
+      {notice && (
+        <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-black text-emerald-900 shadow-sm flex items-center gap-2 animate-fade-in">
+          <span>✓</span>
+          <span>{notice}</span>
+        </div>
+      )}
 
       {/* 1. Rapid Capture Desk */}
       <div className="rounded-3xl border-2 border-slate-200 bg-white p-4 sm:p-6 shadow-xs space-y-3.5">
