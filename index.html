@@ -317,7 +317,8 @@ const SEED = {
   monthly:{}, monthlyTray:[], recurringMonthly:[], maybe:[], reference:[],
   standups:{},
   delegatedTasks:[],
-  taskTemplates:[]
+  taskTemplates:[],
+  workProfiles:{}
 };
 
 /* ------------------------------------------------------------------ */
@@ -6834,6 +6835,1260 @@ function GlobalQuickCaptureModal({ data, patch, ohv, orgCtx, meId, dbTasks, setD
 
 
 
+
+// ============================================================================
+// EMPLOYEE WORK PROFILE & CADENCE BLUEPRINT (DAILY, WEEKLY, MONTHLY)
+// ============================================================================
+
+function getEffectiveWorkProfile(data, orgCtx, targetUserId) {
+  if (!targetUserId) return null;
+  if (data?.workProfiles && data.workProfiles[targetUserId]) {
+    return data.workProfiles[targetUserId];
+  }
+  if (orgCtx?.org?.work_profiles && orgCtx.org.work_profiles[targetUserId]) {
+    return orgCtx.org.work_profiles[targetUserId];
+  }
+  return null;
+}
+
+function WorkProfileEditModal({ member, workProfile, onSave, onClose, depts = [] }) {
+  const [roleTitle, setRoleTitle] = useState(workProfile?.roleTitle || member?.role || "");
+  const [department, setDepartment] = useState(workProfile?.department || member?.department || depts[0] || "General");
+  const [summary, setSummary] = useState(workProfile?.summary || "");
+  
+  const [dailyDuties, setDailyDuties] = useState(
+    Array.isArray(workProfile?.daily) && workProfile.daily.length > 0
+      ? workProfile.daily
+      : [{ id: "wp_d_" + uid(), text: "", est: "30m", tag: department }]
+  );
+  
+  const [weeklyDuties, setWeeklyDuties] = useState(
+    Array.isArray(workProfile?.weekly) && workProfile.weekly.length > 0
+      ? workProfile.weekly
+      : [{ id: "wp_w_" + uid(), text: "", dayOfWeek: "Monday", tag: department }]
+  );
+
+  const [monthlyDuties, setMonthlyDuties] = useState(
+    Array.isArray(workProfile?.monthly) && workProfile.monthly.length > 0
+      ? workProfile.monthly
+      : [{ id: "wp_m_" + uid(), text: "", weekOfMonth: "Week 1", tag: department }]
+  );
+
+  const [activeTab, setActiveTab] = useState("daily");
+
+  const addDailyDuty = () => setDailyDuties(prev => [...prev, { id: "wp_d_" + uid(), text: "", est: "30m", tag: department }]);
+  const removeDailyDuty = (id) => setDailyDuties(prev => prev.filter(d => d.id !== id));
+  const updateDailyDuty = (id, field, val) => setDailyDuties(prev => prev.map(d => d.id === id ? { ...d, [field]: val } : d));
+
+  const addWeeklyDuty = () => setWeeklyDuties(prev => [...prev, { id: "wp_w_" + uid(), text: "", dayOfWeek: "Monday", tag: department }]);
+  const removeWeeklyDuty = (id) => setWeeklyDuties(prev => prev.filter(d => d.id !== id));
+  const updateWeeklyDuty = (id, field, val) => setWeeklyDuties(prev => prev.map(d => d.id === id ? { ...d, [field]: val } : d));
+
+  const addMonthlyDuty = () => setMonthlyDuties(prev => [...prev, { id: "wp_m_" + uid(), text: "", weekOfMonth: "Week 1", tag: department }]);
+  const removeMonthlyDuty = (id) => setMonthlyDuties(prev => prev.filter(d => d.id !== id));
+  const updateMonthlyDuty = (id, field, val) => setMonthlyDuties(prev => prev.map(d => d.id === id ? { ...d, [field]: val } : d));
+
+  const handleSave = (e) => {
+    if (e) e.preventDefault();
+    const cleanDaily = dailyDuties.filter(d => d.text && d.text.trim());
+    const cleanWeekly = weeklyDuties.filter(d => d.text && d.text.trim());
+    const cleanMonthly = monthlyDuties.filter(d => d.text && d.text.trim());
+
+    onSave({
+      userId: member?.user_id || member?.id,
+      roleTitle: roleTitle.trim() || member?.role || "Employee",
+      department,
+      summary: summary.trim(),
+      daily: cleanDaily,
+      weekly: cleanWeekly,
+      monthly: cleanMonthly,
+      updatedAt: new Date().toISOString()
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 p-5 bg-gradient-to-r from-amber-50/60 via-slate-50 to-white">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-400 text-slate-950 text-lg shadow-2xs font-black">💼</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">
+                Work Profile &amp; Cadence Blueprint
+              </h3>
+              <p className="text-xs text-slate-500">
+                Define daily, weekly, and monthly expected duties for <b>{member?.name || member?.email}</b>
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-200 text-sm font-bold">✕</button>
+        </div>
+
+        {/* Cadence Navigation Tabs */}
+        <div className="flex items-center gap-1 border-b border-slate-100 bg-slate-50 px-5 py-2.5 overflow-x-auto">
+          {[
+            { id: "daily", label: `☀️ Daily Duties (${dailyDuties.filter(d=>d.text.trim()).length})` },
+            { id: "weekly", label: `📅 Weekly (${weeklyDuties.filter(d=>d.text.trim()).length})` },
+            { id: "monthly", label: `📆 Monthly (${monthlyDuties.filter(d=>d.text.trim()).length})` },
+            { id: "summary", label: "ℹ️ Role Overview" }
+          ].map(tb => (
+            <button
+              key={tb.id}
+              type="button"
+              onClick={() => setActiveTab(tb.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition ${
+                activeTab === tb.id ? "bg-slate-950 text-white shadow-2xs" : "text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Body Content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {activeTab === "summary" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Official Role Title *</label>
+                  <input
+                    value={roleTitle}
+                    onChange={e => setRoleTitle(e.target.value)}
+                    placeholder="E.g. Performance Marketer, Operations Lead, Store Manager..."
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Department</label>
+                  <select
+                    value={department}
+                    onChange={e => setDepartment(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+                  >
+                    {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 uppercase block mb-1">Role Mission &amp; Scope Summary</label>
+                <textarea
+                  value={summary}
+                  onChange={e => setSummary(e.target.value)}
+                  placeholder="Primary core outcomes and responsibilities expected in this role..."
+                  rows={3}
+                  className="w-full rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-800 outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-1.5 text-xs text-indigo-950">
+                <span className="font-extrabold block">💡 How Auto-Cadence Works:</span>
+                <p className="text-slate-600 leading-relaxed">
+                  Tasks defined in the <b>Daily</b>, <b>Weekly</b>, and <b>Monthly</b> tabs will automatically surface in this team member's Daily Cockpit, Morning Plan, and Weekly Horizon schedules, ensuring clear accountability.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "daily" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-950 uppercase tracking-wider">Daily Expected Responsibilities &amp; SOPs</h4>
+                  <p className="text-[11px] text-slate-500">Auto-hydrates into member's Daily Routine and Morning Plan checklist</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addDailyDuty}
+                  className="rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-3 py-1.5 text-xs font-black shadow-2xs flex items-center gap-1"
+                >
+                  <span>＋</span>
+                  <span>Add Daily Task</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {dailyDuties.map((d, idx) => (
+                  <div key={d.id || idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                    <span className="text-xs font-black text-slate-400 w-5 text-center">{idx + 1}.</span>
+                    <input
+                      value={d.text}
+                      onChange={e => updateDailyDuty(d.id, "text", e.target.value)}
+                      placeholder="E.g. Morning Dispatch Route Triage, Daily Cash Reconciliation..."
+                      className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-amber-400"
+                    />
+                    <select
+                      value={d.est || "30m"}
+                      onChange={e => updateDailyDuty(d.id, "est", e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-bold text-slate-700 outline-none"
+                    >
+                      <option value="15m">15m</option>
+                      <option value="30m">30m</option>
+                      <option value="45m">45m</option>
+                      <option value="1h">1 hr</option>
+                      <option value="1.5h">1.5 hr</option>
+                      <option value="2h">2 hr</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeDailyDuty(d.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 font-bold text-xs"
+                      title="Remove duty"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "weekly" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-950 uppercase tracking-wider">Weekly Recurring Deliverables</h4>
+                  <p className="text-[11px] text-slate-500">Auto-surfaces in Weekly Horizon on the designated day</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addWeeklyDuty}
+                  className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 text-xs font-black shadow-2xs flex items-center gap-1"
+                >
+                  <span>＋</span>
+                  <span>Add Weekly Task</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {weeklyDuties.map((w, idx) => (
+                  <div key={w.id || idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                    <span className="text-xs font-black text-slate-400 w-5 text-center">{idx + 1}.</span>
+                    <input
+                      value={w.text}
+                      onChange={e => updateWeeklyDuty(w.id, "text", e.target.value)}
+                      placeholder="E.g. Weekly Partner SLA Audit, Friday Team Retrospective..."
+                      className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-indigo-400"
+                    />
+                    <select
+                      value={w.dayOfWeek || "Monday"}
+                      onChange={e => updateWeeklyDuty(w.id, "dayOfWeek", e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-bold text-slate-700 outline-none"
+                    >
+                      <option value="Monday">Monday</option>
+                      <option value="Tuesday">Tuesday</option>
+                      <option value="Wednesday">Wednesday</option>
+                      <option value="Thursday">Thursday</option>
+                      <option value="Friday">Friday</option>
+                      <option value="Saturday">Saturday</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeWeeklyDuty(w.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 font-bold text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "monthly" && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-950 uppercase tracking-wider">Monthly Recurring Milestones</h4>
+                  <p className="text-[11px] text-slate-500">Auto-surfaces in Monthly Blueprint for target week</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={addMonthlyDuty}
+                  className="rounded-xl bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 text-xs font-black shadow-2xs flex items-center gap-1"
+                >
+                  <span>＋</span>
+                  <span>Add Monthly Task</span>
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {monthlyDuties.map((m, idx) => (
+                  <div key={m.id || idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                    <span className="text-xs font-black text-slate-400 w-5 text-center">{idx + 1}.</span>
+                    <input
+                      value={m.text}
+                      onChange={e => updateMonthlyDuty(m.id, "text", e.target.value)}
+                      placeholder="E.g. Monthly GST Filing, Physical Inventory Count, Vendor Ledger Audit..."
+                      className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-purple-400"
+                    />
+                    <select
+                      value={m.weekOfMonth || "Week 1"}
+                      onChange={e => updateMonthlyDuty(m.id, "weekOfMonth", e.target.value)}
+                      className="rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-bold text-slate-700 outline-none"
+                    >
+                      <option value="Week 1">Week 1</option>
+                      <option value="Week 2">Week 2</option>
+                      <option value="Week 3">Week 3</option>
+                      <option value="Week 4">Week 4 / Month End</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeMonthlyDuty(m.id)}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 font-bold text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-5 py-2 text-xs font-black shadow-xs flex items-center gap-1.5"
+          >
+            <span>💾</span>
+            <span>Save Work Profile &amp; Cadence</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MORNING DAILY PLAN MODAL (START OF DAY)
+// ============================================================================
+
+function MorningPlanModal({ data, patch, dk, userId, orgCtx, dbTasks = [], onClose, onSubmitted }) {
+  const day = (data?.daily && data.daily[dk]) ? data.daily[dk] : {};
+  const workProfile = getEffectiveWorkProfile(data, orgCtx, userId);
+
+  const [outcome, setOutcome] = useState(day.outcome || "");
+  const [priorities, setPriorities] = useState(
+    Array.isArray(day.priorities) && day.priorities.length === 3
+      ? day.priorities
+      : ["", "", ""]
+  );
+  const [priorityEsts, setPriorityEsts] = useState(
+    Array.isArray(day.priorityEsts) && day.priorityEsts.length === 3
+      ? day.priorityEsts
+      : ["1h", "1h", "45m"]
+  );
+  const [plannedHours, setPlannedHours] = useState(day.morningPlan?.plannedHours || "8");
+
+  const myEmail = (orgCtx?.profile?.email || "").toLowerCase();
+  const myIncomingTasks = (dbTasks || []).filter(t => 
+    (t.assignee_id === userId || (t.assignee_email && t.assignee_email.toLowerCase() === myEmail)) && 
+    t.status !== "completed"
+  );
+
+  const quickPickTask = (text) => {
+    if (!text) return;
+    const emptyIdx = priorities.findIndex(p => !p || !p.trim());
+    if (emptyIdx >= 0) {
+      const next = [...priorities];
+      next[emptyIdx] = text;
+      setPriorities(next);
+    } else {
+      setPriorities([priorities[0], priorities[1], text]);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    if (!outcome.trim() && !priorities.some(p => p && p.trim())) {
+      alert("Please enter at least today's Main Outcome or 1 Priority.");
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    patch(d => {
+      d.daily = d.daily || {};
+      d.daily[dk] = d.daily[dk] || {
+        outcome: "", outcomeMark: "", outcomeDelegatedTo: "", outcomeKra: "",
+        priorities: ["", "", ""], marks: ["", "", ""], priorityDelegatedTo: ["", "", ""], priorityKra: ["", "", ""],
+        blocks: {}, actual: {}, closure: { score: 0, ate: "", family: "" }, routineDone: {}
+      };
+
+      d.daily[dk].outcome = outcome.trim();
+      d.daily[dk].priorities = [priorities[0] || "", priorities[1] || "", priorities[2] || ""];
+      d.daily[dk].priorityEsts = priorityEsts;
+      
+      d.daily[dk].morningPlan = {
+        isSubmitted: true,
+        submittedAt: timestamp,
+        outcome: outcome.trim(),
+        priorities: [priorities[0] || "", priorities[1] || "", priorities[2] || ""],
+        plannedHours: plannedHours || "8"
+      };
+
+      d.standups = d.standups || {};
+      d.standups[dk] = {
+        outcome: outcome.trim(),
+        p1: { text: priorities[0] || "", kra: d.daily[dk].priorityKra?.[0] || "", done: d.daily[dk].marks?.[0] === "done" },
+        p2: { text: priorities[1] || "", kra: d.daily[dk].priorityKra?.[1] || "", done: d.daily[dk].marks?.[1] === "done" },
+        p3: { text: priorities[2] || "", kra: d.daily[dk].priorityKra?.[2] || "", done: d.daily[dk].marks?.[2] === "done" },
+        submittedAt: timestamp,
+        isSubmitted: true
+      };
+    });
+
+    try { window.NativeMobile?.haptic?.("success"); } catch (_) {}
+    if (onSubmitted) onSubmitted();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-amber-300 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-amber-100 p-5 bg-gradient-to-r from-amber-100/70 via-amber-50/40 to-white">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-400 text-slate-950 text-xl shadow-2xs font-black">☀️</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">
+                {getActiveTerms(data).morningPlanTitle || "Start Workday: Daily Morning Plan"}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Set today's #1 outcome, top 3 priorities, and planned hours for {prettyDate(dk)}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-200 text-sm font-bold">✕</button>
+        </div>
+
+        {/* Content Form */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* Main Outcome */}
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 space-y-2">
+            <label className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+              <span>⭐</span>
+              <span>Today's #1 Main Outcome / North Star *</span>
+            </label>
+            <input
+              value={outcome}
+              onChange={e => setOutcome(e.target.value)}
+              placeholder="What single most critical result must be completed before you leave today?..."
+              className="w-full rounded-xl border border-amber-300 bg-white px-3.5 py-2.5 text-xs sm:text-sm font-bold text-slate-900 outline-none focus:border-amber-500"
+            />
+          </div>
+
+          {/* Top 3 Priorities */}
+          <div className="space-y-2.5">
+            <label className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+              <span>🎯</span>
+              <span>Top 3 Needle-Mover Priorities</span>
+            </label>
+
+            {[0, 1, 2].map(idx => (
+              <div key={idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-[11px] font-black text-white">
+                  #{idx + 1}
+                </span>
+                <input
+                  value={priorities[idx] || ""}
+                  onChange={e => {
+                    const next = [...priorities];
+                    next[idx] = e.target.value;
+                    setPriorities(next);
+                  }}
+                  placeholder={`Priority #${idx + 1} task or milestone...`}
+                  className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 outline-none focus:border-amber-400"
+                />
+                <select
+                  value={priorityEsts[idx] || "1h"}
+                  onChange={e => {
+                    const next = [...priorityEsts];
+                    next[idx] = e.target.value;
+                    setPriorityEsts(next);
+                  }}
+                  className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-[11px] font-bold text-slate-700 outline-none"
+                >
+                  <option value="15m">15m</option>
+                  <option value="30m">30m</option>
+                  <option value="45m">45m</option>
+                  <option value="1h">1h</option>
+                  <option value="1.5h">1.5h</option>
+                  <option value="2h">2h</option>
+                  <option value="3h">3h</option>
+                </select>
+              </div>
+            ))}
+          </div>
+
+          {/* Quick Pick Chips (Work Profile & Assigned Tasks) */}
+          <div className="space-y-2 pt-2 border-t border-slate-100">
+            {workProfile && Array.isArray(workProfile.daily) && workProfile.daily.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">
+                  💼 Quick Pick from Your Work Profile Daily Duties:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {workProfile.daily.map(d => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => quickPickTask(d.text)}
+                      className="rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-950 transition flex items-center gap-1"
+                    >
+                      <span>＋</span>
+                      <span>{d.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {myIncomingTasks.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] font-black uppercase text-slate-400 block">
+                  📥 Quick Pick from Assigned Delegated Tasks:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {myIncomingTasks.slice(0, 5).map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => quickPickTask(t.title)}
+                      className="rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 px-2.5 py-1 text-[11px] font-bold text-sky-950 transition flex items-center gap-1"
+                    >
+                      <span>＋</span>
+                      <span className="truncate max-w-[200px]">{t.title}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Planned Hours */}
+          <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-700">Planned Work Hours Today:</span>
+            <select
+              value={plannedHours}
+              onChange={e => setPlannedHours(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-800 outline-none"
+            >
+              <option value="6">6 Hours</option>
+              <option value="7">7 Hours</option>
+              <option value="8">8 Hours (Standard)</option>
+              <option value="9">9 Hours</option>
+              <option value="10">10 Hours</option>
+            </select>
+          </div>
+        </form>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            className="rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 px-6 py-2.5 text-xs font-black shadow-md flex items-center gap-1.5 transition"
+          >
+            <span>☀️</span>
+            <span>Submit Daily Morning Plan</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// END OF DAY (EOD) REVIEW & CLOSEOUT MODAL
+// ============================================================================
+
+const EOD_PENDING_REASONS = [
+  { id: "client_delay", label: "⏳ Waiting on Client / Customer Feedback" },
+  { id: "approval_pending", label: "👤 Awaiting Manager / Leadership Signoff" },
+  { id: "cross_team_dependency", label: "👥 Blocked by Another Department / Member" },
+  { id: "technical_issue", label: "⚠️ Technical / Software / Hardware Glitch" },
+  { id: "firefight_urgent", label: "🔥 Urgent Firefight / Higher Priority Came Up" },
+  { id: "scope_expansion", label: "📝 Scope Increased / Extra Work Discovered" },
+  { id: "time_underestimated", label: "⏱️ Task Took Longer Than Estimated" }
+];
+
+function EodReportModal({ data, patch, dk, userId, orgCtx, onClose, onSubmitted }) {
+  const day = (data?.daily && data.daily[dk]) ? data.daily[dk] : {};
+  const currentMarks = day.marks || ["", "", ""];
+  const currentPriorities = day.priorities || ["", "", ""];
+
+  const [whatHappened, setWhatHappened] = useState(day.eodReport?.whatHappened || "");
+  const [priorityStatuses, setPriorityStatuses] = useState(
+    currentPriorities.map((p, i) => currentMarks[i] === "done" ? "done" : "pending")
+  );
+  const [pendingReasons, setPendingReasons] = useState(
+    day.eodReport?.pendingReasons || ["client_delay", "client_delay", "client_delay"]
+  );
+  const [pendingNotes, setPendingNotes] = useState(
+    day.eodReport?.pendingNotes || ["", "", ""]
+  );
+  const [problemsFaced, setProblemsFaced] = useState(day.eodReport?.problemsFaced || day.closure?.ate || "");
+  const [score, setScore] = useState(day.eodReport?.score || day.closure?.score || 5);
+  const [actualHours, setActualHours] = useState(day.eodReport?.actualHours || "8");
+
+  const togglePriorityStatus = (idx) => {
+    const next = [...priorityStatuses];
+    next[idx] = next[idx] === "done" ? "pending" : "done";
+    setPriorityStatuses(next);
+  };
+
+  const handleReasonChange = (idx, reasonId) => {
+    const next = [...pendingReasons];
+    next[idx] = reasonId;
+    setPendingReasons(next);
+  };
+
+  const handleNoteChange = (idx, text) => {
+    const next = [...pendingNotes];
+    next[idx] = text;
+    setPendingNotes(next);
+  };
+
+  const handleSubmit = (e) => {
+    if (e) e.preventDefault();
+    const timestamp = new Date().toISOString();
+
+    const pendingItemsSummary = currentPriorities
+      .map((p, idx) => {
+        if (!p || priorityStatuses[idx] === "done") return null;
+        return {
+          task: p,
+          status: "pending",
+          reasonId: pendingReasons[idx],
+          reasonLabel: EOD_PENDING_REASONS.find(r => r.id === pendingReasons[idx])?.label || pendingReasons[idx],
+          note: pendingNotes[idx] || ""
+        };
+      })
+      .filter(Boolean);
+
+    patch(d => {
+      d.daily = d.daily || {};
+      d.daily[dk] = d.daily[dk] || {
+        outcome: "", outcomeMark: "", outcomeDelegatedTo: "", outcomeKra: "",
+        priorities: ["", "", ""], marks: ["", "", ""], priorityDelegatedTo: ["", "", ""], priorityKra: ["", "", ""],
+        blocks: {}, actual: {}, closure: { score: 0, ate: "", family: "" }, routineDone: {}
+      };
+
+      d.daily[dk].marks = [
+        priorityStatuses[0] === "done" ? "done" : "",
+        priorityStatuses[1] === "done" ? "done" : "",
+        priorityStatuses[2] === "done" ? "done" : ""
+      ];
+
+      d.daily[dk].closure = d.daily[dk].closure || {};
+      d.daily[dk].closure.score = score;
+      d.daily[dk].closure.ate = problemsFaced;
+
+      d.daily[dk].eodReport = {
+        isSubmitted: true,
+        submittedAt: timestamp,
+        whatHappened: whatHappened.trim(),
+        pendingTasks: pendingItemsSummary,
+        pendingReasons,
+        pendingNotes,
+        problemsFaced: problemsFaced.trim(),
+        score,
+        actualHours
+      };
+
+      d.standups = d.standups || {};
+      d.standups[dk] = d.standups[dk] || {};
+      d.standups[dk].eodSubmitted = true;
+      d.standups[dk].eodSubmittedAt = timestamp;
+      d.standups[dk].blocker = problemsFaced.trim();
+      d.standups[dk].p1 = d.standups[dk].p1 || {};
+      d.standups[dk].p2 = d.standups[dk].p2 || {};
+      d.standups[dk].p3 = d.standups[dk].p3 || {};
+      if (d.standups[dk].p1) d.standups[dk].p1.done = priorityStatuses[0] === "done";
+      if (d.standups[dk].p2) d.standups[dk].p2.done = priorityStatuses[1] === "done";
+      if (d.standups[dk].p3) d.standups[dk].p3.done = priorityStatuses[2] === "done";
+    });
+
+    try { window.NativeMobile?.haptic?.("success"); } catch (_) {}
+    if (onSubmitted) onSubmitted();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-indigo-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-indigo-100 p-5 bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-900 text-white">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-400 text-slate-950 text-xl shadow-2xs font-black">🌙</span>
+            <div>
+              <h3 className="font-extrabold text-base text-white">
+                {getActiveTerms(data).eodReportTitle || "End-of-Day (EOD) Review & Closeout"}
+              </h3>
+              <p className="text-xs text-slate-300">
+                Record actual execution, explain pending items, and log blockers for {prettyDate(dk)}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 text-sm font-bold">✕</button>
+        </div>
+
+        {/* Content Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
+          {/* What Actually Happened */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+              <span>✅</span>
+              <span>What Actually Happened Today? (Key Accomplishments) *</span>
+            </label>
+            <textarea
+              value={whatHappened}
+              onChange={e => setWhatHappened(e.target.value)}
+              placeholder="Summary of finished deliverables, decisions made, milestones reached..."
+              rows={2}
+              required
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium text-slate-900 outline-none focus:bg-white focus:border-indigo-400"
+            />
+          </div>
+
+          {/* Priorities Status & Pending Reasons ("Why") */}
+          <div className="space-y-2.5 pt-1">
+            <label className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <span>🎯</span>
+                <span>Review Planned Priorities &amp; Pending Tasks</span>
+              </span>
+              <span className="text-[11px] text-slate-400 font-normal">Click status to toggle Done vs. Pending</span>
+            </label>
+
+            <div className="space-y-2.5">
+              {currentPriorities.map((p, idx) => {
+                if (!p || !p.trim()) return null;
+                const isDone = priorityStatuses[idx] === "done";
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-2xl border p-3 space-y-2 transition ${
+                      isDone
+                        ? "bg-emerald-50/50 border-emerald-200"
+                        : "bg-rose-50/40 border-rose-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => togglePriorityStatus(idx)}
+                          className={`w-6 h-6 rounded-lg font-black text-xs flex items-center justify-center transition ${
+                            isDone ? "bg-emerald-600 text-white" : "bg-white border border-rose-300 text-transparent hover:border-rose-500"
+                          }`}
+                        >
+                          ✓
+                        </button>
+                        <span className={`text-xs font-bold ${isDone ? "text-slate-500 line-through" : "text-slate-950"}`}>
+                          #{idx + 1}: {p}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => togglePriorityStatus(idx)}
+                        className={`rounded-lg px-2.5 py-0.5 text-[10px] font-black uppercase transition ${
+                          isDone
+                            ? "bg-emerald-100 text-emerald-900"
+                            : "bg-rose-100 text-rose-900"
+                        }`}
+                      >
+                        {isDone ? "✅ Completed" : "⏳ Pending / Spilled"}
+                      </button>
+                    </div>
+
+                    {!isDone && (
+                      <div className="pt-2 border-t border-rose-200/60 space-y-1.5 animate-fade-in">
+                        <span className="text-[10px] font-black uppercase text-rose-900 block">
+                          ⚠️ Why is this task pending? (Root Cause):
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <select
+                            value={pendingReasons[idx] || "client_delay"}
+                            onChange={e => handleReasonChange(idx, e.target.value)}
+                            className="w-full rounded-xl border border-rose-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none"
+                          >
+                            {EOD_PENDING_REASONS.map(r => (
+                              <option key={r.id} value={r.id}>{r.label}</option>
+                            ))}
+                          </select>
+                          <input
+                            value={pendingNotes[idx] || ""}
+                            onChange={e => handleNoteChange(idx, e.target.value)}
+                            placeholder="Specific reason or next action..."
+                            className="w-full rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs text-slate-800 outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Problems / Blockers Faced */}
+          <div className="space-y-1.5 pt-1">
+            <label className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>Problems / Blockers Faced (Need Management Help?)</span>
+            </label>
+            <textarea
+              value={problemsFaced}
+              onChange={e => setProblemsFaced(e.target.value)}
+              placeholder="Any operational hurdles, system issues, vendor delays, or team bottlenecks?..."
+              rows={2}
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-medium text-slate-900 outline-none focus:bg-white focus:border-rose-400"
+            />
+          </div>
+
+          {/* Self Execution Rating & Actual Hours */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Today's Execution Score (1-5 ⭐):</label>
+              <div className="flex items-center gap-1">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setScore(star)}
+                    className={`h-8 w-8 rounded-xl font-bold text-sm transition ${
+                      score >= star ? "bg-amber-400 text-slate-950 shadow-2xs" : "bg-slate-100 text-slate-400"
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Actual Hours Worked:</label>
+              <select
+                value={actualHours}
+                onChange={e => setActualHours(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-800 outline-none"
+              >
+                <option value="4">4 Hours (Half Day)</option>
+                <option value="6">6 Hours</option>
+                <option value="7">7 Hours</option>
+                <option value="8">8 Hours (Full Day)</option>
+                <option value="9">9 Hours</option>
+                <option value="10">10+ Hours</option>
+              </select>
+            </div>
+          </div>
+        </form>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-white"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 text-xs font-black shadow-md flex items-center gap-1.5 transition"
+          >
+            <span>🌙</span>
+            <span>Submit EOD Closeout Report</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// MANAGER & OWNER DAILY SUBMISSION DETAIL DRILL-DOWN MODAL
+// ============================================================================
+
+function DailySubmissionDetailModal({ member, plan, dk, orgCtx, onClose, onAcknowledge }) {
+  const day = (plan?.daily && plan.daily[dk]) || {};
+  const morning = day.morningPlan || {};
+  const eod = day.eodReport || {};
+  const [feedback, setFeedback] = useState("");
+  const [ackDone, setAckDone] = useState(false);
+
+  const priorities = morning.priorities || day.priorities || [];
+  const marks = day.marks || [];
+
+  const handleAck = () => {
+    setAckDone(true);
+    if (onAcknowledge) onAcknowledge(member?.user_id, dk, feedback);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl max-h-[92vh] flex flex-col rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 p-5 bg-slate-50">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white text-lg font-black">📋</span>
+            <div>
+              <h3 className="font-extrabold text-base text-slate-950">
+                Daily Workday Submission: {member?.name || member?.email}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Department: <b>{member?.department || "General"}</b> · Date: <b>{prettyDate(dk)}</b>
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-200 text-sm font-bold">✕</button>
+        </div>
+
+        {/* Content Body */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1.5 ${
+              morning.isSubmitted
+                ? "bg-amber-100 text-amber-950 border-amber-300"
+                : "bg-slate-100 text-slate-500 border-slate-200"
+            }`}>
+              <span>☀️</span>
+              <span>Morning Plan: {morning.isSubmitted ? "Submitted (" + (morning.submittedAt ? new Date(morning.submittedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'Yes') + ")" : "Not Submitted"}</span>
+            </span>
+
+            <span className={`px-3 py-1 rounded-xl text-xs font-black border flex items-center gap-1.5 ${
+              eod.isSubmitted
+                ? "bg-emerald-100 text-emerald-950 border-emerald-300"
+                : "bg-slate-100 text-slate-500 border-slate-200"
+            }`}>
+              <span>🌙</span>
+              <span>EOD Report: {eod.isSubmitted ? "Submitted (" + (eod.submittedAt ? new Date(eod.submittedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : 'Yes') + ")" : "Pending"}</span>
+            </span>
+
+            {eod.score && (
+              <span className="px-3 py-1 rounded-xl text-xs font-black bg-amber-50 border border-amber-200 text-amber-900">
+                Execution: {eod.score} / 5 ⭐
+              </span>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 space-y-2.5">
+            <h4 className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+              <span>☀️</span>
+              <span>Morning Plan &amp; Planned Priorities</span>
+            </h4>
+            
+            {morning.outcome && (
+              <div className="bg-white p-2.5 rounded-xl border border-amber-200 text-xs">
+                <span className="text-[10px] font-black uppercase text-amber-900 block mb-0.5">★ Today's North Star:</span>
+                <span className="font-bold text-slate-900">{morning.outcome}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              {priorities.map((p, i) => {
+                if (!p || !p.trim()) return null;
+                const isDone = marks[i] === "done";
+                return (
+                  <div key={i} className="flex items-center justify-between text-xs bg-white p-2.5 rounded-xl border border-slate-200">
+                    <span className={`font-bold ${isDone ? "text-emerald-700" : "text-slate-800"}`}>
+                      #{i + 1}. {p}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                      isDone ? "bg-emerald-100 text-emerald-900" : "bg-amber-100 text-amber-900"
+                    }`}>
+                      {isDone ? "✓ Done" : "⏳ Pending"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {eod.isSubmitted ? (
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                <span>🌙</span>
+                <span>End-of-Day Execution &amp; Closeout</span>
+              </h4>
+
+              {eod.whatHappened && (
+                <div className="bg-white p-3 rounded-xl border border-indigo-100 text-xs space-y-1">
+                  <span className="text-[10px] font-black uppercase text-slate-400 block">Accomplishments Summary:</span>
+                  <p className="font-medium text-slate-800 leading-relaxed">{eod.whatHappened}</p>
+                </div>
+              )}
+
+              {Array.isArray(eod.pendingTasks) && eod.pendingTasks.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-black uppercase text-rose-700 block">
+                    Pending Tasks &amp; Documented Root Causes ("Why"):
+                  </span>
+                  {eod.pendingTasks.map((pt, i) => (
+                    <div key={i} className="rounded-xl border border-rose-200 bg-rose-50/70 p-2.5 text-xs space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900">{pt.task}</span>
+                        <span className="rounded-md bg-rose-200 px-2 py-0.5 text-[9px] font-black text-rose-950">
+                          {pt.reasonLabel}
+                        </span>
+                      </div>
+                      {pt.note && <p className="text-[11px] text-slate-600">Note: {pt.note}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {eod.problemsFaced && (
+                <div className="rounded-xl border border-rose-300 bg-rose-100/60 p-3 text-xs space-y-1">
+                  <span className="text-[10px] font-black uppercase text-rose-950 flex items-center gap-1">
+                    <span>⚠️</span>
+                    <span>Reported Problem / Blocker:</span>
+                  </span>
+                  <p className="font-bold text-rose-950 leading-relaxed">{eod.problemsFaced}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">
+              🌙 EOD Closeout Report has not been submitted yet for today.
+            </div>
+          )}
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
+            <label className="text-xs font-black uppercase tracking-wider text-slate-900 block">
+              Manager / Owner Acknowledgment &amp; Feedback:
+            </label>
+            <input
+              value={feedback}
+              onChange={e => setFeedback(e.target.value)}
+              placeholder="Add feedback, encouragement, or guidance for this employee..."
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-indigo-400"
+            />
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[11px] text-slate-400">
+                {ackDone ? "✓ Acknowledged by Management" : "Click acknowledge to confirm review"}
+              </span>
+              <button
+                type="button"
+                onClick={handleAck}
+                disabled={ackDone}
+                className="rounded-xl bg-slate-950 hover:bg-slate-800 text-white px-4 py-1.5 text-xs font-black shadow-2xs transition disabled:opacity-50 flex items-center gap-1"
+              >
+                <span>{ackDone ? "✓" : "✍️"}</span>
+                <span>{ackDone ? "Acknowledged" : "Acknowledge Submission"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-100 p-4 bg-slate-50 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 bg-white px-5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// DAILY ACCOUNTABILITY MONITOR (FOR MANAGERS, DEPT HEADS & OWNERS)
+// ============================================================================
+
+function DailyAccountabilityMonitor({ members = [], planners = [], orgCtx, meId, data, patch, depts = [], onOpenWorkProfile }) {
+  const [selectedDk, setSelectedDk] = useState(todayKey());
+  const [deptFilter, setDeptFilter] = useState("ALL");
+  const [drilldownMember, setDrilldownMember] = useState(null);
+
+  const myRole = orgCtx?.membership?.role || "owner";
+  const myRank = getRoleRank(myRole);
+
+  const visibleMembers = filterVisibleTeamMembers(members, meId, myRole, orgCtx?.membership?.department)
+    .filter(m => deptFilter === "ALL" || (m.department || "General").toLowerCase() === deptFilter.toLowerCase());
+
+  const planOf = (uid) => (planners.find(p => p.userId === uid) || {}).plan || null;
+
+  return (
+    <div className="space-y-4">
+      {/* Controls Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xs">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">📊</span>
+          <div>
+            <h4 className="font-black text-sm text-slate-950">Daily Plan &amp; EOD Accountability Tracker</h4>
+            <p className="text-[11px] text-slate-500">Live monitor of Morning Plans, EOD Reports, and Team Blockers</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={selectedDk}
+            onChange={e => setSelectedDk(e.target.value)}
+            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-800 outline-none"
+          />
+          {myRank >= 4 && (
+            <select
+              value={deptFilter}
+              onChange={e => setDeptFilter(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-800 outline-none"
+            >
+              <option value="ALL">All Departments</option>
+              {depts.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* Team Matrix Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        {visibleMembers.map(m => {
+          const userPlan = planOf(m.user_id);
+          const day = (userPlan?.daily && userPlan.daily[selectedDk]) || {};
+          const morning = day.morningPlan || {};
+          const eod = day.eodReport || {};
+          const priorities = morning.priorities || day.priorities || [];
+          const marks = day.marks || [];
+          const doneCount = marks.filter(mk => mk === "done" || mk === "x" || mk === "✓").length;
+          const totalCount = priorities.filter(p => p && p.trim()).length;
+          const hasBlocker = !!(eod.problemsFaced || day.closure?.ate);
+          const workProfile = getEffectiveWorkProfile(data, orgCtx, m.user_id);
+
+          return (
+            <div key={m.id || m.user_id} className="rounded-3xl border border-slate-200 bg-white p-4 sm:p-5 shadow-xs space-y-3 flex flex-col justify-between">
+              <div className="space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 className="font-extrabold text-sm text-slate-950 flex items-center gap-1.5">
+                      <span>{m.name || m.email}</span>
+                      <span className="rounded-md bg-slate-100 text-slate-600 px-1.5 py-0.2 text-[9px] font-bold">
+                        {m.role || "employee"}
+                      </span>
+                    </h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[11px] font-bold text-slate-400">📁 {m.department || "General"}</span>
+                      {workProfile && (
+                        <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded-md">
+                          💼 {workProfile.roleTitle || "Configured"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onOpenWorkProfile && onOpenWorkProfile(m)}
+                    className="rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-950 px-2.5 py-1 text-[11px] font-black transition shadow-2xs flex items-center gap-1"
+                    title="Edit employee daily, weekly, and monthly work profile duties"
+                  >
+                    <span>💼</span>
+                    <span>Work Profile</span>
+                  </button>
+                </div>
+
+                {/* Status Chips Row */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className={`p-2 rounded-xl border flex items-center justify-between ${
+                    morning.isSubmitted ? "bg-amber-50 border-amber-200 text-amber-950" : "bg-slate-50 border-slate-200 text-slate-500"
+                  }`}>
+                    <span className="font-bold flex items-center gap-1">
+                      <span>☀️</span>
+                      <span>Morning Plan</span>
+                    </span>
+                    <span className="text-[10px] font-black">
+                      {morning.isSubmitted ? "✅ Done" : "❌ Missing"}
+                    </span>
+                  </div>
+
+                  <div className={`p-2 rounded-xl border flex items-center justify-between ${
+                    eod.isSubmitted ? "bg-emerald-50 border-emerald-200 text-emerald-950" : "bg-slate-50 border-slate-200 text-slate-500"
+                  }`}>
+                    <span className="font-bold flex items-center gap-1">
+                      <span>🌙</span>
+                      <span>EOD Closeout</span>
+                    </span>
+                    <span className="text-[10px] font-black">
+                      {eod.isSubmitted ? "✅ Done" : "⏳ Pending"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Execution & Blocker Preview */}
+                <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100">
+                  <span className="font-bold text-slate-700">
+                    Execution: <b className="text-slate-950">{doneCount}/{totalCount || 0} Tasks</b>
+                  </span>
+                  {hasBlocker ? (
+                    <span className="rounded-lg bg-rose-100 text-rose-900 border border-rose-300 px-2 py-0.5 text-[10px] font-black flex items-center gap-1">
+                      <span>⚠️</span>
+                      <span>Blocker Alert</span>
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-slate-400 font-medium">No Blockers</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setDrilldownMember({ member: m, plan: userPlan })}
+                  className="w-full rounded-2xl bg-slate-950 hover:bg-slate-800 text-white px-3 py-2 text-xs font-black shadow-2xs transition flex items-center justify-center gap-1.5"
+                >
+                  <span>👁️</span>
+                  <span>View Full Submission &amp; Planned vs Actual</span>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Drilldown Modal */}
+      {drilldownMember && (
+        <DailySubmissionDetailModal
+          member={drilldownMember.member}
+          plan={drilldownMember.plan}
+          dk={selectedDk}
+          orgCtx={orgCtx}
+          onClose={() => setDrilldownMember(null)}
+          onAcknowledge={(uid, dateKey, note) => {
+            alert(`✓ Acknowledged submission for ${drilldownMember.member.name || 'member'}!`);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 // ============================================================================
 // FLOWDIRECTOR AI & AUTOMATION ENGINE
 // ============================================================================
@@ -9109,7 +10364,7 @@ function Planner({ session, orgCtx, orgError, onLeftOrg, onStartCompany }){
           {tab==="maybe" && <MaybeView data={data} patch={patch} />}
           {tab==="reference" && <ReferenceView data={data} patch={patch} />}
           {tab==="goals" && <GoalsView orgCtx={orgCtx} meId={userId} data={data} />}
-          {tab==="people" && <PeopleView orgCtx={orgCtx} meId={userId} data={data} />}
+          {tab==="people" && <PeopleView orgCtx={orgCtx} meId={userId} data={data} patch={patch} />}
           {tab==="team" && <TeamView orgCtx={orgCtx} meId={userId} data={data} />}
           {tab==="manual" && <KnowledgeBaseManualView onOpenTraining={() => setShowTrainingModal(true)} />}
           {tab==="settings" && <SettingsView data={data} patch={patch} setData={setData} userId={userId}
@@ -10386,6 +11641,49 @@ function FollowUpView({ data, patch, orgCtx, meId, dbTasks = [], setDbTasks, onO
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Today's EOD Closeout Report Card */}
+      {day.eodReport?.isSubmitted && (
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 space-y-3 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+              <span>🌙</span>
+              <span>Today's EOD Closeout Report</span>
+            </span>
+            <span className="text-[10px] font-bold text-slate-500">
+              Closed at {new Date(day.eodReport.submittedAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+            </span>
+          </div>
+
+          {day.eodReport.whatHappened && (
+            <div className="p-2.5 rounded-xl bg-white border border-indigo-100 text-xs space-y-1">
+              <span className="text-[10px] font-black uppercase text-slate-400 block">Accomplishments:</span>
+              <p className="font-semibold text-slate-800 leading-relaxed">{day.eodReport.whatHappened}</p>
+            </div>
+          )}
+
+          {Array.isArray(day.eodReport.pendingTasks) && day.eodReport.pendingTasks.length > 0 && (
+            <div className="space-y-1.5 text-xs">
+              <span className="text-[10px] font-black uppercase text-rose-700 block">Pending Deliverables &amp; Root Causes:</span>
+              {day.eodReport.pendingTasks.map((pt, i) => (
+                <div key={i} className="flex items-center justify-between p-2 rounded-xl bg-white border border-rose-200">
+                  <span className="font-bold text-slate-900">{pt.task}</span>
+                  <span className="rounded-md bg-rose-100 px-2 py-0.5 text-[9px] font-black text-rose-950">
+                    {pt.reasonLabel}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {day.eodReport.problemsFaced && (
+            <div className="p-2.5 rounded-xl bg-rose-100/70 border border-rose-300 text-xs">
+              <span className="text-[10px] font-black uppercase text-rose-950 block mb-0.5">⚠️ Reported Blocker:</span>
+              <span className="font-bold text-rose-950">{day.eodReport.problemsFaced}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -12106,9 +13404,44 @@ function DailyDelegateModal({ target, orgCtx, meId, onDelegateSuccess, onClose }
 function DailyView({ data, patch, dk, setDk, userId, orgCtx, onOpenCapture, dbTasks = [], setDbTasks, onOpenTask, onGoToTab }){
   const [showCalendarModal, setShowCalendarModal] = useState(false);
   const [delegateModalTarget, setDelegateModalTarget] = useState(null);
+  const [showMorningPlanModal, setShowMorningPlanModal] = useState(false);
+  const [showEodReportModal, setShowEodReportModal] = useState(false);
   const [myKras, setMyKras] = useState([]);
   const [notice, setNotice] = useState("");
   const [mobileScheduleTab, setMobileScheduleTab] = useState("plan"); // "plan" | "actual"
+
+  // Auto-hydrate Work Profile daily duties on date/user change
+  useEffect(() => {
+    const profile = getEffectiveWorkProfile(data, orgCtx, userId);
+    if (!profile || !Array.isArray(profile.daily) || profile.daily.length === 0) return;
+    
+    const unhydrated = profile.daily.filter(d => 
+      d.text && d.text.trim() && 
+      !(data.dailyBackup || []).some(b => b.workProfileTaskId === d.id || (b.text === d.text && b.due === dk)) &&
+      !((data.daily?.[dk]?.priorities || []).includes(d.text))
+    );
+
+    if (unhydrated.length > 0) {
+      patch(d => {
+        d.dailyBackup = d.dailyBackup || [];
+        unhydrated.forEach(task => {
+          d.dailyBackup.unshift({
+            id: "wp_inst_" + uid(),
+            workProfileTaskId: task.id,
+            text: task.text,
+            tag: task.tag || profile.department || "Operations",
+            taskType: "DAILY",
+            due: dk,
+            time: "",
+            timeMode: "block",
+            duration: task.est || "30m",
+            done: false,
+            isWorkProfileDuty: true
+          });
+        });
+      });
+    }
+  }, [dk, userId, data?.workProfiles]);
   
   const myEmail = (orgCtx?.profile?.email || "").toLowerCase();
   const myName = orgCtx?.profile?.full_name || orgCtx?.profile?.email || "Leader";
@@ -16598,13 +17931,15 @@ const avg = (v) => v === null || v === undefined || isNaN(v) ? "—" : v.toFixed
 /* ================================================================== */
 /*  DASHBOARD — team rollup + per-person drill-down                    */
 /* ================================================================== */
-function PeopleView({ orgCtx, meId, data }){
+function PeopleView({ orgCtx, meId, data, patch }){
   const [members, setMembers] = useState(null);
   const [planners, setPlanners] = useState(null); // [{userId, plan}]
   const [kpiData, setKpiData] = useState(null);   // {kpis, values} or null if unavailable
   const [period, setPeriod] = useState("7");
   const [deptFilter, setDeptFilter] = useState("ALL");
   const [sel, setSel] = useState(null);           // drilled-into membership row
+  const [activeSubTab, setActiveSubTab] = useState("accountability"); // "accountability" | "performance"
+  const [editingWorkProfile, setEditingWorkProfile] = useState(null);
   const [err, setErr] = useState("");
   const myRole = orgCtx?.membership?.role || "owner";
   const myRank = getRoleRank(myRole);
@@ -16735,6 +18070,44 @@ function PeopleView({ orgCtx, meId, data }){
           : "Department Dashboard — follow-through and priority execution for your department."}
       </Callout>
       {err && <p className="mb-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
+
+      
+      {/* Sub-tab switcher: Accountability Tracker vs Performance Scorecards */}
+      <div className="mb-4 flex items-center gap-1.5 rounded-2xl bg-slate-100 p-1.5 border border-slate-200">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("accountability")}
+          className={`flex-1 rounded-xl py-2 px-3 text-xs font-black transition flex items-center justify-center gap-1.5 ${
+            activeSubTab === "accountability" ? "bg-slate-950 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <span>📋</span>
+          <span>Daily Plan &amp; EOD Accountability Tracker</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSubTab("performance")}
+          className={`flex-1 rounded-xl py-2 px-3 text-xs font-black transition flex items-center justify-center gap-1.5 ${
+            activeSubTab === "performance" ? "bg-slate-950 text-white shadow-2xs" : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <span>📊</span>
+          <span>Performance Scorecards &amp; KRAs/KPIs</span>
+        </button>
+      </div>
+
+      {activeSubTab === "accountability" && (
+        <DailyAccountabilityMonitor
+          members={members}
+          planners={planners}
+          orgCtx={orgCtx}
+          meId={meId}
+          data={data}
+          patch={patch}
+          depts={depts}
+          onOpenWorkProfile={(m) => setEditingWorkProfile(m)}
+        />
+      )}
 
       {/* Department Filter Strip */}
       {myRank >= 4 && (
@@ -16885,6 +18258,26 @@ function PeopleView({ orgCtx, meId, data }){
           </button>
         ))}
       </div>
+
+      {/* Work Profile Edit Modal */}
+      {editingWorkProfile && (
+        <WorkProfileEditModal
+          member={editingWorkProfile}
+          workProfile={getEffectiveWorkProfile(data, orgCtx, editingWorkProfile.user_id || editingWorkProfile.id)}
+          depts={depts}
+          onSave={(wp) => {
+            if (patch) {
+              patch(d => {
+                d.workProfiles = d.workProfiles || {};
+                d.workProfiles[wp.userId] = wp;
+              });
+            }
+            setEditingWorkProfile(null);
+            alert(`✓ Work Profile & Cadence Blueprint saved for ${editingWorkProfile.name || 'member'}!`);
+          }}
+          onClose={() => setEditingWorkProfile(null)}
+        />
+      )}
 
       {sel && (
         <div className="mt-5">
